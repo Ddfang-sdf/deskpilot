@@ -1,7 +1,9 @@
 # DeskPilot 设计文档
 
-> 版本：v0.1 · 2026-08-15 · 状态：待评审
+> 版本：v0.2 · 2026-08-16 · 状态：待评审
 > 前身：`win-computer-use` demo（已验证可行性，本文档是 v2 的设计基线）
+> 下游展开：功能设计说明书 v0.2 · 详细设计说明书 v0.3 · 测试设计说明书 v0.3
+> （程序级规格、错误码全集、135 条测试用例的权威来源；本文保留总体契约与不变量）
 
 ## 0. 第一原则：自主安全（Autonomous Safety）
 
@@ -16,8 +18,9 @@
 
 本设计防的是 **AI 犯错**（坐标打偏、焦点被抢、误触危险键），不防"AI 作恶"。
 若 agent 同时拥有不受限的 shell 权限，它理论上可以自己 `pip install pyautogui` 绕过本服务——
-这属于 harness 层的权限治理问题（应只授予 agent DeskPilot 这一个桌面通道），
-彻底解法是在 VM/沙箱中运行 agent（见 §7 非目标）。DeskPilot 自身保证：
+这属于 harness 层的权限治理问题。**B 环境实况：agent（Claude Code/Kimi Code）自带 shell**，
+因此部署侧建议限制 agent 的工具权限（deny Bash/Write），只留 DeskPilot 一条桌面通道；
+彻底解法仍是在 VM/沙箱中运行 agent。DeskPilot 自身保证：
 **凡经 DeskPilot 通道的操作，无一绕过强制层。**
 
 ## 1. 目标 / 非目标
@@ -102,7 +105,7 @@ attach(window_title | hwnd | process) → binding_token
 | `ocr` | L0 | 截图文字识别 | 区域过小→提示放大 |
 | `find_window` | L0 | 枚举/过滤窗口 | — |
 | `get_ui_tree` | L0 | UIA 元素树（可交互元素优先） | — |
-| `get_clickable_map` | L0 | **SoM**：截图+编号标注所有可交互元素 | 无元素→空图 |
+| `get_clickable_map` | L0 | **SoM**：截图+编号标注所有可交互元素；输入为窗口标识（无需绑定） | 无元素→空图；编号→元素对照连带窗口句柄入缓存（60 秒有效） |
 | `template_match` | L0 | 模板匹配定位 | 未找到→置信度 |
 | `get_cursor` | L0 | 鼠标位置 | — |
 | `get_clipboard` | L0 | 读剪贴板 | — |
@@ -111,20 +114,22 @@ attach(window_title | hwnd | process) → binding_token
 | `move` | L1 | 移动鼠标 | — |
 | `scroll` | L1 | 滚轮 | 需绑定（滚动改变内容状态） |
 | `attach` / `detach` | L1 | 建立/解除绑定 | 目标非白名单→拒绝并说明 |
-| `launch_app` | L2 | 启动应用（白名单内路径/系统注册应用） | 不在白名单→L3 |
+| `launch_app` | L2 | 启动应用（白名单内路径/系统注册应用）；无目标窗口，**豁免闸一** | 不在白名单→L3 |
 | `activate_window` | L2 | 把绑定窗口提到前台 | 绑定失效→拒绝 |
 | `click_element` | L2 | **首选**：按元素名/automation_id UIA Invoke，无需坐标 | 元素不存在→列出候选 |
 | `type_element` | L2 | 向指定 UIA 元素输入（SetValue，非键盘模拟） | 同上 |
-| `click` | L2 | 像素坐标点击（兜底，仅在 UIA 失效时用） | 绑定校验失败→拒绝 |
-| `type_text` | L2 | 键盘输入（含中文剪贴板方案，**禁止任何预清空按键**） | 同上 |
-| `key` | L2/L3 | 按键；许可表内→L2，危险键→L3 | 危险键无批准→拒绝 |
-| `set_clipboard` | L2 | 写剪贴板 | — |
+| `click` | L2 | 像素坐标点击（兜底，仅在 UIA 失效时用）；落点须在绑定窗口矩形内 | 绑定校验失败→拒绝；落点越界→OUT_OF_BOUNDS |
+| `type_text` | L2 | 键盘输入（含中文剪贴板方案+剪贴板还原，**禁止任何预清空按键**）；≤ input_max_chars（默认 64K） | 同上 |
+| `key` | L2/L3 | 按键；许可表内→L2，危险键→L3；未收录键→KEY_UNKNOWN | 危险键无批准→拒绝 |
+| `set_clipboard` | L2 | 写剪贴板；需有效绑定（INV-1 统一） | — |
 | `drag` | L2 | 拖拽 | 同 click |
 
 ### 按键许可表（默认）
 
-- **L2 放行**：字符、方向键、Tab、Backspace（限 type 场景）、Home/End/PgUp/PgDn、F1–F12、Ctrl+C/V/X/Z/Y/S、Ctrl+Home/End
+- **L2 放行**：字符、方向键、Tab、Backspace（限输入场景）、Home/End/PgUp/PgDn、F1–F12、Ctrl+C/V/X/Z/Y/S、Ctrl+Home/End
 - **L3 需批准**：Enter（在终端类窗口中）、Delete、Esc、Alt+F4、Ctrl+W、Win 系列、Ctrl+Shift+Esc、任何含 Alt 的组合
+- **未收录按键**：一律拒绝 KEY_UNKNOWN（fail-closed）
+- **输入场景判定**（场景受限键如 Backspace 的前置）：焦点元素 UIA 类型 ∈ policy 的 input_control_types（默认 Edit/Document）；**判定失败一律按非许可场景处理 → KEY_DENIED**
 - Enter 在普通白名单应用（记事本/Excel 等）是 L2；在终端类进程（cmd/powershell/WindowsTerminal）里整条绑定的建立本身就是 L3
 
 ### 应用白名单（默认 policy.yml）
@@ -134,7 +139,7 @@ whitelist:
   - notepad.exe
   - WINWORD.EXE
   - EXCEL.EXE
-  - explorer.exe   # 仅 L0/L1
+  - explorer.exe   # 级别上限 L1（条目可带最高操作级别，超上限→POLICY_VIOLATION）
 terminal_apps:     # attach 即需 L3 批准
   - cmd.exe
   - powershell.exe
@@ -155,11 +160,11 @@ policy.yml 是服务的"法律"。服务启动时加载并锁定；修改需重�
 - **INV-3** 按键命中危险表且无有效批准令牌 → 必须拒绝，返回 `NEEDS_APPROVAL`，携带操作描述供人类审阅
 - **INV-4** 批准令牌一次性、有时效（60s）、绑定到具体操作指纹（工具+参数哈希），不可复用到别的操作
 - **INV-5** `type_text` 等任何输入路径**不得**包含 Ctrl+A/Delete 等预清空动作（demo 版教训）
-- **INV-6** 所有操作（含被拒的）必须写审计日志；日志目录对 AI 通道只读
+- **INV-6** 所有操作（含被拒的）必须写审计日志；基线为**协议级只读**（MCP 无任何读写审计的工具，审计目录对 AI 通道只读）；OS 级目录隔离（独立账户/ACL）为可选加固
 - **INV-7** 检测不到目标（窗口消失/安全桌面/UAC）→ 必须显式报错，禁止"静默成功"
 - **INV-8** MCP 协议层不得存在任何绕过强制层的直通接口（code review 逐条核）
 - **INV-9** policy.yml 加载后运行期不可变；重载必须重启进程
-- **INV-10** 全局急停：Ctrl+Shift+F12 立即冻结一切写操作（fail-safe 兜底：鼠标甩左上角同样触发）
+- **INV-10** 全局急停：Ctrl+Shift+F12 立即冻结一切写操作（fail-safe 兜底：鼠标甩左上角同样触发）；复位 = 复位热键 Ctrl+Shift+F11 或本地 CLI 命令，**二者永不进入 AI 的按键许可表**（AI 经 key 工具发送即 KEY_UNKNOWN，无法自我复位）
 
 ## 6. 测试策略
 
@@ -168,14 +173,16 @@ policy.yml 是服务的"法律"。服务启动时加载并锁定；修改需重�
 | 强制层（★重点） | 纯单元测试，mock 执行层。逐条 INV 对应测试用例：无绑定写入被拒、危险键被拒、令牌不可复用、policy 运行期不可变…… |
 | L0/L1 工具 | 直接对真实桌面测（无副作用） |
 | L2 工具 | 只对**测试专用窗口**测：测试固件自动启动一个带标记标题的记事本（如 `DESKPILOT_TEST_*`），测完自动关闭。绝不碰已存在的窗口 |
-| L3/审批 | 模拟审批通道，验证拒绝路径和批准路径 |
+| L3/审批 | M1 用模拟审批器（可编程批准/拒绝/超时）；M3 接真人弹窗 |
 | 端到端 | 里程碑验收脚本：如"打开测试记事本→输入中英文→读取剪贴板验证→关闭不保存" |
+
+完整测试设计（135 条用例、断言书写约定、测试固件与模拟审批器、INV 覆盖矩阵）见测试设计说明书 v0.3。
 
 ## 7. 里程碑
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| **M1 安全核心** | 强制层四道闸 + policy.yml + 审计层 + 移植 demo 的 L0/L1 工具 + 单元测试 | INV-1~10 全部有对应测试并通过 |
+| **M1 安全核心** | 强制层四道闸 + policy.yml + 审计层 + 移植 demo 的 L0/L1 工具 + 急停/复位（Ctrl+Shift+F12/F11）+ 单元测试 | INV-1~10 全部有对应测试并通过（54 条 P0 全绿） |
 | **M2 元素级操作** | click_element / type_element / launch_app / activate_window / wait_for_* | 端到端脚本通过（全程零像素坐标） |
 | **M3 SoM + 审批通道** | get_clickable_map 标注截图 + L3 本地审批 UI（桌面弹窗，人类点批准/拒绝） | 纯文本模型仅看元素列表完成"记事本写文件保存"任务 |
 
@@ -190,3 +197,10 @@ policy.yml 是服务的"法律"。服务启动时加载并锁定；修改需重�
 ## 9. 从 demo 继承的修复清单（已修，纳入回归）
 
 1. `pyperclip` 未导入 · 2. `pyautogui.Image` 不存在（→ PIL.Image） · 3. JSON 转义泄漏导致 SyntaxError · 4. jpg→PIL 格式映射（"JPG"→"JPEG"）
+
+## 10. 变更记录
+
+| 版本 | 日期 | 变更内容 |
+|------|------|----------|
+| v0.1 | 2026-08-15 | 初版：三原则、四层架构、工具契约表、INV-1~10、里程碑 |
+| v0.2 | 2026-08-16 | 与下游文档（功能 v0.2 / 详细 v0.3 / 测试 v0.3）对齐：白名单条目级别上限（POLICY_VIOLATION）、像素落点校验（OUT_OF_BOUNDS）、中文输入剪贴板还原+读回校验、审批等待不持锁与批准后重过四道闸、急停冻结双检查与甩角防抖、输入场景判定（fail-closed→KEY_DENIED）与 KEY_UNKNOWN、get_clickable_map 改窗口标识、set_clipboard 统一需绑定、input_max_chars 64K、INV-6 分级表述（协议级基线+OS 级可选加固）、INV-10 复位形式（Ctrl+Shift+F11/CLI，永不入 AI 按键表）、威胁模型补 B 环境 shell 实况、错误码全集权威移至详细设计附录 A |
