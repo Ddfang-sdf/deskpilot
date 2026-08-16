@@ -5,3 +5,7 @@ venv/
 audit/
 *.log
 .DS_Store
+
+.pytest_cache/
+build/
+dist/

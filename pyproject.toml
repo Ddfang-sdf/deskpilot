@@ -1,0 +1,9 @@
+[project]
+name = "deskpilot"
+version = "0.1.0"
+description = "自定义的安全桌面驾驶舱——让 AI agent 自主、安全地操作 Windows 电脑"
+requires-python = ">=3.12"
+dependencies = ["pyyaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,77 @@
+# DeskPilot 部署策略（本机任务环境）
+# 基线说明：explorer.exe 在本部署放宽至 L2（需经桌面操作创建 D:\output 目录）；
+# mspaint.exe / ApplicationFrameHost.exe 供可选挑战（画图 / Microsoft Store UWP 宿主）。
+
+whitelist:
+  - { process: notepad.exe, max_level: L2 }
+  - { process: explorer.exe, max_level: L2 }
+  - { process: mspaint.exe, max_level: L2 }
+  - { process: ApplicationFrameHost.exe, max_level: L2 }
+
+terminal_apps:
+  - cmd.exe
+  - powershell.exe
+  - pwsh.exe
+  - windowsterminal.exe
+  - wt.exe
+
+keys:
+  l2_allow:
+    - enter
+    - tab
+    - backspace          # 场景受限键（见 input_scenario_keys）
+    - home
+    - end
+    - pageup
+    - pagedown
+    - up
+    - down
+    - left
+    - right
+    - f1
+    - f2
+    - f3
+    - f4
+    - f5
+    - f6
+    - f7
+    - f8
+    - f9
+    - f10
+    - f11
+    - f12
+    - ctrl+c
+    - ctrl+v
+    - ctrl+x
+    - ctrl+z
+    - ctrl+y
+    - ctrl+s
+    - ctrl+home
+    - ctrl+end
+    - ctrl+shift+n       # 资源管理器新建文件夹
+  l3_controlled:
+    - delete
+    - escape
+    - alt+f4
+    - ctrl+w
+    - ctrl+shift+escape
+  input_scenario_keys:
+    - backspace
+  input_control_types:
+    - Edit
+    - Document
+
+timeouts:
+  binding_ttl: 600
+  approval_ttl: 60
+  wait_poll_interval: 0.5
+  wait_timeout_max: 300
+
+limits:
+  input_max_chars: 65536
+
+estop:
+  l0_during_freeze: true
+  corner_hold_ms: 200
+
+audit_dir: ./audit
