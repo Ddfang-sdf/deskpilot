@@ -9,3 +9,5 @@ audit/
 .pytest_cache/
 build/
 dist/
+mcp_shot_*.png
+check_*.png
