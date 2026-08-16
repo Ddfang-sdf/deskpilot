@@ -73,6 +73,8 @@ class Enforcement:
         # 闸二 应用白名单（INV-2）
         if tool == "launch_app":
             target = str(request.params.get("app", "")).strip().lower()
+            # 路径归一：允许按完整路径启动（取进程基名比对白名单）
+            target = target.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
             if target in self._policy.whitelist:
                 cap = self._policy.whitelist[target]
             else:

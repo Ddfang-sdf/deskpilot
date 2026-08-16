@@ -21,9 +21,9 @@ from ..mcp_server import validate_call
 from ..models import (BINDING_REQUIRED_TOOLS, L2, TOOL_LEVELS, AuditEntry,
                       OperationRequest, Policy, ToolResult)
 
-_L0_DIRECT = {"screenshot", "find_window", "get_ui_tree", "get_cursor", "get_clipboard"}
+_L0_DIRECT = {"screenshot", "find_window", "get_ui_tree", "get_cursor",
+              "get_clipboard", "ocr", "template_match", "get_clickable_map"}
 _L1_DIRECT = {"move", "wait_for_window"}
-_UNWIRED = {"ocr", "template_match", "get_clickable_map"}   # 驱动见里程碑 M3
 
 
 @dataclass(frozen=True)
@@ -44,9 +44,6 @@ def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> Too
     except InvalidParamsError as e:
         return ToolResult(ok=False, error_code=e.code, message=e.message)
 
-    if tool in _UNWIRED:
-        return ToolResult(ok=False, error_code=INTERNAL_ERROR,
-                          message=f"工具 {tool} 的驱动未包含在 M1 构建（见里程碑 M3）")
     if tool in _L0_DIRECT or tool in _L1_DIRECT:
         return _run_sensing(ctx, tool, params)
 
@@ -78,6 +75,14 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
         elif tool == "wait_for_window":
             result = ctx.executor.wait_for_window(params["target"],
                                                   params.get("timeout"))
+        elif tool == "ocr":
+            result = ctx.executor.ocr(params["source"])
+        elif tool == "template_match":
+            result = ctx.executor.template_match(params["template"],
+                                                 params["scope"],
+                                                 params.get("threshold", 0.8))
+        elif tool == "get_clickable_map":
+            result = ctx.executor.get_clickable_map(params["window"])
         else:
             raise ExecutorError(INTERNAL_ERROR, f"工具 {tool} 未接线")
         _light_audit(ctx, tool, params, "ok", t0)

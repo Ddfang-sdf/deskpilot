@@ -46,6 +46,8 @@ class FakeProbe:
         self.alive = {FIXTURE_HWND: True, FIXTURE_HWND_B: True}
         self.processes = {FIXTURE_HWND: "notepad.exe", FIXTURE_HWND_B: "notepad.exe"}
         self.rects = {FIXTURE_HWND: FIXTURE_RECT, FIXTURE_HWND_B: FIXTURE_RECT_B}
+        self.foreground = FIXTURE_HWND          # 默认绑定窗口已在前台
+        self.activate_result = True
 
     def hwnd_alive(self, hwnd: int) -> bool:
         return self.alive.get(hwnd, False)
@@ -55,6 +57,15 @@ class FakeProbe:
 
     def rect_of(self, hwnd: int):
         return self.rects.get(hwnd, (0, 0, 0, 0))
+
+    def is_foreground(self, hwnd: int) -> bool:
+        return hwnd == self.foreground
+
+    def activate(self, hwnd: int) -> bool:
+        if not self.activate_result:
+            return False
+        self.foreground = hwnd
+        return True
 
 
 class FakeApprover:

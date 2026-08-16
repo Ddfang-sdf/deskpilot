@@ -17,8 +17,13 @@ import pyautogui
 import pyperclip
 import uiautomation
 
-from ..errors import (EMERGENCY_STOP, INTERNAL_ERROR, OUT_OF_BOUNDS, TIMEOUT,
-                      WINDOW_GONE, ExecutorError)
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw
+
+from ..errors import (ELEMENT_AMBIGUOUS, ELEMENT_DISABLED, ELEMENT_NOT_FOUND,
+                      ELEMENT_UNSUPPORTED, EMERGENCY_STOP, INTERNAL_ERROR,
+                      OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE, ExecutorError)
 from ..policy import normalize_key
 from .probe import DesktopProbe
 
@@ -33,13 +38,18 @@ class Executor:
     """执行层公开入口。"""
 
     def __init__(self, estop, audit_dir: str, poll_interval: float = 0.5,
-                 wait_timeout_max: float = 300.0, clock: Callable[[], float] = time.monotonic):
-        self._probe = DesktopProbe()
+                 wait_timeout_max: float = 300.0, clock: Callable[[], float] = time.monotonic,
+                 probe=None, element_source=None, shot_fn=None, ocr_engine=None):
+        self._probe = probe if probe is not None else DesktopProbe()
         self._estop = estop
         self._shots_dir = Path(audit_dir) / "shots"
         self._poll = poll_interval
         self._wait_max = wait_timeout_max
         self._clock = clock
+        self._element_source = element_source   # UIA 根控件工厂（可注入，测试接缝）
+        self._shot_fn = shot_fn                 # 区域截图工厂（可注入，测试接缝）
+        self._ocr_engine = ocr_engine           # OCR 引擎（可注入，测试接缝）
+        self._som_cache: dict[int, dict] = {}   # SoM 编号缓存（§9.9）
         pyautogui.PAUSE = 0.02
 
     # ---------- 公开入口 ----------
@@ -101,6 +111,88 @@ class Executor:
         pyautogui.moveTo(x, y)
         return {"status": "ok"}
 
+    def ocr(self, source) -> dict:
+        """文字识别（§12.6）：图像路径来源直读；区域来源实拍后识别。"""
+        if self._ocr_engine is None:
+            raise ExecutorError(INTERNAL_ERROR,
+                                "OCR 引擎不可用：请安装 rapidocr-onnxruntime")
+        if isinstance(source, str):
+            try:
+                img = Image.open(source)
+            except OSError as e:
+                raise ExecutorError(INTERNAL_ERROR, f"OCR 源图像不可读: {e}") from e
+        else:
+            img = self._capture(self._region_dict(source))
+        items = self._ocr_engine(img)
+        return {"items": items, "count": len(items)}
+
+    def template_match(self, template: str, scope, threshold: float = 0.8) -> dict:
+        """模板匹配（§12.6）：在屏幕范围搜索模板，未达阈值如实返回最高置信度。"""
+        tpl = cv2.imread(template, cv2.IMREAD_COLOR)
+        if tpl is None:
+            raise ExecutorError(INTERNAL_ERROR, f"模板图像不可读: {template}")
+        scene_img = self._capture(self._region_dict(scope))
+        scene = np.asarray(scene_img.convert("RGB"))[:, :, ::-1]
+        if scene.shape[0] < tpl.shape[0] or scene.shape[1] < tpl.shape[1]:
+            return {"found": False, "best_confidence": 0.0, "matches": []}
+        res = cv2.matchTemplate(scene, tpl, cv2.TM_CCOEFF_NORMED)
+        h, w = tpl.shape[:2]
+        best = float(res.max())
+        matches: list[dict] = []
+        if best >= threshold:
+            # 高于阈值的全部峰，按模板尺寸做非极大值抑制
+            suppressed: set[tuple[int, int]] = set()
+            peaks = sorted(zip(*np.where(res >= threshold)),
+                           key=lambda p: -res[p[0], p[1]])
+            for y, x in peaks:
+                if (y, x) in suppressed:
+                    continue
+                for dy in range(max(0, y - h), min(res.shape[0], y + h + 1)):
+                    for dx in range(max(0, x - w), min(res.shape[1], x + w + 1)):
+                        suppressed.add((dy, dx))
+                matches.append({"x": int(x + w // 2), "y": int(y + h // 2),
+                                "confidence": float(res[y, x])})
+        return {"found": bool(matches), "best_confidence": best,
+                "matches": matches[:20]}
+
+    def get_clickable_map(self, window) -> dict:
+        """SoM 标注（§12.6）：可交互非零面积元素按阅读顺序编号入图，
+        对照表连同窗口句柄存入缓存（60 秒有效）。"""
+        hwnd = self._resolve_window(window)
+        root = self._element_root(hwnd)
+        wl, wt, wr, wb = self._probe.rect_of(hwnd)
+        interactable: list[tuple[Any, tuple[int, int, int, int]]] = []
+        for node in self._iter_controls(root):
+            if not bool(getattr(node, "IsEnabled", True)):
+                continue
+            rect = self._node_rect(node)
+            if rect is None or rect[2] - rect[0] <= 0 or rect[3] - rect[1] <= 0:
+                continue
+            interactable.append((node, rect))
+        interactable.sort(key=lambda p: (p[1][1], p[1][0]))
+        img = self._capture({"left": wl, "top": wt,
+                             "width": wr - wl, "height": wb - wt})
+        draw = ImageDraw.Draw(img)
+        entries: list[dict] = []
+        now = self._clock()
+        for i, (node, rect) in enumerate(interactable, start=1):
+            l, t, r, b = rect
+            rel = [l - wl, t - wt, r - wl, b - wt]
+            draw.rectangle(rel, outline=(255, 60, 60), width=3)
+            draw.text((rel[0] + 2, max(0, rel[1] - 16)), str(i), fill=(255, 0, 0))
+            entries.append({"id": i, "name": node.Name,
+                            "control_type": node.ControlTypeName,
+                            "automation_id": node.AutomationId,
+                            "rect": [l, t, r, b]})
+            self._som_cache[i] = {"hwnd": hwnd, "name": node.Name,
+                                  "automation_id": node.AutomationId,
+                                  "expires": now + 60.0}
+        out = self._shots_dir / time.strftime("%Y%m%d")
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{time.strftime('%H%M%S')}_som_{int(time.time()*1000)%100000}.png"
+        img.save(path)
+        return {"path": str(path), "count": len(entries), "entries": entries}
+
     def wait_for_window(self, target: str, timeout: float | None = None) -> dict:
         limit = min(timeout or 10.0, self._wait_max)
         deadline = self._clock() + limit
@@ -147,11 +239,208 @@ class Executor:
             except OSError as e:
                 raise ExecutorError(INTERNAL_ERROR, f"启动失败: {e}") from e
             return {"status": "ok", "pid": proc.pid}
+        if tool == "click_element":
+            return self._click_element(params, hwnd)
+        if tool == "type_element":
+            return self._type_element(params, hwnd)
+        if tool == "wait_for_element":
+            return self._wait_for_element(params, hwnd)
         raise ExecutorError(INTERNAL_ERROR, f"工具 {tool} 的执行驱动未接线")
+
+    # ---------- M2 元素级驱动（详细设计 §9.2 uia 子模块 / §14.7） ----------
+
+    def _element_root(self, hwnd: int):
+        """绑定窗口的 UIA 根控件；窗口消失 → WINDOW_GONE。"""
+        if self._element_source is not None:
+            root = self._element_source(hwnd)
+        else:
+            root = uiautomation.ControlFromHandle(hwnd)
+        if root is None:
+            raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
+        return root
+
+    def _find_elements(self, root, *, name=None, automation_id=None) -> list:
+        """按名称/自动化标识在绑定窗口树内查找（§14.7 定位条件）。
+
+        WinUI 树存在幽灵重复（同名同型同矩形可见/离屏两份）——按
+        名称+自动化标识+矩形三元组去重，视为同一元素。
+        """
+        matches = []
+        seen: set[tuple] = set()
+        for node in self._iter_controls(root):
+            if name is not None and automation_id is not None:
+                hit = node.Name == name and node.AutomationId == automation_id
+            elif name is not None:
+                hit = node.Name == name
+            elif automation_id is not None:
+                hit = node.AutomationId == automation_id
+            else:
+                hit = False
+            if not hit:
+                continue
+            rect = self._node_rect(node)
+            key = (node.Name, node.AutomationId,
+                   rect if rect is not None else ())
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append(node)
+        return matches
+
+    def _resolve_unique_element(self, root, *, name=None, automation_id=None):
+        """唯一性解析：不存在 / 多匹配 / 禁用逐级显式报错（§14.7 流程）。"""
+        matches = self._find_elements(root, name=name, automation_id=automation_id)
+        if not matches:
+            raise ExecutorError(
+                ELEMENT_NOT_FOUND,
+                f"元素不存在（条件 name={name!r}, automation_id={automation_id!r}）。"
+                f"候选元素: {self._candidate_names(root)}")
+        if len(matches) > 1:
+            raise ExecutorError(
+                ELEMENT_AMBIGUOUS,
+                f"元素不唯一（{len(matches)} 个匹配）: "
+                f"{', '.join(m.Name for m in matches)}。请缩小定位条件")
+        element = matches[0]
+        if not bool(getattr(element, "IsEnabled", True)):
+            raise ExecutorError(ELEMENT_DISABLED,
+                                f"元素 {element.Name or automation_id} 处于禁用态")
+        return element
+
+    def _candidate_names(self, root) -> str:
+        names: list[str] = []
+        for node in self._iter_controls(root):
+            if node.Name and node.Name not in names:
+                names.append(node.Name)
+            if len(names) >= 10:
+                break
+        return ", ".join(names) or "(无可交互元素)"
+
+    def _element_summary(self, element) -> dict:
+        return {"name": element.Name, "control_type": element.ControlTypeName,
+                "automation_id": element.AutomationId}
+
+    def _capture(self, region: dict) -> Image.Image:
+        """区域截图（shot_fn 为测试接缝；默认 mss 实拍）。"""
+        if self._shot_fn is not None:
+            return self._shot_fn(region)
+        with mss.mss() as sct:
+            shot = sct.grab(region)
+        return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+
+    @staticmethod
+    def _region_dict(rect) -> dict:
+        return {"left": int(rect[0]), "top": int(rect[1]),
+                "width": int(rect[2]), "height": int(rect[3])}
+
+    @staticmethod
+    def _node_rect(node):
+        """元素矩形：兼容属性形态与下标形态（uiautomation 与替身）。"""
+        try:
+            rect = node.BoundingRectangle
+        except Exception:
+            return None
+        if rect is None:
+            return None
+        try:
+            l, t, r, b = rect.left, rect.top, rect.right, rect.bottom
+        except AttributeError:
+            try:
+                l, t, r, b = rect[0], rect[1], rect[2], rect[3]
+            except Exception:
+                return None
+        return int(l), int(t), int(r), int(b)
+
+    def _click_element(self, params: dict, hwnd: int) -> dict:
+        som_id = params.get("som_id")
+        if som_id is not None:
+            entry = self._som_cache.get(int(som_id))
+            if (entry is None or entry["hwnd"] != hwnd
+                    or self._clock() > entry["expires"]):
+                raise ExecutorError(
+                    ELEMENT_NOT_FOUND,
+                    "SoM 编号已失效或不属于当前绑定窗口，"
+                    "请重新调用 get_clickable_map 取图")
+            root = self._element_root(hwnd)
+            element = self._resolve_unique_element(
+                root, name=entry["name"] or None,
+                automation_id=entry["automation_id"] or None)
+        else:
+            root = self._element_root(hwnd)
+            element = self._resolve_unique_element(
+                root, name=params.get("name"),
+                automation_id=params.get("automation_id"))
+        self._invoke_element(element, hwnd)
+        return {"status": "ok", "element": self._element_summary(element)}
+
+    def _invoke_element(self, element, hwnd: int | None = None) -> None:
+        """元素激活：Invoke 优先，SelectionItem 选择模式次之，像素点击兜底。
+        像素兜底前必须成功前置绑定窗口（fail-closed 防误射）。"""
+        try:
+            element.Invoke()
+            return
+        except Exception:
+            pass
+        try:
+            element.GetSelectionItemPattern().Select()
+            return
+        except Exception:
+            pass
+        rect = self._node_rect(element)
+        if rect is None:
+            raise ExecutorError(INTERNAL_ERROR,
+                                "元素无 Invoke 与选择模式，且无矩形可定位，无法点击")
+        if hwnd is not None and not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，元素点击中止（防误射）")
+        self._pixel_click((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+
+    def _pixel_click(self, x: int, y: int) -> None:
+        try:
+            pyautogui.click(x, y)
+        except pyautogui.FailSafeException as e:
+            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+
+    def _type_element(self, params: dict, hwnd: int) -> dict:
+        root = self._element_root(hwnd)
+        element = self._resolve_unique_element(
+            root, name=params.get("name"), automation_id=params.get("automation_id"))
+        try:
+            pattern = element.GetValuePattern()
+        except Exception:
+            pattern = None
+        if pattern is None:
+            # uiautomation 对不支持 ValuePattern 的控件返回 None（不抛异常）
+            raise ExecutorError(
+                ELEMENT_UNSUPPORTED,
+                f"元素 {element.Name} 不支持设值（无 ValuePattern），"
+                f"请改用 type_text 走键盘路径输入")
+        try:
+            pattern.SetValue(params["text"])
+        except Exception as e:
+            raise ExecutorError(INTERNAL_ERROR, f"SetValue 失败: {e}") from e
+        return {"status": "ok", "element": self._element_summary(element)}
+
+    def _wait_for_element(self, params: dict, hwnd: int) -> dict:
+        limit = min(params.get("timeout") or 10.0, self._wait_max)
+        deadline = self._clock() + limit
+        cond = params.get("name"), params.get("automation_id")
+        while True:
+            root = self._element_root(hwnd)
+            matches = self._find_elements(root, name=cond[0], automation_id=cond[1])
+            if matches:
+                element = matches[0]
+                return {"status": "ok", "elapsed": round(limit - (deadline - self._clock()), 3),
+                        "element": self._element_summary(element)}
+            if self._clock() >= deadline:
+                raise ExecutorError(
+                    TIMEOUT,
+                    f"等待超时：未发现元素（name={cond[0]!r}, "
+                    f"automation_id={cond[1]!r}）")
+            time.sleep(self._poll)
 
     def _click(self, x: int, y: int, hwnd: int) -> dict:
         self._check_point(hwnd, x, y)
-        self._activate_if_needed(hwnd)
+        if not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         try:
             pyautogui.click(x, y)
         except pyautogui.FailSafeException as e:
@@ -161,7 +450,8 @@ class Executor:
     def _drag(self, start, end, hwnd: int) -> dict:
         self._check_point(hwnd, *start)
         self._check_point(hwnd, *end)
-        self._activate_if_needed(hwnd)
+        if not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         try:
             pyautogui.moveTo(*start)
             pyautogui.mouseDown()
@@ -180,14 +470,16 @@ class Executor:
     def _scroll(self, direction: str, amount: int, hwnd: int) -> dict:
         rect = self._probe.rect_of(hwnd)
         cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
-        self._activate_if_needed(hwnd)
+        if not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         pyautogui.scroll(-amount if direction == "down" else amount, x=cx, y=cy)
         return {"status": "ok"}
 
     def _key(self, raw_key: str, hwnd: int) -> dict:
         norm = normalize_key(raw_key)
         parts = [_pyauto_key_alias.get(p, p) for p in norm.split("+")]
-        self._activate_if_needed(hwnd)
+        if not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         try:
             if len(parts) == 1:
                 pyautogui.press(parts[0])
@@ -199,7 +491,8 @@ class Executor:
 
     def _type_text(self, text: str, hwnd: int) -> dict:
         """ASCII 逐键模拟；非 ASCII 走剪贴板桥（INV-5：全程无预清空动作）。"""
-        self._activate_if_needed(hwnd)
+        if not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         if all(ord(c) < 128 for c in text):
             pyautogui.write(text, interval=0.01)
             return {"status": "ok", "mode": "keyboard"}
@@ -238,10 +531,14 @@ class Executor:
 
     # ---------- 内部 ----------
 
-    def _activate_if_needed(self, hwnd: int) -> None:
-        """仅当目标窗口不在前台时才前置——避免重激活导致弹出的菜单/画廊被销毁。"""
-        if hwnd is not None and not self._probe.is_foreground(hwnd):
-            self._probe.activate(hwnd)
+    def _activate_if_needed(self, hwnd: int) -> bool:
+        """仅当目标窗口不在前台时才前置——避免重激活导致弹出的菜单/画廊被销毁。
+        返回是否已处前台（fail-closed：写路径调用方必须检查）。"""
+        if hwnd is None:
+            return True
+        if self._probe.is_foreground(hwnd):
+            return True
+        return bool(self._probe.activate(hwnd))
 
     def _check_point(self, hwnd: int, x: int, y: int) -> None:
         rect = self._probe.rect_of(hwnd)   # 执行时刻矩形
@@ -337,7 +634,7 @@ class Executor:
         except Exception:
             return None
 
-    def _iter_controls(self, control, depth: int):
+    def _iter_controls(self, control, depth: int = 0):
         if control is None or depth > 8:
             return
         yield control

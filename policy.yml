@@ -7,6 +7,7 @@ whitelist:
   - { process: explorer.exe, max_level: L2 }
   - { process: mspaint.exe, max_level: L2 }
   - { process: ApplicationFrameHost.exe, max_level: L2 }
+  - { process: powerpnt.exe, max_level: L2 }
 
 terminal_apps:
   - cmd.exe
@@ -19,6 +20,8 @@ keys:
   l2_allow:
     - enter
     - tab
+    - shift              # IME 输入法切换（单独按下无副作用）
+    - space              # IME 候选提交
     - backspace          # 场景受限键（见 input_scenario_keys）
     - home
     - end
@@ -46,6 +49,7 @@ keys:
     - ctrl+z
     - ctrl+y
     - ctrl+s
+    - ctrl+m              # PowerPoint 新建幻灯片
     - ctrl+home
     - ctrl+end
     - ctrl+shift+n       # 资源管理器新建文件夹

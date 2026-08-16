@@ -66,6 +66,17 @@ class ApprovalManager:
         """经审批通道请求批准；批准则签发令牌（绑定指纹、时效 ttl）并返回。"""
         if not self._channel.request(description, fingerprint):
             return None
+        return self.issue_token(fingerprint)
+
+    def set_channel(self, channel: ApprovalChannel) -> None:
+        """替换审批通道（main 装配 M3 弹窗通道用）。"""
+        self._channel = channel
+
+    def issue_token(self, fingerprint: str) -> ApprovalToken:
+        """签发审批令牌（M3 异步弹窗通道的人类批准回调路径）。
+
+        令牌不经 AI：签发权只经本地审批通道触达本方法。
+        """
         now = self._clock()
         token = ApprovalToken(
             token_id=secrets.token_urlsafe(24),

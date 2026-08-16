@@ -6,10 +6,18 @@
 
 from __future__ import annotations
 
+import ctypes
 import sys
 import threading
 import time
 from pathlib import Path
+
+# DPI 感知必须在任何窗口/坐标 API 使用前声明（实盘教训：
+# 150% 缩放主机上 UIA 物理像素与键鼠虚拟坐标错位，画笔落点全偏）。
+try:
+    ctypes.windll.user32.SetProcessDPIAware()
+except Exception:
+    pass
 
 from .approval import ApprovalManager, DenyAllChannel
 from .audit import AuditLogger
@@ -95,8 +103,21 @@ def main() -> int:
     probe = DesktopProbe()
     bindings = BindingManager(probe, policy.binding_ttl, time.monotonic)
     approvals = ApprovalManager(DenyAllChannel(), policy.approval_ttl, time.monotonic)
+    try:
+        from .approval_ui import TkApprovalChannel
+        approvals.set_channel(TkApprovalChannel(on_approved=approvals.issue_token))
+    except Exception as e:
+        print(f"审批弹窗通道不可用（L3 将恒拒绝）: {e}", file=sys.stderr)
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
                         policy.wait_timeout_max)
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        _rapid = RapidOCR()
+        executor._ocr_engine = lambda img: [
+            {"text": line[1], "position": [int(v) for v in line[0]]}
+            for line in (_rapid(img)[0] or [])]
+    except Exception as e:
+        print(f"OCR 引擎不可用（ocr 工具将显式报错）: {e}", file=sys.stderr)
     enforcement = Enforcement(policy, bindings, approvals, estop, executor, audit)
     ctx = ToolContext(policy=policy, enforcement=enforcement, bindings=bindings,
                       executor=executor, audit=audit)

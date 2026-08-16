@@ -310,3 +310,21 @@ class TestAttachGate:
         d = enforcement.submit(_req("attach", {"process": "cmd.exe"}))
         assert d.reason_code == errors.NEEDS_APPROVAL
         assert d.effective_level == "L3"
+
+
+class TestLaunchPathNormalization:
+    """launch_app 按完整路径启动时，白名单按进程基名归一匹配。"""
+
+    def test_full_path_launch_allowed(self, enforcement, executor):
+        d = enforcement.submit(OperationRequest(
+            tool="launch_app",
+            params={"app": "C:/Windows/System32/notepad.exe"},
+            binding_token=None))
+        assert d.allowed is True
+        assert executor.instructions[0]["params"]["app"].endswith("notepad.exe")
+
+    def test_bare_name_still_allowed(self, enforcement):
+        d = enforcement.submit(OperationRequest(
+            tool="launch_app", params={"app": "notepad.exe"},
+            binding_token=None))
+        assert d.allowed is True
