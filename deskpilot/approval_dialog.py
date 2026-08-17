@@ -1,8 +1,13 @@
 """审批弹窗独立进程（M3，功能设计说明书 §6.1）。
 
 以独立进程运行：右下角 toast 形态（无边框、置顶、滑入动画），
-展示操作描述与倒计时；按钮「批准一次」/「拒绝」；倒计时结束默认拒绝（fail-closed）。
+展示操作描述与倒计时；倒计时结束默认拒绝（fail-closed）。
 人类决定写入结果文件，由 TkApprovalChannel 轮询消费。
+
+视觉规范（Fluent ContentDialog / Material AlertDialog 业界实践）：
+- 左侧警示色条 + 加粗标题 + 次级说明文字，层级分明
+- 按钮右对齐、间距 12px：安全项「拒绝」在左且为默认焦点，
+  后果项「批准一次」在右（绿色填充）——Esc = 拒绝，方向键/Tab 可切换
 """
 
 from __future__ import annotations
@@ -11,11 +16,21 @@ import sys
 import tkinter as tk
 from pathlib import Path
 
-_WIDTH, _HEIGHT = 440, 210
+_WIDTH, _HEIGHT = 480, 216
 _MARGIN = 16          # 距屏幕右/下边缘
 _TASKBAR = 48         # 任务栏预留
 _SLIDE_STEPS = 10     # 滑入动画步数
 _SLIDE_MS = 12        # 每步毫秒
+
+_BG = "#FFFFFF"
+_BORDER = "#D0D0D0"
+_ACCENT = "#C50F1F"   # 警示红
+_TITLE_FG = "#1F1F1F"
+_DESC_FG = "#424242"
+_TIMER_FG = "#8A8A8A"
+_APPROVE_BG, _APPROVE_HOVER = "#107C10", "#0B5A0B"      # 批准：绿
+_DENY_BG, _DENY_HOVER = "#F0F0F0", "#DDDDDD"            # 拒绝：中性灰
+_BTN_WIDTH, _BTN_GAP = 12, 12                         # 字符宽 / 像素距
 
 
 def _toast_placement(screen_w: int, screen_h: int,
@@ -24,6 +39,11 @@ def _toast_placement(screen_w: int, screen_h: int,
     x = max(0, screen_w - width - _MARGIN)
     y_final = max(0, screen_h - height - _TASKBAR - _MARGIN)
     return x, screen_h, y_final
+
+
+def _hover(btn: tk.Button, base: str, hover: str) -> None:
+    btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
+    btn.bind("<Leave>", lambda e: btn.configure(bg=base))
 
 
 def main() -> None:
@@ -39,30 +59,36 @@ def main() -> None:
     root.title("DeskPilot 审批")
     root.overrideredirect(True)                  # 无边框 toast
     root.attributes("-topmost", True)
-    root.configure(bg="#FFFFFF")
+    root.configure(bg=_BG)
 
     x, y_start, y_final = _toast_placement(
         root.winfo_screenwidth(), root.winfo_screenheight())
     root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y_start}")
 
-    card = tk.Frame(root, bg="#FFFFFF", highlightthickness=1,
-                    highlightbackground="#D4D4D4")
+    card = tk.Frame(root, bg=_BG, highlightthickness=1,
+                    highlightbackground=_BORDER)
     card.pack(fill="both", expand=True)
-    tk.Frame(card, bg="#C50F1F", height=4).pack(fill="x")      # 警示色条
+    tk.Frame(card, bg=_ACCENT, width=4).pack(side="left", fill="y")   # 警示色条
 
-    tk.Label(card, text="⚠ DeskPilot 审批", bg="#FFFFFF", fg="#1F1F1F",
-             font=("Microsoft YaHei", 11, "bold"), anchor="w").pack(
-        padx=20, pady=(12, 2), fill="x")
-    tk.Label(card, text=description, bg="#FFFFFF", fg="#333333",
-             wraplength=_WIDTH - 44, justify="left",
-             font=("Microsoft YaHei", 10), anchor="w").pack(
-        padx=20, pady=4, fill="x")
+    body = tk.Frame(card, bg=_BG)
+    body.pack(side="left", fill="both", expand=True, padx=20, pady=(16, 14))
+
+    header = tk.Frame(body, bg=_BG)
+    header.pack(fill="x")
+    tk.Label(header, text="⚠", bg=_BG, fg=_ACCENT,
+             font=("Microsoft YaHei", 13, "bold")).pack(side="left")
+    tk.Label(header, text="DeskPilot 审批", bg=_BG, fg=_TITLE_FG,
+             font=("Microsoft YaHei", 11, "bold")).pack(side="left", padx=(8, 0))
+
+    tk.Label(body, text=description, bg=_BG, fg=_DESC_FG,
+             wraplength=_WIDTH - 64, justify="left",
+             font=("Microsoft YaHei", 10), anchor="w").pack(fill="x", pady=(8, 0))
 
     remaining = [timeout_s]
-    timer_label = tk.Label(card, text=f"{remaining[0]} 秒后默认拒绝",
-                           bg="#FFFFFF", fg="#8A8A8A",
+    timer_label = tk.Label(body, text=f"{remaining[0]} 秒后默认拒绝",
+                           bg=_BG, fg=_TIMER_FG,
                            font=("Microsoft YaHei", 9), anchor="w")
-    timer_label.pack(padx=20, fill="x")
+    timer_label.pack(fill="x", pady=(6, 0))
 
     decided = [False]
 
@@ -76,26 +102,25 @@ def main() -> None:
             pass
         root.destroy()
 
-    def _flat(btn: tk.Button, base: str, hover: str) -> None:
-        btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
-        btn.bind("<Leave>", lambda e: btn.configure(bg=base))
-
-    bar = tk.Frame(card, bg="#FFFFFF")
-    bar.pack(pady=(10, 14))
-    approve = tk.Button(bar, text="批准一次", width=12, relief="flat",
-                        bg="#107C10", fg="#FFFFFF",
-                        activebackground="#0B5A0B", activeforeground="#FFFFFF",
-                        font=("Microsoft YaHei", 10),
+    # 按钮行右对齐：安全项在左（默认焦点），后果项在右
+    bar = tk.Frame(body, bg=_BG)
+    bar.pack(fill="x", pady=(14, 0))
+    approve = tk.Button(bar, text="批准一次", width=_BTN_WIDTH, relief="flat",
+                        bg=_APPROVE_BG, fg="#FFFFFF",
+                        activebackground=_APPROVE_HOVER, activeforeground="#FFFFFF",
+                        font=("Microsoft YaHei", 10), cursor="hand2",
                         command=lambda: decide("approve"))
-    approve.pack(side="left", padx=6)
-    _flat(approve, "#107C10", "#0B5A0B")
-    deny = tk.Button(bar, text="拒绝", width=12, relief="flat",
-                     bg="#E1E1E1", fg="#1F1F1F",
-                     activebackground="#C7C7C7", activeforeground="#1F1F1F",
-                     font=("Microsoft YaHei", 10),
+    approve.pack(side="right")
+    _hover(approve, _APPROVE_BG, _APPROVE_HOVER)
+    deny = tk.Button(bar, text="拒绝", width=_BTN_WIDTH, relief="flat",
+                     bg=_DENY_BG, fg=_TITLE_FG,
+                     activebackground=_DENY_HOVER, activeforeground=_TITLE_FG,
+                     font=("Microsoft YaHei", 10), cursor="hand2",
                      command=lambda: decide("deny"))
-    deny.pack(side="left", padx=6)
-    _flat(deny, "#E1E1E1", "#C7C7C7")
+    deny.pack(side="right", padx=(0, _BTN_GAP))
+    _hover(deny, _DENY_BG, _DENY_HOVER)
+    deny.focus_set()                             # 默认焦点在安全项
+    root.bind("<Escape>", lambda e: decide("deny"))
 
     def tick() -> None:
         remaining[0] -= 1

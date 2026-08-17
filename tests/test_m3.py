@@ -362,6 +362,14 @@ class TestToastPlacement:
         assert y_final == 1440 - 210 - 48 - 16      # 任务栏 + 边距
         assert y_start == 1440                       # 滑入起点：屏外底部
 
+    def test_default_size_bottom_right(self):
+        """默认 480×216 尺寸的落位（Fluent toast 规格）。"""
+        from deskpilot.approval_dialog import _toast_placement
+        x, y_start, y_final = _toast_placement(2560, 1440)
+        assert x == 2560 - 480 - 16
+        assert y_final == 1440 - 216 - 48 - 16
+        assert y_start == 1440
+
     def test_small_screen_clamps_nonnegative(self):
         from deskpilot.approval_dialog import _toast_placement
         x, _, y_final = _toast_placement(300, 200, 440, 210)
