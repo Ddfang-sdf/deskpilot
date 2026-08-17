@@ -351,6 +351,44 @@ class TestSpawnDialogFrozen:
             cwd=str(root))
         assert result.read_text(encoding="utf-8") == "timeout"
 
+    def test_entry_dialog_with_image(self, tmp_path):
+        """弹窗携带目标窗口截图参数正常渲染（黑盒：含图像不崩溃）。"""
+        import subprocess
+        img = tmp_path / "target.png"
+        Image.new("RGB", (800, 400), "#336699").save(img)
+        desc = tmp_path / "d.desc"
+        desc.write_text("关闭窗口「无标题 - 画图」\n---\n"
+                        "按键 alt+f4 · 进程 mspaint.exe · 句柄 1",
+                        encoding="utf-8")
+        result = tmp_path / "d.result"
+        root = Path(__file__).resolve().parent.parent
+        subprocess.run(
+            [sys.executable, str(root / "run_deskpilot.py"),
+             "--approval-dialog", str(desc), str(result), "1", str(img)],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
+            cwd=str(root))
+        assert result.read_text(encoding="utf-8") == "timeout"
+
+    def test_request_forwards_image_path(self, tmp_path):
+        """审批通道把目标窗口截图路径作为末位参数传给弹窗进程。"""
+        captured = {}
+        ch = TkApprovalChannel(
+            on_approved=lambda fp: None,
+            popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
+            result_root=str(tmp_path))
+        ch.request("危险键", "fp-img", image_path="C:/shots/x.png")
+        assert captured["cmd"][-1] == "C:/shots/x.png"
+
+    def test_request_without_image_passes_empty(self, tmp_path):
+        """无截图时末位参数为空串（弹窗端据此跳过图像区）。"""
+        captured = {}
+        ch = TkApprovalChannel(
+            on_approved=lambda fp: None,
+            popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
+            result_root=str(tmp_path))
+        ch.request("危险键", "fp-noimg")
+        assert captured["cmd"][-1] == ""
+
 
 # ---------- 审批弹窗落位（右下角 toast，滑入起点屏外） ----------
 

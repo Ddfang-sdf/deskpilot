@@ -75,8 +75,11 @@ class FakeApprover:
         self.decision = False          # 是否批准
         self.requests: list[dict] = []  # 送达通道的审批请求
 
-    def request(self, description: str, fingerprint: str) -> bool:
-        self.requests.append({"description": description, "fingerprint": fingerprint})
+    def request(self, description: str, fingerprint: str,
+                image_path: str | None = None) -> bool:
+        self.requests.append({"description": description,
+                              "fingerprint": fingerprint,
+                              "image_path": image_path})
         return self.decision
 
 
@@ -89,6 +92,10 @@ class FakeExecutor:
         self.error: ExecutorError | None = None
         self.result = {"status": "ok", "before_shot": "shots/b.png",
                        "after_shot": "shots/a.png"}
+        self.live_windows: list[dict] = []          # find_windows 数据源
+        self.approval_shot_path = "shots/approval_fake.png"
+        self.approval_shot_rects: list[tuple] = []   # 审批截图收到的窗口矩形
+        self.approval_shot_error = False
 
     def execute(self, instruction: dict) -> dict:
         if self.error is not None:
@@ -98,6 +105,17 @@ class FakeExecutor:
 
     def focused_control_type(self) -> str | None:
         return self.focus_type
+
+    def find_windows(self, title=None, process=None, hwnd=None) -> list[dict]:
+        if hwnd is None:
+            return list(self.live_windows)
+        return [w for w in self.live_windows if w.get("hwnd") == hwnd]
+
+    def capture_approval_shot(self, rect) -> str:
+        if self.approval_shot_error:
+            raise ExecutorError("INTERNAL_ERROR", "shot fail")
+        self.approval_shot_rects.append(tuple(rect))
+        return self.approval_shot_path
 
 
 def make_policy(audit_dir: str = "", **overrides) -> models.Policy:

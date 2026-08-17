@@ -50,10 +50,24 @@ def main() -> None:
     desc_path = Path(sys.argv[1])
     result_path = Path(sys.argv[2])
     timeout_s = int(sys.argv[3]) if len(sys.argv) > 3 else 60
+    image_path = sys.argv[4] if len(sys.argv) > 4 else ""
     try:
         description = desc_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         description = "(审批描述读取失败)"
+    headline, _, detail = description.partition("\n---\n")
+
+    # 目标窗口实拍缩略图（可选）：最大化“这是哪个窗口”的可识别性
+    photo = None
+    img_h = 0
+    if image_path:
+        try:
+            from PIL import Image, ImageTk
+            im = Image.open(image_path)
+            im.thumbnail((_WIDTH - 72, 150))
+            img_h = im.height
+        except Exception:
+            im = None
 
     root = tk.Tk()
     root.title("DeskPilot 审批")
@@ -61,9 +75,10 @@ def main() -> None:
     root.attributes("-topmost", True)
     root.configure(bg=_BG)
 
+    height = _HEIGHT + (img_h + 8 if image_path and im is not None else 0)
     x, y_start, y_final = _toast_placement(
-        root.winfo_screenwidth(), root.winfo_screenheight())
-    root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y_start}")
+        root.winfo_screenwidth(), root.winfo_screenheight(), _WIDTH, height)
+    root.geometry(f"{_WIDTH}x{height}+{x}+{y_start}")
 
     card = tk.Frame(root, bg=_BG, highlightthickness=1,
                     highlightbackground=_BORDER)
@@ -80,9 +95,21 @@ def main() -> None:
     tk.Label(header, text="DeskPilot 审批", bg=_BG, fg=_TITLE_FG,
              font=("Microsoft YaHei", 11, "bold")).pack(side="left", padx=(8, 0))
 
-    tk.Label(body, text=description, bg=_BG, fg=_DESC_FG,
+    tk.Label(body, text=headline, bg=_BG, fg=_TITLE_FG,
              wraplength=_WIDTH - 64, justify="left",
-             font=("Microsoft YaHei", 10), anchor="w").pack(fill="x", pady=(8, 0))
+             font=("Microsoft YaHei", 11, "bold"), anchor="w").pack(
+        fill="x", pady=(8, 0))
+
+    if image_path and im is not None:
+        photo = ImageTk.PhotoImage(im)
+        tk.Label(body, image=photo, bg=_BG, bd=1, relief="solid").pack(
+            fill="x", pady=(8, 0))
+
+    if detail:
+        tk.Label(body, text=detail, bg=_BG, fg=_TIMER_FG,
+                 wraplength=_WIDTH - 64, justify="left",
+                 font=("Microsoft YaHei", 8), anchor="w").pack(fill="x",
+                                                                pady=(6, 0))
 
     remaining = [timeout_s]
     timer_label = tk.Label(body, text=f"{remaining[0]} 秒后默认拒绝",

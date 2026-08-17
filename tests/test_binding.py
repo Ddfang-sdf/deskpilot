@@ -23,6 +23,16 @@ class TestCreateValidate:
         assert got is not None
         assert got.token == rec.token
 
+    def test_create_stores_window_title(self, bindings):
+        """绑定快照保存窗口标题，供审批描述的人话层兜底使用。"""
+        rec = bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT,
+                              window_title="无标题 - 记事本")
+        assert rec.window_title == "无标题 - 记事本"
+
+    def test_create_default_title_empty(self, bindings):
+        rec = bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT)
+        assert rec.window_title == ""
+
     def test_forged_token_rejected(self, bindings):
         """TC-S-BIND-02：伪造令牌校验返回 None。"""
         bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT)

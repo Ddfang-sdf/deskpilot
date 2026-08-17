@@ -79,6 +79,75 @@ class TestGate3Keys:
         assert len(approver.requests) == 1           # 已向审批通道发起请求
         assert "alt+f4" in approver.requests[0]["description"]
 
+
+class TestDescribePlainLanguage:
+    """审批描述的人话层：标题行动作翻译 + 窗口标题，技术行置底保留。"""
+
+    def test_altf4_with_window_title(self, enforcement, bindings):
+        """alt+f4 → 「关闭窗口『标题』」；技术行保留按键/进程/句柄。"""
+        rec = bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT,
+                              window_title="无标题 - 记事本")
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, rec.token))
+        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert "关闭窗口" in d.message
+        assert "「无标题 - 记事本」" in d.message
+        assert "alt+f4" in d.message                 # 技术行保留
+        assert "notepad.exe" in d.message
+        assert f"句柄 {FIXTURE_HWND}" in d.message
+
+    def test_live_title_overrides_stale_binding(self, enforcement, bindings, executor):
+        """窗口标题以审批时刻的活值为准（绑定快照可能已过期）。"""
+        rec = bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT,
+                              window_title="旧标题")
+        executor.live_windows = [{"hwnd": FIXTURE_HWND,
+                                  "title": "settings.json - Notepad"}]
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, rec.token))
+        assert "settings.json - Notepad" in d.message
+        assert "旧标题" not in d.message
+
+    def test_key_without_title_falls_back_to_process(self, enforcement, bindings):
+        rec = bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT)
+        d = enforcement.submit(_req("key", {"key": "delete"}, rec.token))
+        assert "Delete" in d.message
+        assert "notepad.exe" in d.message
+
+    def test_launch_app_plain_action(self, enforcement):
+        """非白名单 launch_app 升 L3：人话为「启动应用 xxx」。"""
+        d = enforcement.submit(_req("launch_app", {"app": "evil.exe"}))
+        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert "启动应用 evil.exe" in d.message
+
+    def test_type_text_plain_action(self, enforcement, bound_record):
+        d = enforcement.submit(_req("key", {"key": "ctrl+shift+escape"},
+                                    bound_record.token))
+        assert "任务管理器" in d.message
+
+
+class TestApprovalTargetShot:
+    """闸四发起审批时实拍目标窗口，图像路径随审批请求传递。"""
+
+    def test_l3_request_captures_target_window(self, enforcement, bound_record,
+                                               approver, executor):
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
+        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert executor.approval_shot_rects == [FIXTURE_RECT]
+        assert approver.requests[0]["image_path"] == executor.approval_shot_path
+
+    def test_capture_failure_still_sends_request(self, enforcement, bound_record,
+                                                 approver, executor):
+        """截图失败（窗口最小化等）不得阻断审批流，image_path 置 None。"""
+        executor.approval_shot_error = True
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
+        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert approver.requests[0]["image_path"] is None
+
+    def test_no_binding_no_capture(self, enforcement, approver, executor):
+        """launch_app 等无绑定审批不截图（目标尚不存在）。"""
+        d = enforcement.submit(_req("launch_app", {"app": "evil.exe"}))
+        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert executor.approval_shot_rects == []
+        assert approver.requests[0]["image_path"] is None
+
     @pytest.mark.parametrize("danger", [
         "delete", "escape", "ctrl+w", "ctrl+shift+escape", "alt+f4",
         "alt+tab", "win+e",                          # 含 Alt / Win 组合按规则升 L3

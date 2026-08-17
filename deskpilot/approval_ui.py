@@ -38,7 +38,8 @@ class TkApprovalChannel:
         self._inflight: dict[str, float] = {}   # 指纹 -> 弹窗截止时间（在途去重）
         self.last_request: dict[str, str] | None = None   # 测试观测口
 
-    def request(self, description: str, fingerprint: str) -> bool:
+    def request(self, description: str, fingerprint: str,
+                image_path: str | None = None) -> bool:
         now = self._clock()
         # 清理已过期在途项；同指纹弹窗在途期间不重复弹窗（AI 重试不产生弹窗堆叠）
         self._inflight = {fp: dl for fp, dl in self._inflight.items() if dl > now}
@@ -55,7 +56,7 @@ class TkApprovalChannel:
                              "fingerprint": fingerprint,
                              "result_path": str(result_path)}
         self._inflight[fingerprint] = now + self._timeout
-        self._spawn_dialog(desc_path, result_path)
+        self._spawn_dialog(desc_path, result_path, image_path or "")
         threading.Thread(
             target=self._poll_result, args=(fingerprint, result_path),
             daemon=True).start()
@@ -63,7 +64,8 @@ class TkApprovalChannel:
 
     # ---- 内部 ----
 
-    def _spawn_dialog(self, desc_path: Path, result_path: Path) -> None:
+    def _spawn_dialog(self, desc_path: Path, result_path: Path,
+                      image_path: str = "") -> None:
         timeout = f"{self._timeout:.0f}"
         if getattr(sys, "frozen", False):
             # PyInstaller onefile：sys.executable 是 deskpilot.exe 自身，
@@ -71,11 +73,11 @@ class TkApprovalChannel:
             # 子进程须剥离 _MEIPASS2：否则与父进程共享 onefile 解压目录，
             # 父进程先退出会删除目录，子进程读取依赖文件中途崩溃。
             cmd = [sys.executable, "--approval-dialog",
-                   str(desc_path), str(result_path), timeout]
+                   str(desc_path), str(result_path), timeout, image_path]
             env = {k: v for k, v in os.environ.items() if k != "_MEIPASS2"}
         else:
             cmd = [sys.executable, "-m", "deskpilot.approval_dialog",
-                   str(desc_path), str(result_path), timeout]
+                   str(desc_path), str(result_path), timeout, image_path]
             env = None
         try:
             self._popen(cmd, env=env)

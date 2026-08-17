@@ -30,7 +30,8 @@ class BindingManager:
         self._records: dict[str, BindingRecord] = {}
 
     def create(self, hwnd: int, process_name: str,
-               window_rect: tuple[int, int, int, int]) -> BindingRecord:
+               window_rect: tuple[int, int, int, int],
+               window_title: str = "") -> BindingRecord:
         """创建绑定记录并返回（令牌为密码学强度随机串）。"""
         now = self._clock()
         record = BindingRecord(
@@ -40,6 +41,7 @@ class BindingManager:
             window_rect=tuple(window_rect),
             bound_at=now,
             last_active_at=now,
+            window_title=window_title,
         )
         self._records[record.token] = record
         return record

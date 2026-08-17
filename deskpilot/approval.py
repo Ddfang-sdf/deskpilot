@@ -41,15 +41,20 @@ def compute_fingerprint(tool: str, params: Mapping[str, Any]) -> str:
 class ApprovalChannel(Protocol):
     """本地审批通道（M3 弹窗 / 测试模拟审批器）。"""
 
-    def request(self, description: str, fingerprint: str) -> bool:
-        """向人类请求批准；返回是否批准。超时应由通道内部处理并返回 False。"""
+    def request(self, description: str, fingerprint: str,
+                image_path: str | None = None) -> bool:
+        """向人类请求批准；返回是否批准。超时应由通道内部处理并返回 False。
+
+        image_path：目标窗口实拍图（可选），供弹窗展示"操作的是哪个窗口"。
+        """
         ...
 
 
 class DenyAllChannel:
     """M1 生产通道：无弹窗，一切 L3 恒拒绝（详细设计 §7.11）。"""
 
-    def request(self, description: str, fingerprint: str) -> bool:
+    def request(self, description: str, fingerprint: str,
+                image_path: str | None = None) -> bool:
         return False
 
 
@@ -62,9 +67,10 @@ class ApprovalManager:
         self._clock = clock
         self._tokens: dict[str, ApprovalToken] = {}
 
-    def request_approval(self, description: str, fingerprint: str) -> ApprovalToken | None:
+    def request_approval(self, description: str, fingerprint: str,
+                         image_path: str | None = None) -> ApprovalToken | None:
         """经审批通道请求批准；批准则签发令牌（绑定指纹、时效 ttl）并返回。"""
-        if not self._channel.request(description, fingerprint):
+        if not self._channel.request(description, fingerprint, image_path=image_path):
             return None
         return self.issue_token(fingerprint)
 
