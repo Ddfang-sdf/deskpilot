@@ -18,20 +18,9 @@
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#badge)"/>
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#halo)"/>
 
-  <!-- 主字标 D(几何无衬线,前倾 7° 取动势) -->
-  <g transform="translate(20 0) skewX(-7)">
-    <path fill-rule="evenodd" fill="url(#glyph)" d="
-      M196 150 H262 C342 150 372 202 372 256 C372 310 342 362 262 362 H196 Z
-      M230 190 H262 C310 190 336 218 336 256 C336 294 310 322 262 322 H230 Z"/>
-  </g>
-
-  <!-- 飞行轨迹:越过字标肩头,向右上飞出 -->
-  <path d="M300 140 C 370 130 410 130 438 96" fill="none"
-        stroke="#F5B04C" stroke-width="9" stroke-linecap="round"/>
-  <circle cx="326" cy="138" r="4.5" fill="#F5B04C" opacity="0.55"/>
-  <circle cx="296" cy="142" r="3.5" fill="#F5B04C" opacity="0.3"/>
-  <!-- 飞镖箭头 -->
-  <g transform="translate(438 96) rotate(40)">
-    <polygon points="0,-15 10,10 0,4 -10,10" fill="#F5B04C"/>
-  </g>
+  <!-- DP 联缀:D 的实形 + 负形 P(共享竖笔) -->
+  <path fill-rule="evenodd" fill="url(#glyph)" d="
+    M122 132 H250 C348 132 390 192 390 256 C390 320 348 380 250 380 H122 Z
+    M216 196 H278 C322 196 340 218 340 242 C340 266 322 288 278 288 H256 V320 H216 Z
+    M256 230 H274 C296 230 302 236 302 242 C302 248 296 254 274 254 H256 Z"/>
 </svg>
