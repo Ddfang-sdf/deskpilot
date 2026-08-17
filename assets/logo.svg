@@ -1,26 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0C1424"/>
-      <stop offset="1" stop-color="#070C16"/>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
     </linearGradient>
-    <linearGradient id="glyph" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#67E8F9"/>
-      <stop offset="1" stop-color="#6366F1"/>
-    </linearGradient>
-    <radialGradient id="halo" cx="0.3" cy="0.25" r="0.9">
-      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.14"/>
-      <stop offset="0.6" stop-color="#38BDF8" stop-opacity="0"/>
-    </radialGradient>
   </defs>
 
-  <!-- 徽标底板 -->
-  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#badge)"/>
-  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#halo)"/>
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
 
-  <!-- DP 联缀:D 的实形 + 负形 P(共享竖笔) -->
-  <path fill-rule="evenodd" fill="url(#glyph)" d="
-    M122 132 H250 C348 132 390 192 390 256 C390 320 348 380 250 380 H122 Z
-    M216 196 H278 C322 196 340 218 340 242 C340 266 322 288 278 288 H256 V320 H216 Z
-    M256 230 H274 C296 230 302 236 302 242 C302 248 296 254 274 254 H256 Z"/>
+  <!-- Window frame with double guard rail -->
+  <rect x="96" y="96" width="320" height="320" rx="64" fill="none" stroke="url(#g)" stroke-width="16"/>
+  <rect x="120" y="120" width="272" height="272" rx="48" fill="none" stroke="url(#g)" stroke-width="6" opacity="0.5"/>
+
+  <!-- Title bar & control -->
+  <line x1="96" y1="168" x2="416" y2="168" stroke="url(#g)" stroke-width="8" opacity="0.6"/>
+  <circle cx="136" cy="132" r="12" fill="#22d3ee"/>
+
+  <!-- Letter D -->
+  <path d="M 160 208 L 160 336 M 160 208 Q 224 208 224 272 Q 224 336 160 336" fill="none" stroke="url(#g)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Letter P -->
+  <path d="M 288 208 L 288 336 M 288 208 L 336 208 Q 368 208 368 240 L 368 272 Q 368 304 336 304 L 288 304" fill="none" stroke="url(#g)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Safety rails -->
+  <line x1="152" y1="368" x2="360" y2="368" stroke="url(#g)" stroke-width="10" stroke-linecap="round" opacity="0.4"/>
+  <line x1="152" y1="392" x2="360" y2="392" stroke="url(#g)" stroke-width="10" stroke-linecap="round" opacity="0.25"/>
+  <line x1="152" y1="416" x2="360" y2="416" stroke="url(#g)" stroke-width="10" stroke-linecap="round" opacity="0.15"/>
 </svg>

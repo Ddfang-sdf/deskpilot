@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png?v=2" alt="DeskPilot" width="128">
+  <img src="assets/logo.png?v=3" alt="DeskPilot" width="128">
 </p>
 
 # DeskPilot
