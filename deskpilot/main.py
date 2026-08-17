@@ -123,6 +123,22 @@ def main() -> int:
                       executor=executor, audit=audit)
 
     audit.record_event("服务启动", "MCP stdio 就绪")
+    if "--daemon" in sys.argv:
+        # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
+        from .httpd import HttpDaemon
+        daemon = HttpDaemon(ctx)
+        daemon.start()
+        audit.record_event("服务启动",
+                           f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}")
+        print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
+              file=sys.stderr)
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            daemon.stop()
+            audit.record_event("服务停止", "常驻服务停止")
+            return 0
     serve(ctx)                                   # 阻塞于 stdio
     audit.record_event("服务停止", "stdio 关闭")
     return 0

@@ -44,6 +44,12 @@ def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> Too
     except InvalidParamsError as e:
         return ToolResult(ok=False, error_code=e.code, message=e.message)
 
+    if tool == "attach":
+        return attach(ctx, title=params.get("title"), hwnd=params.get("hwnd"),
+                      process=params.get("process"))
+    if tool == "detach":
+        return detach(ctx, token=params.get("token", ""))
+
     if tool in _L0_DIRECT or tool in _L1_DIRECT:
         return _run_sensing(ctx, tool, params)
 

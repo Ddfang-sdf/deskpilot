@@ -168,8 +168,12 @@ def _input_schema(schema: Mapping[str, Any]) -> dict:
             "required": list(schema["required"].keys())}
 
 
-def build_server(ctx):
-    """装配 MCP Server（list_tools / call_tool）。"""
+def build_server(ctx, backend: str = "local", daemon_url: str = ""):
+    """装配 MCP Server（list_tools / call_tool）。
+
+    backend="http" 时为瘦代理：工具调用转发常驻服务
+    （ISS-0001），本进程不再持有工具状态；本地直跑为兼容回退。
+    """
     import base64
     import json
     from pathlib import Path
@@ -178,6 +182,7 @@ def build_server(ctx):
     from mcp.server import Server
 
     from . import tools as tools_layer
+    from .httpd import remote_call
     from .models import TOOL_LEVELS
 
     server = Server("deskpilot")
@@ -196,6 +201,20 @@ def build_server(ctx):
     @server.call_tool()
     async def _call(name: str, arguments: dict | None):
         raw = arguments or {}
+        if backend == "http":
+            result_dict = remote_call(name, raw, daemon_url)
+            payload = json.dumps(result_dict, ensure_ascii=False, default=str)
+            contents: list = [types.TextContent(type="text", text=payload)]
+            data = result_dict.get("data") or {}
+            if name == "screenshot" and result_dict.get("ok") and data.get("path"):
+                try:
+                    b64 = base64.b64encode(
+                        Path(data["path"]).read_bytes()).decode()
+                    contents.append(types.ImageContent(type="image", data=b64,
+                                                       mimeType="image/png"))
+                except OSError:
+                    pass
+            return contents
         if name == "attach":
             result = tools_layer.attach(ctx, title=raw.get("title"),
                                         hwnd=raw.get("hwnd"),
@@ -222,13 +241,26 @@ def build_server(ctx):
     return server
 
 
-def serve(ctx) -> None:
-    """MCP stdio 服务循环：阻塞至 stdio 关闭。"""
+def serve(ctx, backend: str = "auto", daemon_url: str = "") -> None:
+    """MCP stdio 服务循环：阻塞至 stdio 关闭。
+
+    backend="auto"（默认）启动时探测常驻服务：在线则本进程为瘦代理，
+    不在线则本地直跑（兼容回退，ISS-0001）。"""
     import asyncio
+    import os
 
     from mcp.server.stdio import stdio_server
 
-    server = build_server(ctx)
+    from .httpd import DEFAULT_HOST, DEFAULT_PORT, probe_daemon
+
+    if backend == "auto":
+        if not daemon_url:
+            host = os.environ.get("DESKPILOT_DAEMON_HOST", DEFAULT_HOST)
+            port = int(os.environ.get("DESKPILOT_DAEMON_PORT", DEFAULT_PORT))
+            daemon_url = f"http://{host}:{port}"
+        backend = "http" if probe_daemon(host, port) else "local"
+
+    server = build_server(ctx, backend=backend, daemon_url=daemon_url)
 
     async def _run() -> None:
         async with stdio_server() as (read, write):
