@@ -14,3 +14,4 @@ check_*.png
 *.egg-info/
 deskpilot-approval-*
 l3_demo_batch.json
+release/*.zip

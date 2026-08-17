@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0C1424"/>
+      <stop offset="1" stop-color="#070C16"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.3" cy="0.25" r="0.9">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.14"/>
+      <stop offset="0.6" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 徽标底板 -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#badge)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#halo)"/>
+
+  <!-- 主字标 D(几何无衬线,前倾 7° 取动势) -->
+  <g transform="translate(20 0) skewX(-7)">
+    <path fill-rule="evenodd" fill="url(#glyph)" d="
+      M196 150 H262 C342 150 372 202 372 256 C372 310 342 362 262 362 H196 Z
+      M230 190 H262 C310 190 336 218 336 256 C336 294 310 322 262 322 H230 Z"/>
+  </g>
+
+  <!-- 飞行轨迹:越过字标肩头,向右上飞出 -->
+  <path d="M300 140 C 370 130 410 130 438 96" fill="none"
+        stroke="#F5B04C" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="326" cy="138" r="4.5" fill="#F5B04C" opacity="0.55"/>
+  <circle cx="296" cy="142" r="3.5" fill="#F5B04C" opacity="0.3"/>
+  <!-- 飞镖箭头 -->
+  <g transform="translate(438 96) rotate(40)">
+    <polygon points="0,-15 10,10 0,4 -10,10" fill="#F5B04C"/>
+  </g>
+</svg>
