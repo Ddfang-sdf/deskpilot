@@ -116,7 +116,8 @@ class Enforcement:
             fp = compute_fingerprint(tool, self._fingerprint_params(request))
             if not self._approvals.verify_and_consume(fp):
                 desc = self._describe(request, binding)
-                self._approvals.request_approval(desc, fp)
+                image_path = self._capture_target(binding)
+                self._approvals.request_approval(desc, fp, image_path=image_path)
                 return self._deny(request, eff, NEEDS_APPROVAL,
                                   f"受控操作需人工批准：{desc}。"
                                   f"等待人类在本地批准后以完全相同参数原样重试", t0)
@@ -163,16 +164,74 @@ class Enforcement:
         params["token"] = request.binding_token or ""
         return params
 
+    # ---- 审批描述（人话层 + 技术底注）与目标实拍 ----
+
+    _KEY_ACTIONS = {
+        "alt+f4": "关闭窗口",
+        "delete": "按 Delete 删除键",
+        "escape": "按 Escape 键",
+        "ctrl+w": "关闭当前标签页",
+        "ctrl+shift+escape": "打开任务管理器",
+    }
+    _TOOL_ACTIONS = {
+        "launch_app": "启动应用",
+        "activate_window": "激活窗口",
+        "click": "鼠标点击",
+        "click_element": "点击控件",
+        "type_text": "输入文本",
+        "type_element": "向控件输入文本",
+        "set_clipboard": "改写剪贴板内容",
+        "drag": "鼠标拖拽",
+        "key": "按键",
+    }
+
+    def _live_title(self, binding: BindingRecord) -> str:
+        """窗口标题以当前活值为准；查不到退回绑定快照。"""
+        try:
+            wins = self._executor.find_windows(hwnd=binding.hwnd)
+        except Exception:
+            wins = []
+        for w in wins:
+            if w.get("title"):
+                return w["title"]
+        return binding.window_title
+
+    def _capture_target(self, binding: BindingRecord | None) -> str | None:
+        """闸四配套：实拍目标窗口供审批弹窗展示；任何失败不阻断审批流。"""
+        if binding is None:
+            return None
+        try:
+            return self._executor.capture_approval_shot(binding.window_rect)
+        except Exception:
+            return None
+
     def _describe(self, request: OperationRequest,
                   binding: BindingRecord | None) -> str:
+        """两段式描述:人话标题行 + 「---」分隔 + 技术底注(进程/句柄保留)。"""
+        tech_target = ""
         if binding is not None:
-            target = f"进程 {binding.process_name} 的窗口（句柄 {binding.hwnd}）"
+            title = self._live_title(binding)
+            plain_target = (f"「{title}」" if title
+                            else f"进程 {binding.process_name} 的窗口")
+            tech_target = (f"进程 {binding.process_name} 的窗口"
+                           f"（句柄 {binding.hwnd}）")
         else:
-            target = f"应用 {request.params.get('app', '')}"
+            plain_target = str(request.params.get("app", ""))
+            tech_target = f"应用 {plain_target}"
+
         if request.tool == "key":
-            return (f"按键 {normalize_key(str(request.params.get('key', '')))} "
-                    f"作用于{target}")
-        return f"{request.tool}（参数 {self._digest(request)}）作用于{target}"
+            key = normalize_key(str(request.params.get("key", "")))
+            action = self._KEY_ACTIONS.get(key, f"按下 {key}")
+            headline = f"{action}{plain_target}" if binding else f"{action}"
+            tech = f"按键 {key} 作用于{tech_target}"
+        elif request.tool == "launch_app":
+            headline = f"启动应用 {plain_target}"
+            tech = f"launch_app 作用于{tech_target}"
+        else:
+            action = self._TOOL_ACTIONS.get(request.tool, f"执行 {request.tool}")
+            headline = f"{action}{plain_target}"
+            tech = f"{request.tool}（参数 {self._digest(request)}）作用于{tech_target}"
+        return f"{headline}\n---\n{tech}"
 
     def _digest(self, request: OperationRequest) -> str:
         return ", ".join(f"{k}={v}" for k, v in request.params.items())

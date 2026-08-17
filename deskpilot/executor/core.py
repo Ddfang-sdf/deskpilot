@@ -193,6 +193,14 @@ class Executor:
         img.save(path)
         return {"path": str(path), "count": len(entries), "entries": entries}
 
+    def capture_approval_shot(self, rect) -> str:
+        """审批用目标窗口实拍（闸四）：按绑定矩形截图并落盘，返回路径。"""
+        l, t, r, b = (int(v) for v in rect)
+        region = {"left": l, "top": t, "width": r - l, "height": b - t}
+        if region["width"] <= 0 or region["height"] <= 0:
+            raise ExecutorError(INTERNAL_ERROR, f"目标窗口矩形无效: {rect}")
+        return str(self._save_shot(region, "approval"))
+
     def wait_for_window(self, target: str, timeout: float | None = None) -> dict:
         limit = min(timeout or 10.0, self._wait_max)
         deadline = self._clock() + limit

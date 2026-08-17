@@ -77,6 +77,27 @@ def _corner_loop(estop: EstopMonitor) -> None:
         time.sleep(0.05)
 
 
+def _build_ocr_engine(rapid):
+    """把 RapidOCR 实例适配为执行层 OCR 引擎（img → items）。
+
+    RapidOCR 接受路径/ndarray(BGR)，不接受 PIL Image；返回四点框
+    [[x,y]×4]，契约（tests/test_m3.py）为平铺包围盒 [x1,y1,x2,y2]。
+    """
+    import numpy as np
+
+    def engine(img):
+        out = []
+        for line in (rapid(np.asarray(img)[:, :, ::-1])[0] or []):
+            xs = [p[0] for p in line[0]]
+            ys = [p[1] for p in line[0]]
+            out.append({"text": line[1],
+                        "position": [int(min(xs)), int(min(ys)),
+                                     int(max(xs)), int(max(ys))]})
+        return out
+
+    return engine
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     policy_path = _find_policy_path()
@@ -112,10 +133,7 @@ def main() -> int:
                         policy.wait_timeout_max)
     try:
         from rapidocr_onnxruntime import RapidOCR
-        _rapid = RapidOCR()
-        executor._ocr_engine = lambda img: [
-            {"text": line[1], "position": [int(v) for v in line[0]]}
-            for line in (_rapid(img)[0] or [])]
+        executor._ocr_engine = _build_ocr_engine(RapidOCR())
     except Exception as e:
         print(f"OCR 引擎不可用（ocr 工具将显式报错）: {e}", file=sys.stderr)
     enforcement = Enforcement(policy, bindings, approvals, estop, executor, audit)

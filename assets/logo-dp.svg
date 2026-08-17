@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+
+  <!-- Window frame with double guard rail -->
+  <rect x="96" y="96" width="320" height="320" rx="64" fill="none" stroke="url(#g)" stroke-width="16"/>
+  <rect x="120" y="120" width="272" height="272" rx="48" fill="none" stroke="url(#g)" stroke-width="6" opacity="0.5"/>
+
+  <!-- Title bar & control -->
+  <line x1="96" y1="168" x2="416" y2="168" stroke="url(#g)" stroke-width="8" opacity="0.6"/>
+  <circle cx="136" cy="132" r="12" fill="#22d3ee"/>
+
+  <!-- Letter D -->
+  <path d="M 160 208 L 160 336 M 160 208 Q 224 208 224 272 Q 224 336 160 336" fill="none" stroke="url(#g)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Letter P -->
+  <path d="M 288 208 L 288 336 M 288 208 L 336 208 Q 368 208 368 240 L 368 272 Q 368 304 336 304 L 288 304" fill="none" stroke="url(#g)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Safety rails -->
+  <line x1="152" y1="368" x2="360" y2="368" stroke="url(#g)" stroke-width="10" stroke-linecap="round" opacity="0.4"/>
+  <line x1="152" y1="392" x2="360" y2="392" stroke="url(#g)" stroke-width="10" stroke-linecap="round" opacity="0.25"/>
+  <line x1="152" y1="416" x2="360" y2="416" stroke="url(#g)" stroke-width="10" stroke-linecap="round" opacity="0.15"/>
+</svg>

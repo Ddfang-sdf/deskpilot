@@ -8,8 +8,10 @@ TkApprovalChannel.request（fire-and-forget 契约）。
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from PIL import Image, ImageDraw
@@ -252,3 +254,195 @@ class TestAsyncApproval:
         ch.request("危险键", "fp-t")
         time.sleep(0.8)
         assert approved == []
+
+
+# ---------- 弹窗去重（同指纹在途不重复弹） ----------
+
+class TestApprovalDedup:
+    def _channel(self, tmp_path, spawns, timeout=5.0):
+        return TkApprovalChannel(
+            on_approved=lambda fp: None, timeout=timeout,
+            popen_factory=lambda *a, **k: spawns.append(a[0] if a else None),
+            result_root=str(tmp_path))
+
+    def test_same_fingerprint_pending_spawns_once(self, tmp_path):
+        """同一操作指纹已有弹窗在途时，AI 重试不得再弹新窗。"""
+        spawns = []
+        ch = self._channel(tmp_path, spawns)
+        for _ in range(3):
+            ch.request("危险键 alt+f4", "fp-same")
+        assert len(spawns) == 1
+
+    def test_different_fingerprints_spawn_each(self, tmp_path):
+        spawns = []
+        ch = self._channel(tmp_path, spawns)
+        ch.request("操作 A", "fp-1")
+        ch.request("操作 B", "fp-2")
+        assert len(spawns) == 2
+
+    def test_respawn_after_result_consumed(self, tmp_path):
+        """在途弹窗被批复后，同指纹再次请求应重新弹窗（新的一轮审批）。"""
+        spawns = []
+        ch = self._channel(tmp_path, spawns, timeout=5.0)
+        ch.request("危险键", "fp-r")
+        open(ch.last_request["result_path"], "w", encoding="utf-8").write("deny")
+        for _ in range(40):
+            if len(spawns) or True:
+                time.sleep(0.05)
+                break
+        time.sleep(0.4)                      # 等轮询线程消费结果
+        ch.request("危险键", "fp-r")
+        assert len(spawns) == 2
+
+    def test_respawn_after_timeout(self, tmp_path):
+        """在途弹窗超时后，同指纹再次请求应重新弹窗。"""
+        spawns = []
+        ch = self._channel(tmp_path, spawns, timeout=0.3)
+        ch.request("危险键", "fp-to")
+        time.sleep(0.6)
+        ch.request("危险键", "fp-to")
+        assert len(spawns) == 2
+
+
+# ---------- 打包形态弹窗拉起（onefile 回归） ----------
+
+class TestSpawnDialogFrozen:
+    def test_frozen_uses_exe_dispatch_and_strips_meipass(self, monkeypatch, tmp_path):
+        """onefile 下须以 deskpilot.exe --approval-dialog 拉起弹窗（-m 无效），
+        且剥离 _MEIPASS2（避免子进程共享解压目录、父退即崩）。"""
+        import deskpilot.approval_ui as aui
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setenv("_MEIPASS2", r"C:\mei_shared")
+        captured = {}
+        ch = TkApprovalChannel(
+            on_approved=lambda fp: None,
+            popen_factory=lambda cmd, env=None: captured.update(cmd=cmd, env=env),
+            result_root=str(tmp_path))
+        ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result")
+        assert captured["cmd"][0] == sys.executable
+        assert captured["cmd"][1] == "--approval-dialog"
+        assert captured["env"] is not None
+        assert "_MEIPASS2" not in captured["env"]
+        assert captured["env"].get("PATH")          # 其余环境变量保留
+
+    def test_nonfrozen_uses_dash_m(self, monkeypatch, tmp_path):
+        """源码形态保持 python -m deskpilot.approval_dialog。"""
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        captured = {}
+        ch = TkApprovalChannel(
+            on_approved=lambda fp: None,
+            popen_factory=lambda cmd, env=None: captured.update(cmd=cmd, env=env),
+            result_root=str(tmp_path))
+        ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result")
+        assert captured["cmd"][1:3] == ["-m", "deskpilot.approval_dialog"]
+        assert captured["env"] is None
+
+    def test_entry_dispatches_approval_dialog(self, tmp_path):
+        """打包入口脚本识别 --approval-dialog（黑盒：1s 倒计时结束写 timeout）。"""
+        import subprocess
+        desc = tmp_path / "d.desc"
+        desc.write_text("测试描述", encoding="utf-8")
+        result = tmp_path / "d.result"
+        root = Path(__file__).resolve().parent.parent
+        subprocess.run(
+            [sys.executable, str(root / "run_deskpilot.py"),
+             "--approval-dialog", str(desc), str(result), "1"],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
+            cwd=str(root))
+        assert result.read_text(encoding="utf-8") == "timeout"
+
+    def test_entry_dialog_with_image(self, tmp_path):
+        """弹窗携带目标窗口截图参数正常渲染（黑盒：含图像不崩溃）。"""
+        import subprocess
+        img = tmp_path / "target.png"
+        Image.new("RGB", (800, 400), "#336699").save(img)
+        desc = tmp_path / "d.desc"
+        desc.write_text("关闭窗口「无标题 - 画图」\n---\n"
+                        "按键 alt+f4 · 进程 mspaint.exe · 句柄 1",
+                        encoding="utf-8")
+        result = tmp_path / "d.result"
+        root = Path(__file__).resolve().parent.parent
+        subprocess.run(
+            [sys.executable, str(root / "run_deskpilot.py"),
+             "--approval-dialog", str(desc), str(result), "1", str(img)],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
+            cwd=str(root))
+        assert result.read_text(encoding="utf-8") == "timeout"
+
+    def test_request_forwards_image_path(self, tmp_path):
+        """审批通道把目标窗口截图路径作为末位参数传给弹窗进程。"""
+        captured = {}
+        ch = TkApprovalChannel(
+            on_approved=lambda fp: None,
+            popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
+            result_root=str(tmp_path))
+        ch.request("危险键", "fp-img", image_path="C:/shots/x.png")
+        assert captured["cmd"][-1] == "C:/shots/x.png"
+
+    def test_request_without_image_passes_empty(self, tmp_path):
+        """无截图时末位参数为空串（弹窗端据此跳过图像区）。"""
+        captured = {}
+        ch = TkApprovalChannel(
+            on_approved=lambda fp: None,
+            popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
+            result_root=str(tmp_path))
+        ch.request("危险键", "fp-noimg")
+        assert captured["cmd"][-1] == ""
+
+
+# ---------- 审批弹窗落位（右下角 toast，滑入起点屏外） ----------
+
+class TestToastPlacement:
+    def test_bottom_right_with_margins(self):
+        from deskpilot.approval_dialog import _toast_placement
+        x, y_start, y_final = _toast_placement(2560, 1440, 440, 210)
+        assert x == 2560 - 440 - 16
+        assert y_final == 1440 - 210 - 48 - 16      # 任务栏 + 边距
+        assert y_start == 1440                       # 滑入起点：屏外底部
+
+    def test_default_size_bottom_right(self):
+        """默认 480×216 尺寸的落位（Fluent toast 规格）。"""
+        from deskpilot.approval_dialog import _toast_placement
+        x, y_start, y_final = _toast_placement(2560, 1440)
+        assert x == 2560 - 480 - 16
+        assert y_final == 1440 - 216 - 48 - 16
+        assert y_start == 1440
+
+    def test_small_screen_clamps_nonnegative(self):
+        from deskpilot.approval_dialog import _toast_placement
+        x, _, y_final = _toast_placement(300, 200, 440, 210)
+        assert x == 0
+        assert y_final == 0
+
+
+# ---------- OCR 引擎装配（RapidOCR 1.2 适配） ----------
+
+class TestOcrEngineAdapter:
+    def test_pil_to_bgr_ndarray_and_flat_bbox(self):
+        """PIL Image 须转 BGR ndarray；四点框须转平铺包围盒 [x1,y1,x2,y2]。"""
+        import numpy as np
+        from deskpilot.main import _build_ocr_engine
+        captured = {}
+
+        class FakeRapid:
+            def __call__(self, img):
+                captured["img"] = img
+                return ([[[[10, 4], [34, 4], [34, 16], [10, 16]],
+                          "保存", 0.99]], 0.05)
+
+        engine = _build_ocr_engine(FakeRapid())
+        items = engine(Image.new("RGB", (2, 2), (10, 20, 30)))
+        assert items == [{"text": "保存", "position": [10, 4, 34, 16]}]
+        arr = captured["img"]
+        assert isinstance(arr, np.ndarray)
+        assert arr[0, 0].tolist() == [30, 20, 10]    # RGB → BGR 通道翻转
+
+    def test_empty_result_gives_empty_items(self):
+        from deskpilot.main import _build_ocr_engine
+
+        class FakeRapid:
+            def __call__(self, img):
+                return (None, 0.01)
+
+        engine = _build_ocr_engine(FakeRapid())
+        assert engine(Image.new("RGB", (2, 2))) == []

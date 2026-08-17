@@ -145,7 +145,8 @@ def attach(ctx: ToolContext, *, title: str | None = None, hwnd: int | None = Non
     if not decision.allowed:
         return ToolResult(ok=False, error_code=decision.reason_code,
                           message=decision.message)
-    rec = ctx.bindings.create(w["hwnd"], w["process"], tuple(w["rect"]))
+    rec = ctx.bindings.create(w["hwnd"], w["process"], tuple(w["rect"]),
+                              window_title=w.get("title", ""))
     return ToolResult(ok=True, error_code="", message="attach 成功",
                       data={"token": rec.token, "hwnd": rec.hwnd,
                             "process": rec.process_name, "rect": list(rec.window_rect)})

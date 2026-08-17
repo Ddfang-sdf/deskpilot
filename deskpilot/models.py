@@ -65,6 +65,7 @@ class BindingRecord:
     window_rect: tuple[int, int, int, int]
     bound_at: float
     last_active_at: float
+    window_title: str = ""      # attach 时刻的标题快照（审批描述兜底用）
 
 
 @dataclass

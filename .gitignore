@@ -11,3 +11,8 @@ build/
 dist/
 mcp_shot_*.png
 check_*.png
+*.egg-info/
+deskpilot-approval-*
+l3_demo_batch.json
+release/*
+!release/RELEASE_NOTES.md
