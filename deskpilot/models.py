@@ -52,6 +52,7 @@ class Policy:
     input_max_chars: int
     l0_during_freeze: bool
     corner_hold_ms: int
+    freeze_remind_interval: float     # 冻结弹窗稍后提醒重提醒间隔秒（ISS-0004）
     audit_dir: str
 
 

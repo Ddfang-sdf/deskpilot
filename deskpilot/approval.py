@@ -39,11 +39,11 @@ def compute_fingerprint(tool: str, params: Mapping[str, Any]) -> str:
 
 
 class ApprovalChannel(Protocol):
-    """本地审批通道（M3 弹窗 / 测试模拟审批器）。"""
+    """本地审批通道（M3 弹窗 / 测试模拟审批器），同步裁决语义（ISS-0003）。"""
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> bool:
-        """向人类请求批准；返回是否批准。超时应由通道内部处理并返回 False。
+                image_path: str | None = None) -> str:
+        """向人类请求批准并同步等待裁决；返回 "approve" / "deny" / "timeout"。
 
         image_path：目标窗口实拍图（可选），供弹窗展示"操作的是哪个窗口"。
         """
@@ -54,8 +54,8 @@ class DenyAllChannel:
     """M1 生产通道：无弹窗，一切 L3 恒拒绝（详细设计 §7.11）。"""
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> bool:
-        return False
+                image_path: str | None = None) -> str:
+        return "deny"
 
 
 class ApprovalManager:
@@ -68,11 +68,16 @@ class ApprovalManager:
         self._tokens: dict[str, ApprovalToken] = {}
 
     def request_approval(self, description: str, fingerprint: str,
-                         image_path: str | None = None) -> ApprovalToken | None:
-        """经审批通道请求批准；批准则签发令牌（绑定指纹、时效 ttl）并返回。"""
-        if not self._channel.request(description, fingerprint, image_path=image_path):
-            return None
-        return self.issue_token(fingerprint)
+                         image_path: str | None = None) -> str:
+        """经审批通道同步请求人类裁决；批准则在服务内部签发授权记录（不经 AI）。
+
+        返回 "approve" / "deny" / "timeout"（ISS-0003 同步阻塞模型）。
+        """
+        decision = self._channel.request(description, fingerprint,
+                                         image_path=image_path)
+        if decision == "approve":
+            self.issue_token(fingerprint)
+        return decision
 
     def set_channel(self, channel: ApprovalChannel) -> None:
         """替换审批通道（main 装配 M3 弹窗通道用）。"""

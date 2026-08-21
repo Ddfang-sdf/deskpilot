@@ -21,8 +21,10 @@ DEFAULT_PORT = 9420
 class HttpDaemon:
     """常驻服务：start 后于后台线程服务 HTTP，持有共享 ctx。"""
 
-    def __init__(self, ctx, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
+    def __init__(self, ctx, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
+                 estop=None):
         self._ctx = ctx
+        self._estop = estop            # 急停复位端点用（ISS-0002，段3 接线）
         self._host = host
         self._port = port
         self._httpd = None
@@ -35,7 +37,7 @@ class HttpDaemon:
         from .tools import call_tool
 
         ctx = self._ctx
-        handler_cls = self._make_handler(ctx, call_tool)
+        handler_cls = self._make_handler(ctx, call_tool, self._estop)
         self._httpd = HTTPServer((self._host, self._port), handler_cls)
         self.port = self._httpd.server_address[1]
         self._thread = threading.Thread(target=self._httpd.serve_forever,
@@ -48,7 +50,7 @@ class HttpDaemon:
             self._httpd.server_close()
             self._httpd = None
 
-    def _make_handler(self, ctx, call_tool):
+    def _make_handler(self, ctx, call_tool, estop):
         from http.server import BaseHTTPRequestHandler
 
         class Handler(BaseHTTPRequestHandler):
@@ -73,6 +75,16 @@ class HttpDaemon:
                                      "message": "端点不存在"})
 
             def do_POST(self):
+                if self.path == "/estop/reset" and estop is not None:
+                    # 本地人类复位通道（详细设计 §11.8，ISS-0002）：
+                    # 无论是否改变状态都返回 200 + was_frozen；审计由 estop 侧记录
+                    was = estop.is_frozen()
+                    estop.cli_reset()
+                    self._send(200, {"ok": True, "error_code": "",
+                                     "message": ("急停已复位" if was
+                                                 else "复位请求已记录（当前未冻结）"),
+                                     "data": {"was_frozen": was, "frozen": False}})
+                    return
                 if self.path != "/call":
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",
                                      "message": "端点不存在"})
@@ -105,16 +117,19 @@ def probe_daemon(host: str, port: int, timeout: float = 0.3) -> bool:
         return False
 
 
-def remote_call(tool: str, raw: dict[str, Any], base_url: str) -> dict:
+def remote_call(tool: str, raw: dict[str, Any], base_url: str,
+                timeout: float = 90.0) -> dict:
     """向常驻服务发起一次工具调用，返回结构化结果字典。
-    连接失败显式抛错（禁止静默成功）。"""
+    连接失败显式抛错（禁止静默成功）。
+    超时默认 90s：须大于 approval_ttl——L3 同步审批阻塞人类裁决
+    时长（ISS-0003 整改项 C）。"""
     payload = json.dumps({"tool": tool, "params": raw},
                          ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         f"{base_url}/call", data=payload,
         headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except OSError as e:
         raise RuntimeError(f"无法连接常驻服务 {base_url}: {e}") from e

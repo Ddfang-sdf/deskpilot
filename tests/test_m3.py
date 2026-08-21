@@ -196,17 +196,62 @@ class TestClickableMap:
         assert r["entries"] == []
 
 
-# ---------- 审批异步通道（令牌不经 AI） ----------
+# ---------- 审批同步通道（ISS-0003：同步等待裁决，授权不经 AI） ----------
 
-class TestAsyncApproval:
-    def _channel(self, tmp_path, cb, timeout=0.5, fake_popen=None):
+class TestSyncApproval:
+    def _channel(self, tmp_path, timeout=2.0, fake_popen=None):
         return TkApprovalChannel(
-            on_approved=cb, timeout=timeout,
+            timeout=timeout,
             popen_factory=fake_popen or (lambda *a, **k: None),
             result_root=str(tmp_path))
 
+    @staticmethod
+    def _write_result_later(ch, content: str, delay: float = 0.1):
+        """模拟弹窗进程：等 request 落出 result_path 后写入裁决结果。"""
+        import threading
+
+        def writer():
+            for _ in range(200):
+                lr = ch.last_request
+                if lr:
+                    open(lr["result_path"], "w",
+                         encoding="utf-8").write(content)
+                    return
+                time.sleep(0.02)
+
+        threading.Thread(target=writer, daemon=True).start()
+
+    def test_approve_returns_approve(self, tmp_path):
+        """人类批准 → request 同步返回 "approve"（单次调用闭环）。"""
+        ch = self._channel(tmp_path)
+        self._write_result_later(ch, "approve")
+        t0 = time.monotonic()
+        r = ch.request("危险键 alt+f4", "fp-a")
+        assert r == "approve"
+        assert time.monotonic() - t0 < 2.0         # 裁决即返回，不拖到超时
+        assert ch.last_request["fingerprint"] == "fp-a"
+        assert "alt+f4" in ch.last_request["description"]
+
+    def test_deny_returns_deny(self, tmp_path):
+        ch = self._channel(tmp_path)
+        self._write_result_later(ch, "deny")
+        assert ch.request("危险键", "fp-d") == "deny"
+
+    def test_timeout_returns_timeout(self, tmp_path):
+        """倒计时结束无人操作 = 默认拒绝（fail-closed），返回 "timeout"。"""
+        ch = self._channel(tmp_path, timeout=0.3)
+        t0 = time.monotonic()
+        assert ch.request("危险键", "fp-t") == "timeout"
+        assert time.monotonic() - t0 >= 0.3
+
+    def test_dialog_written_timeout_honored(self, tmp_path):
+        """弹窗进程自己倒计时结束写入 "timeout" 时，通道按超时返回。"""
+        ch = self._channel(tmp_path)
+        self._write_result_later(ch, "timeout")
+        assert ch.request("危险键", "fp-dt") == "timeout"
+
     def test_issue_token_consumed_once(self, policy, clock):
-        """issue_token 签发 → 按指纹一次性消费（INV-4）。"""
+        """issue_token 签发 → 按指纹一次性消费（INV-4，manager 层语义不变）。"""
         mgr = ApprovalManager(DenyAllChannel(), policy.approval_ttl, clock)
         fp = "fp-123"
         mgr.issue_token(fp)
@@ -214,94 +259,6 @@ class TestAsyncApproval:
         assert mgr.verify_and_consume(fp) is True
         assert mgr.verify_and_consume(fp) is False
         assert mgr.count() == 0
-
-    def test_request_returns_immediately(self, tmp_path):
-        """fire-and-forget：request() 立即返回 False，不阻塞调用方。"""
-        calls = []
-        ch = self._channel(tmp_path, lambda fp: calls.append(fp))
-        t0 = time.monotonic()
-        r = ch.request("删除文件？", "fp-x")
-        assert r is False
-        assert time.monotonic() - t0 < 0.3
-        assert ch.last_request["fingerprint"] == "fp-x"
-        assert "删除文件" in ch.last_request["description"]
-
-    def test_approve_issues_token_via_callback(self, tmp_path):
-        """人类批准 → 回调签发令牌；AI 通道全程只见 False。"""
-        approved = []
-        ch = self._channel(tmp_path, lambda fp: approved.append(fp))
-        ch.request("危险键 alt+f4", "fp-a")
-        rp = ch.last_request["result_path"]
-        open(rp, "w", encoding="utf-8").write("approve")
-        for _ in range(60):
-            if approved:
-                break
-            time.sleep(0.05)
-        assert approved == ["fp-a"]
-
-    def test_deny_no_token(self, tmp_path):
-        approved = []
-        ch = self._channel(tmp_path, lambda fp: approved.append(fp))
-        ch.request("危险键", "fp-d")
-        open(ch.last_request["result_path"], "w", encoding="utf-8").write("deny")
-        time.sleep(0.4)
-        assert approved == []
-
-    def test_timeout_no_token(self, tmp_path):
-        """倒计时结束无人操作 = 默认拒绝（fail-closed）。"""
-        approved = []
-        ch = self._channel(tmp_path, lambda fp: approved.append(fp), timeout=0.3)
-        ch.request("危险键", "fp-t")
-        time.sleep(0.8)
-        assert approved == []
-
-
-# ---------- 弹窗去重（同指纹在途不重复弹） ----------
-
-class TestApprovalDedup:
-    def _channel(self, tmp_path, spawns, timeout=5.0):
-        return TkApprovalChannel(
-            on_approved=lambda fp: None, timeout=timeout,
-            popen_factory=lambda *a, **k: spawns.append(a[0] if a else None),
-            result_root=str(tmp_path))
-
-    def test_same_fingerprint_pending_spawns_once(self, tmp_path):
-        """同一操作指纹已有弹窗在途时，AI 重试不得再弹新窗。"""
-        spawns = []
-        ch = self._channel(tmp_path, spawns)
-        for _ in range(3):
-            ch.request("危险键 alt+f4", "fp-same")
-        assert len(spawns) == 1
-
-    def test_different_fingerprints_spawn_each(self, tmp_path):
-        spawns = []
-        ch = self._channel(tmp_path, spawns)
-        ch.request("操作 A", "fp-1")
-        ch.request("操作 B", "fp-2")
-        assert len(spawns) == 2
-
-    def test_respawn_after_result_consumed(self, tmp_path):
-        """在途弹窗被批复后，同指纹再次请求应重新弹窗（新的一轮审批）。"""
-        spawns = []
-        ch = self._channel(tmp_path, spawns, timeout=5.0)
-        ch.request("危险键", "fp-r")
-        open(ch.last_request["result_path"], "w", encoding="utf-8").write("deny")
-        for _ in range(40):
-            if len(spawns) or True:
-                time.sleep(0.05)
-                break
-        time.sleep(0.4)                      # 等轮询线程消费结果
-        ch.request("危险键", "fp-r")
-        assert len(spawns) == 2
-
-    def test_respawn_after_timeout(self, tmp_path):
-        """在途弹窗超时后，同指纹再次请求应重新弹窗。"""
-        spawns = []
-        ch = self._channel(tmp_path, spawns, timeout=0.3)
-        ch.request("危险键", "fp-to")
-        time.sleep(0.6)
-        ch.request("危险键", "fp-to")
-        assert len(spawns) == 2
 
 
 # ---------- 打包形态弹窗拉起（onefile 回归） ----------
@@ -315,7 +272,6 @@ class TestSpawnDialogFrozen:
         monkeypatch.setenv("_MEIPASS2", r"C:\mei_shared")
         captured = {}
         ch = TkApprovalChannel(
-            on_approved=lambda fp: None,
             popen_factory=lambda cmd, env=None: captured.update(cmd=cmd, env=env),
             result_root=str(tmp_path))
         ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result")
@@ -330,7 +286,6 @@ class TestSpawnDialogFrozen:
         monkeypatch.delattr(sys, "frozen", raising=False)
         captured = {}
         ch = TkApprovalChannel(
-            on_approved=lambda fp: None,
             popen_factory=lambda cmd, env=None: captured.update(cmd=cmd, env=env),
             result_root=str(tmp_path))
         ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result")
@@ -369,24 +324,23 @@ class TestSpawnDialogFrozen:
             cwd=str(root))
         assert result.read_text(encoding="utf-8") == "timeout"
 
-    def test_request_forwards_image_path(self, tmp_path):
+    def test_spawn_forwards_image_path(self, tmp_path):
         """审批通道把目标窗口截图路径作为末位参数传给弹窗进程。"""
         captured = {}
         ch = TkApprovalChannel(
-            on_approved=lambda fp: None,
             popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
             result_root=str(tmp_path))
-        ch.request("危险键", "fp-img", image_path="C:/shots/x.png")
+        ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result",
+                         "C:/shots/x.png")
         assert captured["cmd"][-1] == "C:/shots/x.png"
 
-    def test_request_without_image_passes_empty(self, tmp_path):
+    def test_spawn_without_image_passes_empty(self, tmp_path):
         """无截图时末位参数为空串（弹窗端据此跳过图像区）。"""
         captured = {}
         ch = TkApprovalChannel(
-            on_approved=lambda fp: None,
             popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
             result_root=str(tmp_path))
-        ch.request("危险键", "fp-noimg")
+        ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result")
         assert captured["cmd"][-1] == ""
 
 

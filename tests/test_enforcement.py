@@ -70,10 +70,10 @@ class TestGate2Whitelist:
 
 class TestGate3Keys:
     def test_dangerous_key_needs_approval(self, enforcement, bound_record, approver):
-        """TC-S-KEY-01：危险键无批准 → NEEDS_APPROVAL，附完整操作描述并发起审批。"""
+        """TC-S-KEY-01：危险键被拒 → APPROVAL_DENIED，附完整操作描述并发起审批。"""
         d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
         assert d.allowed is False
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert "alt+f4" in d.message                 # 操作描述含按键
         assert "notepad.exe" in d.message            # 含目标进程
         assert len(approver.requests) == 1           # 已向审批通道发起请求
@@ -88,7 +88,7 @@ class TestDescribePlainLanguage:
         rec = bindings.create(FIXTURE_HWND, "notepad.exe", FIXTURE_RECT,
                               window_title="无标题 - 记事本")
         d = enforcement.submit(_req("key", {"key": "alt+f4"}, rec.token))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert "关闭窗口" in d.message
         assert "「无标题 - 记事本」" in d.message
         assert "alt+f4" in d.message                 # 技术行保留
@@ -114,7 +114,7 @@ class TestDescribePlainLanguage:
     def test_launch_app_plain_action(self, enforcement):
         """非白名单 launch_app 升 L3：人话为「启动应用 xxx」。"""
         d = enforcement.submit(_req("launch_app", {"app": "evil.exe"}))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert "启动应用 evil.exe" in d.message
 
     def test_type_text_plain_action(self, enforcement, bound_record):
@@ -129,7 +129,7 @@ class TestApprovalTargetShot:
     def test_l3_request_captures_target_window(self, enforcement, bound_record,
                                                approver, executor):
         d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert executor.approval_shot_rects == [FIXTURE_RECT]
         assert approver.requests[0]["image_path"] == executor.approval_shot_path
 
@@ -138,13 +138,13 @@ class TestApprovalTargetShot:
         """截图失败（窗口最小化等）不得阻断审批流，image_path 置 None。"""
         executor.approval_shot_error = True
         d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert approver.requests[0]["image_path"] is None
 
     def test_no_binding_no_capture(self, enforcement, approver, executor):
         """launch_app 等无绑定审批不截图（目标尚不存在）。"""
         d = enforcement.submit(_req("launch_app", {"app": "evil.exe"}))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert executor.approval_shot_rects == []
         assert approver.requests[0]["image_path"] is None
 
@@ -155,7 +155,7 @@ class TestApprovalTargetShot:
     def test_all_dangerous_keys(self, enforcement, bound_record, danger):
         """TC-S-KEY-02：危险键表逐一拒绝。"""
         d = enforcement.submit(_req("key", {"key": danger}, bound_record.token))
-        assert d.reason_code == errors.NEEDS_APPROVAL, danger
+        assert d.reason_code == errors.APPROVAL_DENIED, danger
 
     def test_enter_notepad_allowed_terminal_denied(self, enforcement, bindings,
                                                    probe, bound_record, executor):
@@ -167,7 +167,7 @@ class TestApprovalTargetShot:
         term = bindings.create(FIXTURE_HWND_B, "cmd.exe", FIXTURE_RECT_B)
         d2 = enforcement.submit(_req("key", {"key": "enter"}, term.token))
         assert d2.allowed is False
-        assert d2.reason_code == errors.NEEDS_APPROVAL
+        assert d2.reason_code == errors.APPROVAL_DENIED
 
     def test_unknown_key(self, enforcement, bound_record):
         """TC-S-KEY-04：未收录按键 fail-closed。"""
@@ -189,7 +189,7 @@ class TestApprovalTargetShot:
         d = enforcement.submit(_req("key", {"key": alias}, bound_record.token))
         assert d.allowed is expect_ok, alias
         if not expect_ok:
-            assert d.reason_code == errors.NEEDS_APPROVAL
+            assert d.reason_code == errors.APPROVAL_DENIED
 
     def test_backspace_input_scenario_allowed(self, enforcement, bound_record, executor):
         """TC-S-KEY-06：焦点为 Edit 控件（输入场景）→ Backspace 放行。"""
@@ -212,67 +212,92 @@ class TestApprovalTargetShot:
 
 
 class TestGate4Approval:
-    def test_approved_retry_passes_once(self, enforcement, bound_record, approver,
-                                        executor):
-        """TC-N-APR-01 + TC-S-TOK-01：批准→原样重试放行一次→第三次拒绝。"""
-        approver.decision = True
+    def test_approve_executes_in_same_call(self, enforcement, bound_record, approver,
+                                           executor, approvals):
+        """TC-N-APR-01（ISS-0003 同步闭环）：批准即同一调用内执行，授权即验即销。"""
+        approver.decision = "approve"
         req = _req("key", {"key": "alt+f4"}, bound_record.token)
         d1 = enforcement.submit(req)
-        assert d1.reason_code == errors.NEEDS_APPROVAL
-
-        d2 = enforcement.submit(req)               # 完全相同参数原样重试
-        assert d2.allowed is True
+        assert d1.allowed is True
         assert len(executor.instructions) == 1
+        assert executor.instructions[0]["params"]["key"] == "alt+f4"
+        assert approvals.count() == 0              # 授权即验即销，无残留
 
-        d3 = enforcement.submit(req)               # 令牌已消费 → 再次拒绝
-        assert d3.reason_code == errors.NEEDS_APPROVAL
+        approver.decision = "deny"
+        d2 = enforcement.submit(req)               # 授权已消费 → 须重新裁决，被拒
+        assert d2.reason_code == errors.APPROVAL_DENIED
+        assert len(executor.instructions) == 1     # TC-S-TOK-01：一次批准只放行一次
 
-    def test_param_variation_rejected(self, enforcement, bound_record, approver):
-        """TC-S-TOK-03：批准后改动任一参数，指纹不匹配拒绝。"""
-        approver.decision = True
+    def test_approval_timeout(self, enforcement, bound_record, approver, executor,
+                              approvals):
+        """TC-E-ST-04 / TC-S-APR-04：裁决超时 → APPROVAL_TIMEOUT，执行层零调用。"""
+        approver.decision = "timeout"
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
+        assert d.allowed is False
+        assert d.reason_code == errors.APPROVAL_TIMEOUT
+        assert executor.instructions == []
+        assert approvals.count() == 0              # 无授权残留
+
+    def test_param_variation_rejected(self, enforcement, bound_record, approver,
+                                      executor):
+        """TC-S-TOK-03：批准 A 后改发 B，指纹不匹配 → 独立裁决被拒。"""
+        from deskpilot.approval import compute_fingerprint
+        approver.decision = "approve"
         enforcement.submit(_req("key", {"key": "delete"}, bound_record.token))
+        assert len(executor.instructions) == 1
         # 换一个仍为 L3 的按键（参数不同 → 指纹不同；shift+delete 未收录
         # 会在闸三命中 KEY_UNKNOWN，不适用本用例，故选 escape）
+        approver.decision = "deny"
         d = enforcement.submit(_req("key", {"key": "escape"},
                                     bound_record.token))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
+        assert len(executor.instructions) == 1     # B 未执行
+        # B 触发了独立审批，送达指纹与 B 的重算值一致
+        fp_b = compute_fingerprint(
+            "key", {"key": "escape", "token": bound_record.token})
+        assert approver.requests[-1]["fingerprint"] == fp_b
 
     def test_self_declared_force_flag_useless(self, enforcement, bound_record, approver):
         """TC-S-TOK-06：自报 force 参数不改变裁决；无批准仍拒绝。"""
-        approver.decision = False
+        approver.decision = "deny"
         d = enforcement.submit(
             _req("key", {"key": "alt+f4", "force": True}, bound_record.token))
         assert d.allowed is False
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
 
     def test_terminal_binding_all_writes_l3(self, enforcement, bindings, probe):
         """TC-N-APR-03 关联：终端类绑定下 type_text 也升级 L3。"""
         probe.processes[FIXTURE_HWND_B] = "cmd.exe"
         term = bindings.create(FIXTURE_HWND_B, "cmd.exe", FIXTURE_RECT_B)
         d = enforcement.submit(_req("type_text", {"text": "dir"}, term.token))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert d.effective_level == "L3"
 
     def test_regate_after_approval_window_gone(self, enforcement, bound_record,
-                                               approver, probe):
-        """TC-E-ST-05：批准等待期间窗口关闭，重过闸拒绝。"""
-        approver.decision = True
-        req = _req("key", {"key": "alt+f4"}, bound_record.token)
-        enforcement.submit(req)
-        probe.alive[FIXTURE_HWND] = False          # 批准等待期间窗口被关
-        d = enforcement.submit(req)
+                                               approver, probe, executor,
+                                               tmp_path):
+        """TC-E-ST-05：同步等待裁决期间窗口关闭，批准后执行前复核拒绝。"""
+        def delayed_approve():
+            probe.alive[FIXTURE_HWND] = False      # 裁决到达前窗口被关
+            return "approve"
+        approver.decision = delayed_approve
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
         assert d.allowed is False
         assert d.reason_code == errors.NO_BINDING
+        assert executor.instructions == []
+        records = read_audit(str(tmp_path / "audit"))
+        assert records[-1]["decision"] == "拒绝"
 
     def test_regate_after_approval_frozen(self, enforcement, bound_record, approver,
-                                          estop):
-        """TC-E-ST-06：批准后进入冻结态，重过闸拒绝。"""
-        approver.decision = True
-        req = _req("key", {"key": "alt+f4"}, bound_record.token)
-        enforcement.submit(req)
-        estop.on_trigger_hotkey()
-        d = enforcement.submit(req)
+                                          estop, executor):
+        """TC-E-ST-06：同步等待裁决期间触发急停，批准后仍被冻结拦截。"""
+        def delayed_approve():
+            estop.on_trigger_hotkey()              # 裁决到达前进入冻结态
+            return "approve"
+        approver.decision = delayed_approve
+        d = enforcement.submit(_req("key", {"key": "alt+f4"}, bound_record.token))
         assert d.reason_code == errors.EMERGENCY_STOP
+        assert executor.instructions == []
 
 
 class TestFrozen:
@@ -298,10 +323,10 @@ class TestLaunchAppExemption:
         assert len(executor.instructions) == 1
 
     def test_launch_app_non_whitelist_escalates(self, enforcement):
-        """launch 非白名单目标 → 升级 L3 → NEEDS_APPROVAL。"""
+        """launch 非白名单目标 → 升级 L3 → APPROVAL_DENIED。"""
         d = enforcement.submit(_req("launch_app", {"app": "mspaint.exe"}))
         assert d.allowed is False
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert d.effective_level == "L3"
 
 
@@ -343,7 +368,7 @@ class TestExecutionAndAudit:
         assert len(denied) == 4
         assert [r["reason_code"] for r in denied] == [
             errors.NO_BINDING, errors.NOT_WHITELISTED,
-            errors.KEY_UNKNOWN, errors.NEEDS_APPROVAL]
+            errors.KEY_UNKNOWN, errors.APPROVAL_DENIED]
         assert any(r["decision"] == "放行" for r in records)
 
     def test_audit_failure_blocks_execution(self, enforcement, bound_record, executor,
@@ -377,7 +402,7 @@ class TestAttachGate:
 
     def test_attach_terminal_is_l3(self, enforcement):
         d = enforcement.submit(_req("attach", {"process": "cmd.exe"}))
-        assert d.reason_code == errors.NEEDS_APPROVAL
+        assert d.reason_code == errors.APPROVAL_DENIED
         assert d.effective_level == "L3"
 
 

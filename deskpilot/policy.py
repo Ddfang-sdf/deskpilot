@@ -17,6 +17,7 @@ from .models import Policy
 DEFAULT_INPUT_MAX_CHARS = 65536
 DEFAULT_L0_DURING_FREEZE = True
 DEFAULT_CORNER_HOLD_MS = 200
+DEFAULT_FREEZE_REMIND_INTERVAL = 180.0   # 冻结弹窗"稍后提醒"重提醒间隔（秒，ISS-0004）
 DEFAULT_INPUT_SCENARIO_KEYS = frozenset({"backspace"})
 DEFAULT_INPUT_CONTROL_TYPES = frozenset({"Edit", "Document"})
 
@@ -145,6 +146,12 @@ def load_policy(path: str) -> Policy:
     if (isinstance(corner_hold_ms, bool) or not isinstance(corner_hold_ms, int)
             or corner_hold_ms <= 0):
         raise _fail("estop.corner_hold_ms 必须为正整数")
+    freeze_remind_interval = estop_cfg.get("freeze_remind_interval",
+                                           DEFAULT_FREEZE_REMIND_INTERVAL)
+    if (isinstance(freeze_remind_interval, bool)
+            or not isinstance(freeze_remind_interval, (int, float))
+            or freeze_remind_interval <= 0):
+        raise _fail("estop.freeze_remind_interval 必须为正数")
 
     audit_dir = str(data["audit_dir"]).strip()
     if not audit_dir:
@@ -164,5 +171,6 @@ def load_policy(path: str) -> Policy:
         input_max_chars=input_max_chars,
         l0_during_freeze=l0_during_freeze,
         corner_hold_ms=corner_hold_ms,
+        freeze_remind_interval=float(freeze_remind_interval),
         audit_dir=audit_dir,
     )
