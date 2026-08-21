@@ -23,7 +23,7 @@ class TestResultWrapping:
         """拒绝：ok 为假，错误码与裁决一致。"""
         r = tools.key(ctx, token=bound_record.token, key="alt+f4")
         assert r.ok is False
-        assert r.error_code == errors.NEEDS_APPROVAL
+        assert r.error_code == errors.APPROVAL_DENIED
         assert "alt+f4" in r.message
 
     def test_invalid_params_result(self, ctx, bound_record):

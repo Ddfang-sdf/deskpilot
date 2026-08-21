@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -69,18 +70,23 @@ class FakeProbe:
 
 
 class FakeApprover:
-    """模拟审批通道（实现 approval.ApprovalChannel 公开接口）。"""
+    """模拟审批通道（实现 approval.ApprovalChannel 公开接口，同步裁决语义）。
+
+    decision 为 "approve" / "deny" / "timeout"；也可赋可调用对象——
+    在裁决返回前执行副作用（关窗/触发急停），模拟"延迟批准"场景（ISS-0003）。
+    """
 
     def __init__(self):
-        self.decision = False          # 是否批准
+        self.decision: Any = "deny"      # 同步裁决结果或可调用对象
         self.requests: list[dict] = []  # 送达通道的审批请求
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> bool:
+                image_path: str | None = None) -> str:
         self.requests.append({"description": description,
                               "fingerprint": fingerprint,
                               "image_path": image_path})
-        return self.decision
+        d = self.decision
+        return d() if callable(d) else d
 
 
 class FakeExecutor:
@@ -134,7 +140,7 @@ def make_policy(audit_dir: str = "", **overrides) -> models.Policy:
         input_control_types=frozenset({"Edit", "Document"}),
         binding_ttl=600.0, approval_ttl=60.0, wait_poll_interval=0.5,
         wait_timeout_max=300.0, input_max_chars=65536,
-        l0_during_freeze=True, corner_hold_ms=200,
+        l0_during_freeze=True, corner_hold_ms=200, freeze_remind_interval=180.0,
         audit_dir=audit_dir,
     )
     base.update(overrides)

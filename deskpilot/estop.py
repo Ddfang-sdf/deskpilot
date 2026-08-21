@@ -21,10 +21,12 @@ class EstopMonitor:
     """冻结标志管理：置位（热键/甩角）与复位（本地人类通道）。"""
 
     def __init__(self, corner_hold_ms: int, clock: Callable[[], float],
-                 audit_log: AuditLogger | None = None):
+                 audit_log: AuditLogger | None = None,
+                 on_state_change: Callable[[bool, str], None] | None = None):
         self._corner_hold_ms = corner_hold_ms
         self._clock = clock
         self._audit = audit_log
+        self._on_state_change = on_state_change   # 冻结通知钩子（ISS-0004）
         self._frozen = False
         self._corner_since: float | None = None
 
@@ -43,6 +45,10 @@ class EstopMonitor:
     def cli_reset(self) -> None:
         """本地 CLI 复位命令入口：复位并记审计。"""
         self._reset("本地 CLI 复位命令")
+
+    def dialog_reset(self) -> None:
+        """冻结提示弹窗"立即解冻"入口：复位并记审计（ISS-0004）。"""
+        self._reset("冻结提示弹窗")
 
     def check_corner(self, x: int, y: int) -> None:
         """鼠标位置轮询回调：甩角防抖判定。
@@ -64,11 +70,18 @@ class EstopMonitor:
         self._frozen = True
         if self._audit is not None:
             self._audit.record_event("急停触发", source)
+        if self._on_state_change is not None:
+            self._on_state_change(True, source)
 
     def _reset(self, source: str) -> None:
         if not self._frozen:
+            # 复位 no-op 也记审计（ISS-0002）：热键按没按、送到了谁必须可查
+            if self._audit is not None:
+                self._audit.record_event("复位请求-未冻结", source)
             return
         self._frozen = False
         self._corner_since = None
         if self._audit is not None:
             self._audit.record_event("急停复位", source)
+        if self._on_state_change is not None:
+            self._on_state_change(False, source)

@@ -8,6 +8,9 @@ whitelist:
   - { process: mspaint.exe, max_level: L2 }
   - { process: ApplicationFrameHost.exe, max_level: L2 }
   - { process: powerpnt.exe, max_level: L2 }
+  - { process: weixin.exe, max_level: L2 }
+  - { process: wxwork.exe, max_level: L2 }
+  - { process: msedge.exe, max_level: L2 }
 
 terminal_apps:
   - cmd.exe

@@ -1,9 +1,9 @@
 """本地审批弹窗通道（M3，功能设计说明书 §6.1）。
 
-fire-and-forget：request() 立即返回 False——AI 即时收到 NEEDS_APPROVAL，
-不阻塞 MCP 处理与写锁（详细设计 §2.4）；审批弹窗以独立进程运行
-（tkinter 对话框：批准一次 / 拒绝，60 秒倒计时，超时默认拒绝）。
-人类批准后由本通道的后台轮询线程回调签发令牌——令牌不经 AI（INV-4）。
+同步阻塞语义（ISS-0003）：request() 挂起调用方，同步等待人类裁决——
+弹窗以独立进程运行（tkinter 对话框：批准一次 / 拒绝，60 秒倒计时，
+超时默认拒绝），裁决结果经结果文件回传；返回 "approve" / "deny" / "timeout"。
+授权记录由 ApprovalManager 在服务内部签发，不经 AI（INV-4）。
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -22,45 +21,50 @@ _POLL_INTERVAL = 0.1
 
 
 class TkApprovalChannel:
-    """M3 生产审批通道。"""
+    """M3 生产审批通道（同步等待裁决）。"""
 
-    def __init__(self, on_approved: Callable[[str], None],
-                 timeout: float = _DIALOG_TIMEOUT_SECONDS,
+    def __init__(self, timeout: float = _DIALOG_TIMEOUT_SECONDS,
                  clock: Callable[[], float] = time.monotonic,
                  popen_factory: Callable[..., Any] | None = None,
                  result_root: str | None = None):
-        self._on_approved = on_approved
         self._timeout = timeout
         self._clock = clock
         self._popen = popen_factory or subprocess.Popen
         self._result_root = Path(result_root) if result_root else Path(
             sys.executable).parent.parent  # 默认服务工作目录
-        self._inflight: dict[str, float] = {}   # 指纹 -> 弹窗截止时间（在途去重）
         self.last_request: dict[str, str] | None = None   # 测试观测口
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> bool:
-        now = self._clock()
-        # 清理已过期在途项；同指纹弹窗在途期间不重复弹窗（AI 重试不产生弹窗堆叠）
-        self._inflight = {fp: dl for fp, dl in self._inflight.items() if dl > now}
-        if fingerprint in self._inflight:
-            return False
+                image_path: str | None = None) -> str:
+        """向人类请求批准并同步等待裁决（ISS-0003）。
+
+        弹窗独立进程运行，裁决经结果文件回传；返回 "approve" / "deny" /
+        "timeout"。任何异常（描述写盘失败、结果读取失败、非法内容）一律按
+        拒绝类返回（fail-closed）。"""
         request_id = uuid.uuid4().hex[:16]
         result_path = self._result_root / f"deskpilot-approval-{request_id}.result"
         desc_path = self._result_root / f"deskpilot-approval-{request_id}.desc"
         try:
             desc_path.write_text(description, encoding="utf-8")
         except OSError:
-            return False
+            return "deny"
         self.last_request = {"description": description,
                              "fingerprint": fingerprint,
                              "result_path": str(result_path)}
-        self._inflight[fingerprint] = now + self._timeout
         self._spawn_dialog(desc_path, result_path, image_path or "")
-        threading.Thread(
-            target=self._poll_result, args=(fingerprint, result_path),
-            daemon=True).start()
-        return False
+        deadline = self._clock() + self._timeout
+        while self._clock() < deadline:
+            try:
+                if result_path.exists():
+                    decision = result_path.read_text(encoding="utf-8").strip()
+                    result_path.unlink(missing_ok=True)
+                    if decision in ("approve", "deny", "timeout"):
+                        return decision
+                    return "deny"      # 非法内容按拒绝（fail-closed）
+            except OSError:
+                return "deny"
+            time.sleep(_POLL_INTERVAL)
+        return "timeout"
 
     # ---- 内部 ----
 
@@ -83,18 +87,3 @@ class TkApprovalChannel:
             self._popen(cmd, env=env)
         except OSError:
             pass
-
-    def _poll_result(self, fingerprint: str, result_path: Path) -> None:
-        deadline = self._clock() + self._timeout
-        while self._clock() < deadline:
-            try:
-                if result_path.exists():
-                    decision = result_path.read_text(encoding="utf-8").strip()
-                    result_path.unlink(missing_ok=True)
-                    if decision == "approve":
-                        self._on_approved(fingerprint)
-                    break
-            except OSError:
-                break
-            time.sleep(_POLL_INTERVAL)
-        self._inflight.pop(fingerprint, None)   # 批复/超时后解除在途标记

@@ -14,8 +14,9 @@ from typing import Any
 from .approval import ApprovalManager, compute_fingerprint
 from .audit import AuditLogger
 from .binding import BindingManager
-from .errors import (AUDIT_FAILURE, EMERGENCY_STOP, INVALID_PARAMS, KEY_DENIED,
-                     KEY_UNKNOWN, NEEDS_APPROVAL, NO_BINDING, NOT_WHITELISTED,
+from .errors import (APPROVAL_DENIED, APPROVAL_TIMEOUT, AUDIT_FAILURE,
+                     EMERGENCY_STOP, INVALID_PARAMS, KEY_DENIED,
+                     KEY_UNKNOWN, NO_BINDING, NOT_WHITELISTED,
                      POLICY_VIOLATION, AuditFailure, ExecutorError)
 from .estop import EstopMonitor
 from .executor import Executor
@@ -111,16 +112,31 @@ class Enforcement:
             if cls == "l3":
                 eff = L3                              # 危险键升级 L3（§8.6）
 
-        # 闸四 L3 审批令牌（令牌不经 AI，按指纹查证）
+        # 闸四 L3 同步审批（ISS-0003：同步等待人类裁决，AI 自发起后退出环路）
         if eff == L3:
             fp = compute_fingerprint(tool, self._fingerprint_params(request))
-            if not self._approvals.verify_and_consume(fp):
-                desc = self._describe(request, binding)
-                image_path = self._capture_target(binding)
-                self._approvals.request_approval(desc, fp, image_path=image_path)
-                return self._deny(request, eff, NEEDS_APPROVAL,
-                                  f"受控操作需人工批准：{desc}。"
-                                  f"等待人类在本地批准后以完全相同参数原样重试", t0)
+            desc = self._describe(request, binding)
+            image_path = self._capture_target(binding)
+            decision = self._approvals.request_approval(desc, fp,
+                                                        image_path=image_path)
+            if decision != "approve":
+                code = APPROVAL_TIMEOUT if decision == "timeout" \
+                    else APPROVAL_DENIED
+                guidance = ("审批超时：人类未在时限内裁决，请留意本地审批弹窗后"
+                            "重新发起" if decision == "timeout" else
+                            "受控操作未获人类批准")
+                return self._deny(request, eff, code,
+                                  f"{guidance}：{desc}", t0)
+            self._approvals.verify_and_consume(fp)    # 即验即销（服务内部闭环）
+            # 执行前复核（ISS-0003 整改项 E + 冻结双检查 §9.7）：
+            # 同步等待裁决期间可能已触发急停、目标窗口可能已失效
+            if self._estop.is_frozen():
+                return self._deny(request, eff, EMERGENCY_STOP,
+                                  "急停冻结中：停止一切写尝试，等待人类复位", t0)
+            if binding is not None and \
+                    self._bindings.validate(request.binding_token) is None:
+                return self._deny(request, eff, NO_BINDING,
+                                  "批准等待期间目标绑定已失效（窗口已关或超时）", t0)
 
         # attach / detach 仅过闸不落执行层（绑定动作由工具层完成）
         if tool in {"attach", "detach"}:
