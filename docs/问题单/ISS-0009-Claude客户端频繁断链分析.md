@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0009 |
 | 标题 | Claude Code 与 deskpilot MCP server 之间的连接频繁断开 |
 | 严重级 | **高**（断链即工具不可用，且当前用户需手动重启会话恢复） |
-| 状态 | 已批准（2026-08-29 sdfang 审核通过，挂账待开工） |
+| 状态 | **已关闭**（2026-08-29 验收通过：245 用例全绿 + stdout 卫生黑盒通过） |
 | 提出 | 2026-08-29（实盘使用反馈） |
 
 ## 1. 客户端机制调研（先说清对方怎么工作）
@@ -82,5 +82,38 @@
 |------|------|------|
 | v0.1 | 2026-08-29 | 建立问题单（客户端机制调研/嫌疑 S1~S6/方案 A~G/测试），待评审 |
 | v0.2 | 2026-08-29 | 经 agent-browser 源码对照研究（Rust 单二进制 + tokio daemon + 边车文件发现协议），补方案 H（daemon 版本握手与自愈重启）；确认 C/D/E 方向与其 stderr 管道纪律、socket 全超时实践一致 |
+| v0.3 | 2026-08-29 | 开工前补 §6 接口定义（SDD 公开入口）；E（冷启动达标）已由 ISS-0008 覆盖（懒加载+裁剪，就绪 3.2s），本单不再单列实现项，以 H 项验收复测 |
+| v0.4 | 2026-08-29 | SDD 整改完成：TC 11 条先行 → A~H 落地 → 245 用例全绿。A 进度通知接入 stdio 服务（须客户端 progressToken 方发，防御空转）；B 级别预算 L0=5/L1=15/L2=30s、L3=approval_ttl+5，临期回 TOOL_TIMEOUT；C httpd 未知异常兜底 500 不断连 + execute 三方异常收敛（FailSafeException→EMERGENCY_STOP、未知→INTERNAL_ERROR）；D stdout 卫生黑盒通过（stdio 会话全帧合法 JSON-RPC）；G 状态跨会话回归通过；H /version 端点 + daemon.version 握手文件 + check_daemon_version；F 交付 scripts/daemon_soak.py 巡检脚本；README 增补 MCP_TOOL_TIMEOUT=120000 与断链零成本说明。 |
+
+## 6. 接口定义（SDD 公开入口；测试只允许调用以下入口）
+
+### mcp_server（A 进度通知 / B 超时预算）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `call_with_progress`（新增） | `async (work, report, interval_s: float, clock) -> Any` | 周期触发进度回调直到 work 完成；返回 work 结果；用于 stdio 服务在长调用（L3 同步审批等）期间向客户端发 MCP progress notifications |
+| `TOOL_TIME_BUDGETS`（新增，models） | `Mapping[str, float]`，键为级别（"L0"/"L1"/"L2"/"L3"） | 各级别内部时限预算（秒）：L0=5、L1=15、L2=30、L3=approval_ttl；临期返回结构化 `TOOL_TIMEOUT`"处理中"错误而非悬挂 |
+| `TOOL_TIMEOUT`（新增错误码，errors） | `str` | 超时预算触发时的错误码 |
+
+### httpd（C 不死身 / H 版本握手）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| handler `/call`（行为变更） | — | 未处理异常兜底回 500 + 结构化错误码（已知错误码原样透传，不断连） |
+| `/version`（新增端点） | `GET -> {"version": str}` | 返回 daemon 版本（包版本） |
+| `check_daemon_version`（新增） | `(host, port, expected: str, timeout=0.3) -> bool` | 探测 /version 并与期望版本比对；探测失败按不匹配处理 |
+| `VERSION_FILE`（新增常量） | `str`，值 `"daemon.version"` | daemon 启动时在审计目录写入版本号文件 |
+
+### executor（C 不死身）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `execute`（行为变更） | 同现签名 | 像素系调用统一捕获三方库异常（pyautogui.FailSafeException 等）→ ExecutorError(EMERGENCY_STOP)；其他未知异常 → ExecutorError(INTERNAL_ERROR)，不再裸抛 |
+
+### 断链零成本（G，回归约束）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `/call` attach→写操作跨调用 | — | daemon 持有绑定等内存态跨客户端会话保持（回归断言：跨两次独立 HTTP 会话绑定仍有效） |
 
 参考：Claude Code MCP 超时环境变量与已知问题（[MCP_TOOL_IDLE_TIMEOUT 文档缺失](https://github.com/anthropics/claude-code/issues/70441)、[stdio 1s 超时 bug](https://github.com/anthropics/claude-code/issues/62121)、[handshake 超时](https://github.com/anthropics/claude-code/issues/47400)、[MCP_TOOL_TIMEOUT 提案](https://github.com/anthropics/claude-code/issues/47076)）；MCP 协议无 keep-alive，断链依赖传输事件（stdin 关闭/进程退出）。

@@ -13,10 +13,28 @@ import socket
 import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
+
+from . import errors
+from .models import TOOL_TIME_BUDGETS
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9420
+VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
+
+
+def check_daemon_version(host: str, port: int, expected: str,
+                         timeout: float = 0.3) -> bool:
+    """ISS-0009 §6：探测 daemon /version 并与期望版本比对；探测失败按不匹配。"""
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/version",
+                                    timeout=timeout) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return False
+    return body.get("version") == expected
 
 
 class HttpDaemon:
@@ -56,11 +74,27 @@ class HttpDaemon:
                 f"常驻服务端口 {self._host}:{self._port} 已被占用"
                 f"（已有 daemon 在线？）: {e}") from e
         self.port = self._httpd.server_address[1]
+        self._write_version_file()                # ISS-0009 H：版本握手文件
         self._thread = threading.Thread(target=self._httpd.serve_forever,
                                         daemon=True)
         self._thread.start()
         if self._idle_timeout_s > 0:              # ISS-0008 P8：idle 自停看门狗
             threading.Thread(target=self._idle_watchdog, daemon=True).start()
+
+    def _write_version_file(self) -> None:
+        """ISS-0009 H：在审计目录写 daemon.version（版本握手）。"""
+        import deskpilot
+        try:
+            audit_dir = getattr(getattr(self._ctx, "policy", None),
+                                "audit_dir", None)
+            if audit_dir:
+                from pathlib import Path
+                Path(audit_dir).mkdir(parents=True, exist_ok=True)
+                (Path(audit_dir) / VERSION_FILE).write_text(
+                    json.dumps({"version": deskpilot.__version__}),
+                    encoding="utf-8")
+        except OSError:
+            pass                                  # 握手文件失败不阻断启动
 
     def stop(self) -> None:
         if self._httpd is not None:
@@ -72,6 +106,46 @@ class HttpDaemon:
 
     def _touch(self) -> None:
         self._last_activity = time.monotonic()
+
+    # ---- 预算执行与异常兜底（ISS-0009 §6 B/C） ----
+
+    _BUDGET_EXCEEDED = object()
+
+    def _call_with_budget(self, tool: str, raw: dict):
+        """按级别预算执行一次工具调用（ISS-0009 §6 B）。
+
+        超预算返回 _BUDGET_EXCEEDED（写路径持锁串行语义不变）；
+        执行体异常原样上抛，由 handler 兜底为 500 结构化错误。
+        """
+        from .models import TOOL_LEVELS
+        from .tools import call_tool
+
+        level = TOOL_LEVELS.get(tool)
+        if level == "L3":
+            policy = getattr(self._ctx, "policy", None)
+            budget = (policy.approval_ttl + 5.0) if policy else 65.0
+        else:
+            budget = TOOL_TIME_BUDGETS.get(level, TOOL_TIME_BUDGETS["L2"])
+
+        def invoke():
+            if level == "L0":
+                return call_tool(self._ctx, tool, raw)   # 只读路径不入写锁
+            self._inflight_writes += 1
+            try:
+                with self._write_lock:                   # 写路径严格串行
+                    return call_tool(self._ctx, tool, raw)
+            finally:
+                self._inflight_writes -= 1
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(invoke)
+            try:
+                return future.result(timeout=budget)
+            except FuturesTimeoutError:
+                return self._BUDGET_EXCEEDED
+        finally:
+            pool.shutdown(wait=False)
 
     def _idle_exempt(self) -> bool:
         """人类仍在使用语义：冻结中 / 写调用在途（含同步审批）/ 有效绑定。"""
@@ -114,6 +188,9 @@ class HttpDaemon:
             def do_GET(self):
                 if self.path == "/health":
                     self._send(200, {"status": "ok"})
+                elif self.path == "/version":
+                    import deskpilot
+                    self._send(200, {"version": deskpilot.__version__})
                 else:
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",
                                      "message": "端点不存在"})
@@ -146,17 +223,22 @@ class HttpDaemon:
                 tool = body.get("tool")
                 raw = body.get("params") or {}
                 daemon._touch()
-                from .tools import call_tool
-                if TOOL_LEVELS.get(tool) == "L0":
-                    # ISS-0008 P1：只读路径全并行，不入写锁
-                    result = call_tool(daemon._ctx, tool, raw)
-                else:
-                    daemon._inflight_writes += 1
-                    try:
-                        with daemon._write_lock:   # 写路径严格串行
-                            result = call_tool(daemon._ctx, tool, raw)
-                    finally:
-                        daemon._inflight_writes -= 1
+                try:
+                    result = daemon._call_with_budget(tool, raw)
+                except Exception as e:
+                    # ISS-0009 §6 C：未知异常兜底 500 结构化错误，连接不断
+                    self._send(500, {"ok": False,
+                                     "error_code": errors.INTERNAL_ERROR,
+                                     "message": f"服务内部异常: {e}",
+                                     "data": None})
+                    return
+                if result is daemon._BUDGET_EXCEEDED:
+                    # ISS-0009 §6 B：临期返回结构化"处理中"而非悬挂
+                    self._send(200, {"ok": False,
+                                     "error_code": errors.TOOL_TIMEOUT,
+                                     "message": "处理中，请稍后重试",
+                                     "data": None})
+                    return
                 daemon._touch()
                 self._send(200, {"ok": result.ok,
                                  "error_code": result.error_code,

@@ -7,13 +7,38 @@ stdio 服务循环留待后续迭代。
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import asyncio
+import time
+from typing import Any, Awaitable, Callable, Mapping
 
 from .errors import InvalidParamsError  # noqa: F401  （供调用方捕获）
 from .models import Policy
 
 # 参数类型标签：str / int / num / coord / rect / text / any
 # text 受 policy.limits.input_max_chars 长度约束；coord/rect 为坐标结构。
+
+
+async def call_with_progress(work: Awaitable, report: Callable[[], None],
+                             interval_s: float,
+                             clock: Callable[[], float] = time.monotonic) -> Any:
+    """ISS-0009 §6：周期触发进度回调直到 work 完成；返回 work 结果。
+
+    work 为协程/Future；每 interval_s 未完成即调用 report() 一次；
+    work 抛异常原样透出且进度停止。用于 stdio 服务在长调用（L3 同步审批等）
+    期间向客户端发 MCP progress notifications。
+    """
+    task = asyncio.ensure_future(work)
+    try:
+        while True:
+            try:
+                return await asyncio.wait_for(asyncio.shield(task), interval_s)
+            except asyncio.TimeoutError:
+                if task.done():
+                    return task.result()
+                report()
+    finally:
+        if not task.done():
+            task.cancel()
 TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     # ---- L0 感知类（详细设计 §12.4）----
     "screenshot": {
@@ -201,8 +226,32 @@ def build_server(ctx, backend: str = "local", daemon_url: str = ""):
     @server.call_tool()
     async def _call(name: str, arguments: dict | None):
         raw = arguments or {}
+
+        def _progress_reporter() -> None:
+            """ISS-0009 §6 A：向客户端发 MCP 进度通知（须客户端携带
+            progressToken 才有协议意义，否则安全空转）。"""
+            try:
+                rc = server.request_context
+            except LookupError:
+                return
+            try:
+                req = getattr(rc, "request", None)
+                meta = getattr(getattr(req, "params", None), "meta", None)
+                token = getattr(meta, "progressToken", None) if meta else None
+                session = getattr(rc, "session", None)
+                if session is not None and token is not None:
+                    asyncio.ensure_future(
+                        session.send_progress_notification(
+                            token, 0.0, message="处理中（等待人类裁决）"))
+            except Exception:
+                pass
+
         if backend == "http":
-            result_dict = remote_call(name, raw, daemon_url)
+            # ISS-0009 §6 A：长调用（L3 同步审批等）期间周期发进度通知，
+            # 协议兼容客户端收到进度会重置执行超时
+            result_dict = await call_with_progress(
+                asyncio.to_thread(remote_call, name, raw, daemon_url),
+                _progress_reporter, interval_s=5.0)
             payload = json.dumps(result_dict, ensure_ascii=False, default=str)
             contents: list = [types.TextContent(type="text", text=payload)]
             data = result_dict.get("data") or {}

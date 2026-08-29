@@ -70,7 +70,18 @@ class Executor:
                                 f"工具 {tool} 的驱动未包含在 M1 构建（见里程碑规划）")
         rect = self._binding_rect(hwnd)
         before = self._evidence_shot(tool, "before", rect)
-        result = self._dispatch(tool, params, hwnd)
+        try:
+            result = self._dispatch(tool, params, hwnd)
+        except ExecutorError:
+            raise
+        except pyautogui.FailSafeException as e:
+            # ISS-0009 §6 C：三方异常收敛（光标角落 FAILSAFE 语义即急停）
+            raise ExecutorError(EMERGENCY_STOP,
+                                f"pyautogui FAILSAFE 触发: {e}") from e
+        except Exception as e:
+            # ISS-0009 §6 C：未知异常不再裸抛（防 handler/进程断连）
+            raise ExecutorError(INTERNAL_ERROR,
+                                f"执行层未处理异常: {e}") from e
         after = self._evidence_shot(tool, "after", rect)
         result = dict(result or {})
         result["before_shot"] = before

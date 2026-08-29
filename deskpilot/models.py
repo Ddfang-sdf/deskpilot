@@ -34,6 +34,14 @@ BINDING_REQUIRED_TOOLS = frozenset({
     "type_text", "key", "set_clipboard", "drag",
 })
 
+# ISS-0009 §6：各级别调用的内部时限预算（秒）；临期返回 TOOL_TIMEOUT
+# 结构化"处理中"错误而非悬挂。L3 不在表内——其预算为 approval_ttl+5（同步审批语义）。
+TOOL_TIME_BUDGETS: Mapping[str, float] = {
+    "L0": 5.0,
+    "L1": 15.0,
+    "L2": 30.0,
+}
+
 
 @dataclass(frozen=True)
 class Policy:
