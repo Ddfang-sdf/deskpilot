@@ -54,6 +54,7 @@ class Policy:
     corner_hold_ms: int
     freeze_remind_interval: float     # 冻结弹窗稍后提醒重提醒间隔秒（ISS-0004）
     audit_dir: str
+    idle_timeout_minutes: float = 0.0  # daemon idle 自停分钟数，0=禁用（ISS-0008）
 
 
 @dataclass

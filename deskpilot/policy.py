@@ -153,6 +153,12 @@ def load_policy(path: str) -> Policy:
             or freeze_remind_interval <= 0):
         raise _fail("estop.freeze_remind_interval 必须为正数")
 
+    idle_timeout_minutes = timeouts.get("idle_timeout_minutes", 0.0)
+    if (isinstance(idle_timeout_minutes, bool)
+            or not isinstance(idle_timeout_minutes, (int, float))
+            or idle_timeout_minutes < 0):
+        raise _fail("timeouts.idle_timeout_minutes 必须为非负数（0=禁用）")
+
     audit_dir = str(data["audit_dir"]).strip()
     if not audit_dir:
         raise _fail("audit_dir 不能为空")
@@ -173,4 +179,5 @@ def load_policy(path: str) -> Policy:
         corner_hold_ms=corner_hold_ms,
         freeze_remind_interval=float(freeze_remind_interval),
         audit_dir=audit_dir,
+        idle_timeout_minutes=float(idle_timeout_minutes),
     )

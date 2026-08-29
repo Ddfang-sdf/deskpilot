@@ -136,38 +136,30 @@ def slide_out_xs(screen_w: int, win_w: int = WIN_W) -> list[int]:
     return [x for x, _ in slide_out_frames(screen_w, win_w)]
 
 
-def main() -> None:
-    """生产弹窗入口（Tk 主循环 + 状态机）。
+def build_window(parent, audit_dir: str, interval: float):
+    """在 parent（共享 Tk root）线程内构建冻结提示 toast（Toplevel，ISS-0008 P6）。
 
-    argv: <audit_dir> <remind_interval>
     状态机：SLIDE_IN → SHOWN ⇄ SNOOZED → SLIDE_OUT → 退出；
     状态文件 frozen=false（任何来源复位）即滑出退出。
     """
+    import math
     import tkinter as tk
 
-    audit_dir = sys.argv[1]
-    interval = float(sys.argv[2]) if len(sys.argv) > 2 else 180.0
-
-    if not acquire_singleton():                   # ISS-0006：互斥单例，抢不到即退出
-        return
-
-    root = tk.Tk()
-    root.title("DeskPilot 急停")
-    root.overrideredirect(True)                  # toast 形态：无边框
-    root.attributes("-topmost", True)
-    root.config(bg=CHROMA)
-    root.attributes("-transparentcolor", CHROMA)  # 色键抠除窗外区域 → 圆角生效
-    root.attributes("-alpha", 0.0)               # 滑入从全透明开始
-    screen_w = root.winfo_screenwidth()
-    screen_h = root.winfo_screenheight()
+    win = tk.Toplevel(parent)
+    win.title("DeskPilot 急停")
+    win.overrideredirect(True)                  # toast 形态：无边框
+    win.attributes("-topmost", True)
+    win.config(bg=CHROMA)
+    win.attributes("-transparentcolor", CHROMA)  # 色键抠除窗外区域 → 圆角生效
+    win.attributes("-alpha", 0.0)               # 滑入从全透明开始
+    screen_w = win.winfo_screenwidth()
+    screen_h = win.winfo_screenheight()
     frames_in = slide_in_frames(screen_w, WIN_W)
     frames_out = slide_out_frames(screen_w, WIN_W)
     y = screen_h - WIN_H - MARGIN_BOTTOM
-    root.geometry(f"{WIN_W}x{WIN_H}+{frames_in[0][0]}+{y}")
+    win.geometry(f"{WIN_W}x{WIN_H}+{frames_in[0][0]}+{y}")
 
     # ---- 卡片装配（画布圆角卡片 + 绝对定位文本/按钮，ISS-0005 §3.2）----
-    import math
-
     def _card_points(x1, y1, x2, y2, r):
         """圆角矩形顶点（四角各 5 点圆弧，配合 create_polygon smooth）。"""
         corners = [((x2 - r, y1 + r), 90, 0), ((x2 - r, y2 - r), 0, -90),
@@ -179,7 +171,7 @@ def main() -> None:
                 pts.extend((cx + r * math.cos(a), cy - r * math.sin(a)))
         return pts
 
-    cv = tk.Canvas(root, width=WIN_W, height=WIN_H, bg=CHROMA,
+    cv = tk.Canvas(win, width=WIN_W, height=WIN_H, bg=CHROMA,
                    highlightthickness=0, bd=0)
     cv.place(x=0, y=0)
     r = STYLE["radius"]
@@ -192,15 +184,15 @@ def main() -> None:
 
     FG = ("Microsoft YaHei UI", 9)
     card_bg = STYLE["card_bg"]
-    tk.Label(root, text="🛡️", font=("Segoe UI Emoji", 14),
+    tk.Label(win, text="🛡️", font=("Segoe UI Emoji", 14),
              bg=card_bg).place(x=18, y=13)
-    tk.Label(root, text="DeskPilot 已冻结", fg=STYLE["title_fg"], bg=card_bg,
+    tk.Label(win, text="DeskPilot 已冻结", fg=STYLE["title_fg"], bg=card_bg,
              font=("Microsoft YaHei UI", 13, "bold")).place(x=48, y=15)
-    src = tk.Label(root, text="", font=FG, fg=STYLE["source_fg"], bg=card_bg)
+    src = tk.Label(win, text="", font=FG, fg=STYLE["source_fg"], bg=card_bg)
     src.place(x=48, y=45)
-    tk.Label(root, text="AI 的写操作已全部拒绝（EMERGENCY_STOP）",
+    tk.Label(win, text="AI 的写操作已全部拒绝（EMERGENCY_STOP）",
              font=FG, fg=STYLE["body_fg"], bg=card_bg).place(x=18, y=76)
-    tk.Label(root, text="可随时按 Ctrl+Shift+F11 直接解冻，本窗口会自动消失",
+    tk.Label(win, text="可随时按 Ctrl+Shift+F11 直接解冻，本窗口会自动消失",
              font=FG, fg=STYLE["hint_fg"], bg=card_bg).place(x=18, y=100)
 
     holder = {"state": "SLIDE_IN", "snooze_start": 0.0,
@@ -227,18 +219,18 @@ def main() -> None:
         holder["state"] = "SNOOZE_OUT"
         holder["frames"] = list(frames_out)
         holder["snooze_start"] = time.monotonic()
-        root.after(FRAME_MS, slide_step)         # 按钮回调须自启动画链
+        win.after(FRAME_MS, slide_step)          # 按钮回调须自启动画链
 
     def on_snooze():
         import time
         holder["state"] = "SNOOZE_OUT"
         holder["frames"] = list(frames_out)
         holder["snooze_start"] = time.monotonic()
-        root.after(FRAME_MS, slide_step)         # 按钮回调须自启动画链
+        win.after(FRAME_MS, slide_step)          # 按钮回调须自启动画链
 
     def _flat_button(text, cmd, spec, width_px):
         """扁平按钮：normal/hover/pressed 三态换色，禁用色经 disabledforeground。"""
-        b = tk.Button(root, text=text, command=cmd, relief="flat", bd=0,
+        b = tk.Button(win, text=text, command=cmd, relief="flat", bd=0,
                       font=("Microsoft YaHei UI", 10), cursor="hand2",
                       bg=spec["bg"], fg=spec["fg"],
                       activebackground=spec.get("pressed_bg",
@@ -266,20 +258,20 @@ def main() -> None:
         frames = holder["frames"]
         if frames:
             x, alpha = frames.pop(0)
-            root.geometry(f"{WIN_W}x{WIN_H}+{x}+{y}")
-            root.attributes("-alpha", alpha)
-            root.after(FRAME_MS, slide_step)
+            win.geometry(f"{WIN_W}x{WIN_H}+{x}+{y}")
+            win.attributes("-alpha", alpha)
+            win.after(FRAME_MS, slide_step)
             return
         st = holder["state"]
         if st == "SLIDE_IN":
             holder["state"] = "SHOWN"
         elif st == "SNOOZE_OUT":
             holder["state"] = "SNOOZED"
-            root.withdraw()
+            win.withdraw()
         elif st == "SLIDE_OUT":
-            root.destroy()
+            win.destroy()
             return
-        root.after(POLL_MS, poll)
+        win.after(POLL_MS, poll)
 
     def poll():
         import time
@@ -292,23 +284,44 @@ def main() -> None:
             if next_action("SHOWN", frozen) == "slide_out_exit":
                 holder["state"] = "SLIDE_OUT"
                 holder["frames"] = list(frames_out)
-                root.after(FRAME_MS, slide_step)
+                win.after(FRAME_MS, slide_step)
                 return
         elif state == "SNOOZED":
             if not frozen:
-                root.destroy()                   # 已隐藏，直接退出
+                win.destroy()                    # 已隐藏，直接退出
                 return
             if should_remind(holder["snooze_start"], time.monotonic(),
                              True, interval):
                 holder["state"] = "SLIDE_IN"
                 holder["frames"] = list(frames_in)
-                root.deiconify()
+                win.deiconify()
                 refresh_source()
-                root.after(FRAME_MS, slide_step)
+                win.after(FRAME_MS, slide_step)
                 return
-        root.after(POLL_MS, poll)
+        win.after(POLL_MS, poll)
 
     refresh_source()
-    root.after(FRAME_MS, slide_step)
+    win.after(FRAME_MS, slide_step)
+    return win
+
+
+def main() -> None:
+    """独立子进程入口（非 daemon / stdio 回退路径）。
+
+    argv: <audit_dir> <remind_interval>
+    """
+    import tkinter as tk
+
+    audit_dir = sys.argv[1]
+    interval = float(sys.argv[2]) if len(sys.argv) > 2 else 180.0
+
+    if not acquire_singleton():                   # ISS-0006：互斥单例，抢不到即退出
+        return
+
+    root = tk.Tk()
+    root.withdraw()
+    win = build_window(root, audit_dir, interval)
+    # 独立形态：本窗关闭即退出 mainloop（共享线程形态由服务托管，不绑此事件）
+    win.bind("<Destroy>", lambda e: root.quit() if e.widget is win else None)
     root.mainloop()
     release_singleton()

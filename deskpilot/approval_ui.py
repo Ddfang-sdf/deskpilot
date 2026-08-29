@@ -26,10 +26,12 @@ class TkApprovalChannel:
     def __init__(self, timeout: float = _DIALOG_TIMEOUT_SECONDS,
                  clock: Callable[[], float] = time.monotonic,
                  popen_factory: Callable[..., Any] | None = None,
-                 result_root: str | None = None):
+                 result_root: str | None = None,
+                 dialog_service=None):
         self._timeout = timeout
         self._clock = clock
         self._popen = popen_factory or subprocess.Popen
+        self._dialog_service = dialog_service   # ISS-0008 P6：线程弹窗（可选）
         self._result_root = Path(result_root) if result_root else Path(
             sys.executable).parent.parent  # 默认服务工作目录
         self.last_request: dict[str, str] | None = None   # 测试观测口
@@ -71,6 +73,17 @@ class TkApprovalChannel:
     def _spawn_dialog(self, desc_path: Path, result_path: Path,
                       image_path: str = "") -> None:
         timeout = f"{self._timeout:.0f}"
+        if self._dialog_service is not None:
+            # ISS-0008 P6：共享 Tk 线程内建窗，替代拉起子进程 exe
+            try:
+                description = desc_path.read_text(encoding="utf-8",
+                                                  errors="replace")
+            except OSError:
+                description = "(审批描述读取失败)"
+            self._dialog_service.show("approval", {
+                "description": description, "result_path": str(result_path),
+                "timeout_s": self._timeout, "image_path": image_path})
+            return
         if getattr(sys, "frozen", False):
             # PyInstaller onefile：sys.executable 是 deskpilot.exe 自身，
             # -m 参数无效，弹窗由打包入口按 --approval-dialog 分发。

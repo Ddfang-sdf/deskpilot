@@ -32,17 +32,27 @@ class FreezeNotifier:
     """冻结通知装配器：状态文件 + 弹窗单例 + 解冻请求消费。"""
 
     def __init__(self, audit_dir: str, clock=time.monotonic, spawn=None,
-                 remind_interval: float = DEFAULT_FREEZE_REMIND_INTERVAL):
+                 remind_interval: float = DEFAULT_FREEZE_REMIND_INTERVAL,
+                 dialog_service=None):
         self._dir = Path(audit_dir)
         self._clock = clock
         self._spawn = spawn or self._default_spawn
         self._remind = remind_interval
+        self._dialog_service = dialog_service   # ISS-0008 P6：线程弹窗（可选）
         self._seq = 0
+        self._state_cache: dict | None = None    # ISS-0008 P7：读缓存（仅读时更新）
+        self._state_mtime: float | None = None
+        self._state_reads_n = 0
 
     @property
     def seq(self) -> int:
         """当前状态序号（测试观测口）。"""
         return self._seq
+
+    @property
+    def state_reads(self) -> int:
+        """共享状态文件实际读取次数（ISS-0008 §6 测试观测口；mtime 跳读不计）。"""
+        return self._state_reads_n
 
     def on_state_change(self, frozen: bool, source: str) -> None:
         """estop 状态变化回调：seq 共享单调自增，原子重写状态文件；
@@ -105,16 +115,34 @@ class FreezeNotifier:
         return int(st.get("seq", 0)) if st else 0
 
     def _read_shared_state(self) -> dict | None:
-        """读 estop-state.json；不存在/非法返回 None。"""
+        """读 estop-state.json；不存在/非法返回 None。
+
+        ISS-0008 P7 快路：mtime 未变直接命中缓存，不重复读盘解析。
+        """
+        path = self._dir / STATE_FILE
         try:
-            return json.loads((self._dir / STATE_FILE)
-                              .read_text(encoding="utf-8"))
+            mtime = path.stat().st_mtime
+        except OSError:
+            return None
+        if mtime == self._state_mtime and self._state_cache is not None:
+            return self._state_cache
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
+        self._state_reads_n += 1
+        self._state_mtime = mtime
+        self._state_cache = data
+        return data
 
     def _default_spawn(self, audit_dir: str) -> None:
-        """拉起弹窗子进程（onefile 经打包入口分发；剥离 _MEIPASS2，
+        """拉起弹窗（ISS-0008 P6：有 DialogService 走共享线程；
+        否则回退子进程——onefile 经打包入口分发；剥离 _MEIPASS2，
         与 approval_ui 同款约束）。"""
+        if self._dialog_service is not None:
+            self._dialog_service.show(
+                "freeze", {"audit_dir": audit_dir, "interval": self._remind})
+            return
         if getattr(sys, "frozen", False):
             cmd = [sys.executable, "--freeze-notify", audit_dir,
                    f"{self._remind:.0f}"]

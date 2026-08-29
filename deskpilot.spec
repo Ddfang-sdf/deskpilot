@@ -22,7 +22,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # ISS-0008 P5：裁掉与运行无关的钩子产物（uvicorn/opentelemetry 等由 mcp
+    # 依赖链带入但从不使用；pytest/unittest 等测试框架不该进生产包）
+    excludes=["uvicorn", "opentelemetry", "pytest", "_pytest", "unittest",
+              "doctest", "pydoc", "test", "tkinter.test"],
     noarchive=False,
     optimize=0,
 )

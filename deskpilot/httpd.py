@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 import urllib.request
 from typing import Any
 
@@ -22,24 +23,34 @@ class HttpDaemon:
     """常驻服务：start 后于后台线程服务 HTTP，持有共享 ctx。"""
 
     def __init__(self, ctx, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                 estop=None):
+                 estop=None, idle_timeout_s: float = 0.0):
         self._ctx = ctx
         self._estop = estop            # 急停复位端点用（ISS-0002，段3 接线）
         self._host = host
         self._port = port
+        self._idle_timeout_s = idle_timeout_s   # ISS-0008 §6：>0 启用 idle 自停
+        self._last_activity = time.monotonic()
+        self.idle_stopped = False               # ISS-0008 §6 测试观测口
         self._httpd = None
         self._thread = None
         self.port = port          # start() 后更新为实际绑定端口（port=0 时为临时端口）
 
+    @property
+    def last_activity(self) -> float:
+        """最近一次活动（/call 或急停动作）的时钟读数（ISS-0008 §6 观测口）。"""
+        return self._last_activity
+
     def start(self) -> None:
-        from http.server import HTTPServer
+        from http.server import ThreadingHTTPServer
 
         from .tools import call_tool
 
-        ctx = self._ctx
-        handler_cls = self._make_handler(ctx, call_tool, self._estop)
+        self._write_lock = threading.Lock()       # ISS-0008 P1：写路径互斥
+        self._inflight_writes = 0                 # ISS-0008 P8：写中计数（豁免用）
+        handler_cls = self._make_handler()
         try:
-            self._httpd = HTTPServer((self._host, self._port), handler_cls)
+            self._httpd = ThreadingHTTPServer((self._host, self._port),
+                                              handler_cls)
         except OSError as e:
             raise RuntimeError(
                 f"常驻服务端口 {self._host}:{self._port} 已被占用"
@@ -48,6 +59,8 @@ class HttpDaemon:
         self._thread = threading.Thread(target=self._httpd.serve_forever,
                                         daemon=True)
         self._thread.start()
+        if self._idle_timeout_s > 0:              # ISS-0008 P8：idle 自停看门狗
+            threading.Thread(target=self._idle_watchdog, daemon=True).start()
 
     def stop(self) -> None:
         if self._httpd is not None:
@@ -55,8 +68,34 @@ class HttpDaemon:
             self._httpd.server_close()
             self._httpd = None
 
-    def _make_handler(self, ctx, call_tool, estop):
+    # ---- idle 自停（ISS-0008 P8） ----
+
+    def _touch(self) -> None:
+        self._last_activity = time.monotonic()
+
+    def _idle_exempt(self) -> bool:
+        """人类仍在使用语义：冻结中 / 写调用在途（含同步审批）/ 有效绑定。"""
+        if self._estop is not None and self._estop.is_frozen():
+            return True
+        if self._inflight_writes > 0:
+            return True
+        bindings = getattr(self._ctx, "bindings", None)
+        return bindings is not None and bindings.count() > 0
+
+    def _idle_watchdog(self) -> None:
+        while self._httpd is not None and not self.idle_stopped:
+            if (time.monotonic() - self._last_activity >= self._idle_timeout_s
+                    and not self._idle_exempt()):
+                self.idle_stopped = True
+                self.stop()
+                return
+            time.sleep(min(0.1, max(self._idle_timeout_s / 4, 0.05)))
+
+    def _make_handler(self):
         from http.server import BaseHTTPRequestHandler
+
+        from .models import TOOL_LEVELS
+        daemon = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):          # 静默访问日志
@@ -80,11 +119,13 @@ class HttpDaemon:
                                      "message": "端点不存在"})
 
             def do_POST(self):
+                estop = daemon._estop
                 if self.path == "/estop/reset" and estop is not None:
                     # 本地人类复位通道（详细设计 §11.8，ISS-0002）：
                     # 无论是否改变状态都返回 200 + was_frozen；审计由 estop 侧记录
                     was = estop.is_frozen()
                     estop.cli_reset()
+                    daemon._touch()
                     self._send(200, {"ok": True, "error_code": "",
                                      "message": ("急停已复位" if was
                                                  else "复位请求已记录（当前未冻结）"),
@@ -104,7 +145,19 @@ class HttpDaemon:
                     return
                 tool = body.get("tool")
                 raw = body.get("params") or {}
-                result = call_tool(ctx, tool, raw)
+                daemon._touch()
+                from .tools import call_tool
+                if TOOL_LEVELS.get(tool) == "L0":
+                    # ISS-0008 P1：只读路径全并行，不入写锁
+                    result = call_tool(daemon._ctx, tool, raw)
+                else:
+                    daemon._inflight_writes += 1
+                    try:
+                        with daemon._write_lock:   # 写路径严格串行
+                            result = call_tool(daemon._ctx, tool, raw)
+                    finally:
+                        daemon._inflight_writes -= 1
+                daemon._touch()
                 self._send(200, {"ok": result.ok,
                                  "error_code": result.error_code,
                                  "message": result.message,

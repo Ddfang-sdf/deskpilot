@@ -1,8 +1,8 @@
-"""审批弹窗独立进程（M3，功能设计说明书 §6.1）。
+"""审批弹窗（M3，功能设计说明书 §6.1）。
 
-以独立进程运行：右下角 toast 形态（无边框、置顶、滑入动画），
-展示操作描述与倒计时；倒计时结束默认拒绝（fail-closed）。
-人类决定写入结果文件，由 TkApprovalChannel 轮询消费。
+两种承载形态：
+- 独立子进程（main()）：非 daemon / stdio 回退路径；
+- 共享线程内 Toplevel（build_window）：DialogService 投递路径（ISS-0008 P6）。
 
 视觉规范（Fluent ContentDialog / Material AlertDialog 业界实践）：
 - 左侧警示色条 + 加粗标题 + 次级说明文字，层级分明
@@ -46,41 +46,40 @@ def _hover(btn: tk.Button, base: str, hover: str) -> None:
     btn.bind("<Leave>", lambda e: btn.configure(bg=base))
 
 
-def main() -> None:
-    desc_path = Path(sys.argv[1])
-    result_path = Path(sys.argv[2])
-    timeout_s = int(sys.argv[3]) if len(sys.argv) > 3 else 60
-    image_path = sys.argv[4] if len(sys.argv) > 4 else ""
-    try:
-        description = desc_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        description = "(审批描述读取失败)"
-    headline, _, detail = description.partition("\n---\n")
+def build_window(parent, description: str, result_path, timeout_s: float,
+                 image_path: str = ""):
+    """在 parent（共享 Tk root）线程内构建审批 toast（Toplevel，ISS-0008 P6）。
+
+    人类决定写入结果文件（批准一次 / 拒绝）；倒计时结束默认拒绝（fail-closed）。
+    image_path 非空时内嵌目标窗口实拍缩略图（动态增高）。
+    """
+    result_path = Path(result_path)
 
     # 目标窗口实拍缩略图（可选）：最大化“这是哪个窗口”的可识别性
-    photo = None
+    photo_im = None
     img_h = 0
     if image_path:
         try:
-            from PIL import Image, ImageTk
+            from PIL import Image
             im = Image.open(image_path)
             im.thumbnail((_WIDTH - 72, 150))
-            img_h = im.height
+            photo_im, img_h = im, im.height
         except Exception:
-            im = None
+            photo_im = None
 
-    root = tk.Tk()
-    root.title("DeskPilot 审批")
-    root.overrideredirect(True)                  # 无边框 toast
-    root.attributes("-topmost", True)
-    root.configure(bg=_BG)
+    height = _HEIGHT + (img_h + 8 if photo_im is not None else 0)
 
-    height = _HEIGHT + (img_h + 8 if image_path and im is not None else 0)
+    win = tk.Toplevel(parent)
+    win.title("DeskPilot 审批")
+    win.overrideredirect(True)                  # 无边框 toast
+    win.attributes("-topmost", True)
+    win.configure(bg=_BG)
+
     x, y_start, y_final = _toast_placement(
-        root.winfo_screenwidth(), root.winfo_screenheight(), _WIDTH, height)
-    root.geometry(f"{_WIDTH}x{height}+{x}+{y_start}")
+        win.winfo_screenwidth(), win.winfo_screenheight(), _WIDTH, height)
+    win.geometry(f"{_WIDTH}x{height}+{x}+{y_start}")
 
-    card = tk.Frame(root, bg=_BG, highlightthickness=1,
+    card = tk.Frame(win, bg=_BG, highlightthickness=1,
                     highlightbackground=_BORDER)
     card.pack(fill="both", expand=True)
     tk.Frame(card, bg=_ACCENT, width=4).pack(side="left", fill="y")   # 警示色条
@@ -95,13 +94,15 @@ def main() -> None:
     tk.Label(header, text="DeskPilot 审批", bg=_BG, fg=_TITLE_FG,
              font=("Microsoft YaHei", 11, "bold")).pack(side="left", padx=(8, 0))
 
+    headline, _, detail = description.partition("\n---\n")
     tk.Label(body, text=headline, bg=_BG, fg=_TITLE_FG,
              wraplength=_WIDTH - 64, justify="left",
              font=("Microsoft YaHei", 11, "bold"), anchor="w").pack(
         fill="x", pady=(8, 0))
 
-    if image_path and im is not None:
-        photo = ImageTk.PhotoImage(im)
+    if photo_im is not None:
+        from PIL import ImageTk
+        photo = ImageTk.PhotoImage(photo_im)
         tk.Label(body, image=photo, bg=_BG, bd=1, relief="solid").pack(
             fill="x", pady=(8, 0))
 
@@ -111,7 +112,7 @@ def main() -> None:
                  font=("Microsoft YaHei", 8), anchor="w").pack(fill="x",
                                                                 pady=(6, 0))
 
-    remaining = [timeout_s]
+    remaining = [int(timeout_s)]
     timer_label = tk.Label(body, text=f"{remaining[0]} 秒后默认拒绝",
                            bg=_BG, fg=_TIMER_FG,
                            font=("Microsoft YaHei", 9), anchor="w")
@@ -127,7 +128,7 @@ def main() -> None:
             result_path.write_text(value, encoding="utf-8")
         except OSError:
             pass
-        root.destroy()
+        win.destroy()
 
     # 按钮行右对齐：安全项在左（默认焦点），后果项在右
     bar = tk.Frame(body, bg=_BG)
@@ -147,7 +148,7 @@ def main() -> None:
     deny.pack(side="right", padx=(0, _BTN_GAP))
     _hover(deny, _DENY_BG, _DENY_HOVER)
     deny.focus_set()                             # 默认焦点在安全项
-    root.bind("<Escape>", lambda e: decide("deny"))
+    win.bind("<Escape>", lambda e: decide("deny"))
 
     def tick() -> None:
         remaining[0] -= 1
@@ -155,17 +156,39 @@ def main() -> None:
             decide("timeout")
             return
         timer_label.config(text=f"{remaining[0]} 秒后默认拒绝")
-        root.after(1000, tick)
+        win.after(1000, tick)
 
     def slide(y: int) -> None:
         step = max(1, (y_start - y_final) // _SLIDE_STEPS)
         y = max(y_final, y - step)
-        root.geometry(f"+{x}+{y}")
+        win.geometry(f"+{x}+{y}")
         if y > y_final:
-            root.after(_SLIDE_MS, lambda: slide(y))
+            win.after(_SLIDE_MS, lambda: slide(y))
 
-    root.after(1000, tick)
+    win.after(1000, tick)
     slide(y_start)
+    return win
+
+
+def main() -> None:
+    """独立子进程入口（非 daemon / stdio 回退路径）。
+
+    argv: <desc_path> <result_path> <timeout_s> [image_path]
+    """
+    desc_path = Path(sys.argv[1])
+    result_path = Path(sys.argv[2])
+    timeout_s = int(sys.argv[3]) if len(sys.argv) > 3 else 60
+    try:
+        description = desc_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        description = "(审批描述读取失败)"
+
+    root = tk.Tk()
+    root.withdraw()
+    image_path = sys.argv[4] if len(sys.argv) > 4 else ""
+    win = build_window(root, description, result_path, timeout_s, image_path)
+    # 独立形态：本窗关闭即退出 mainloop（共享线程形态由服务托管，不绑此事件）
+    win.bind("<Destroy>", lambda e: root.quit() if e.widget is win else None)
     root.mainloop()
 
 

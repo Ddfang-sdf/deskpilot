@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -49,6 +50,9 @@ class Executor:
         self._element_source = element_source   # UIA 根控件工厂（可注入，测试接缝）
         self._shot_fn = shot_fn                 # 区域截图工厂（可注入，测试接缝）
         self._ocr_engine = ocr_engine           # OCR 引擎（可注入，测试接缝）
+        self.ocr_factory = None                 # ISS-0008 §6：OCR 懒加载工厂（公开属性）
+        self._ocr_lock = threading.Lock()       # ISS-0008 P2：懒初始化一次性锁
+        self._ocr_failed: str | None = None     # ISS-0008 P2：初始化失败记忆化
         self._som_cache: dict[int, dict] = {}   # SoM 编号缓存（§9.9）
         pyautogui.PAUSE = 0.02
 
@@ -64,13 +68,23 @@ class Executor:
         if tool in _NOT_WIRED:
             raise ExecutorError(INTERNAL_ERROR,
                                 f"工具 {tool} 的驱动未包含在 M1 构建（见里程碑规划）")
-        before = self._evidence_shot(tool, "before")
+        rect = self._binding_rect(hwnd)
+        before = self._evidence_shot(tool, "before", rect)
         result = self._dispatch(tool, params, hwnd)
-        after = self._evidence_shot(tool, "after")
+        after = self._evidence_shot(tool, "after", rect)
         result = dict(result or {})
         result["before_shot"] = before
         result["after_shot"] = after
         return result
+
+    def _binding_rect(self, hwnd) -> tuple | None:
+        """绑定窗口矩形（无绑定或探测失败回退 None → 证据图转全桌面）。"""
+        if hwnd is None:
+            return None
+        try:
+            return self._probe.rect_of(hwnd)
+        except Exception:
+            return None
 
     def focused_control_type(self) -> str | None:
         """查询当前焦点元素的 UIA 控件类型；查询失败返回 None（fail-closed 由调用方处理）。"""
@@ -92,9 +106,7 @@ class Executor:
 
     def get_ui_tree(self, window) -> dict:
         hwnd = self._resolve_window(window)
-        root = uiautomation.ControlFromHandle(hwnd)
-        if root is None:
-            raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
+        root = self._element_root(hwnd)      # 走元素源接缝（测试可注入）
         nodes: list[dict] = []
         self._walk(root, nodes, depth=0)
         return {"hwnd": hwnd, "elements": nodes, "truncated": len(nodes) >= 800}
@@ -112,10 +124,13 @@ class Executor:
         return {"status": "ok"}
 
     def ocr(self, source) -> dict:
-        """文字识别（§12.6）：图像路径来源直读；区域来源实拍后识别。"""
+        """文字识别（§12.6）：图像路径来源直读；区域来源实拍后识别。
+
+        ISS-0008 P2 懒加载：引擎首次使用时经 ocr_factory 恰好初始化一次
+        （线程安全）；初始化失败记忆化，后续调用直接显式报错（INV-7）。
+        """
         if self._ocr_engine is None:
-            raise ExecutorError(INTERNAL_ERROR,
-                                "OCR 引擎不可用：请安装 rapidocr-onnxruntime")
+            self._ensure_ocr_engine()
         if isinstance(source, str):
             try:
                 img = Image.open(source)
@@ -125,6 +140,29 @@ class Executor:
             img = self._capture(self._region_dict(source))
         items = self._ocr_engine(img)
         return {"items": items, "count": len(items)}
+
+    def _ensure_ocr_engine(self) -> None:
+        """懒初始化 OCR 引擎（ISS-0008 §6）：恰好一次；失败记忆化。"""
+        if self._ocr_failed is not None:
+            raise ExecutorError(INTERNAL_ERROR,
+                                f"OCR 引擎不可用: {self._ocr_failed}")
+        with self._ocr_lock:
+            if self._ocr_engine is not None:
+                return
+            if self._ocr_failed is not None:
+                raise ExecutorError(INTERNAL_ERROR,
+                                    f"OCR 引擎不可用: {self._ocr_failed}")
+            if self.ocr_factory is None:
+                self._ocr_failed = ("未装配 ocr_factory"
+                                    "（请安装 rapidocr-onnxruntime）")
+                raise ExecutorError(INTERNAL_ERROR,
+                                    f"OCR 引擎不可用: {self._ocr_failed}")
+            try:
+                self._ocr_engine = self.ocr_factory()
+            except Exception as e:
+                self._ocr_failed = str(e)
+                raise ExecutorError(INTERNAL_ERROR,
+                                    f"OCR 引擎不可用: {e}") from e
 
     def template_match(self, template: str, scope, threshold: float = 0.8) -> dict:
         """模板匹配（§12.6）：在屏幕范围搜索模板，未达阈值如实返回最高置信度。"""
@@ -161,31 +199,32 @@ class Executor:
         hwnd = self._resolve_window(window)
         root = self._element_root(hwnd)
         wl, wt, wr, wb = self._probe.rect_of(hwnd)
-        interactable: list[tuple[Any, tuple[int, int, int, int]]] = []
-        for node in self._iter_controls(root):
-            if not bool(getattr(node, "IsEnabled", True)):
+        # ISS-0008 P4：每节点属性一次成型（同名属性不重复读 COM）
+        interactable = []
+        for s in self._iter_summaries(root):
+            if not s["enabled"]:
                 continue
-            rect = self._node_rect(node)
+            rect = s["rect"]
             if rect is None or rect[2] - rect[0] <= 0 or rect[3] - rect[1] <= 0:
                 continue
-            interactable.append((node, rect))
-        interactable.sort(key=lambda p: (p[1][1], p[1][0]))
+            interactable.append(s)
+        interactable.sort(key=lambda s: (s["rect"][1], s["rect"][0]))
         img = self._capture({"left": wl, "top": wt,
                              "width": wr - wl, "height": wb - wt})
         draw = ImageDraw.Draw(img)
         entries: list[dict] = []
         now = self._clock()
-        for i, (node, rect) in enumerate(interactable, start=1):
-            l, t, r, b = rect
+        for i, s in enumerate(interactable, start=1):
+            l, t, r, b = s["rect"]
             rel = [l - wl, t - wt, r - wl, b - wt]
             draw.rectangle(rel, outline=(255, 60, 60), width=3)
             draw.text((rel[0] + 2, max(0, rel[1] - 16)), str(i), fill=(255, 0, 0))
-            entries.append({"id": i, "name": node.Name,
-                            "control_type": node.ControlTypeName,
-                            "automation_id": node.AutomationId,
+            entries.append({"id": i, "name": s["name"],
+                            "control_type": s["control_type"],
+                            "automation_id": s["automation_id"],
                             "rect": [l, t, r, b]})
-            self._som_cache[i] = {"hwnd": hwnd, "name": node.Name,
-                                  "automation_id": node.AutomationId,
+            self._som_cache[i] = {"hwnd": hwnd, "name": s["name"],
+                                  "automation_id": s["automation_id"],
                                   "expires": now + 60.0}
         out = self._shots_dir / time.strftime("%Y%m%d")
         out.mkdir(parents=True, exist_ok=True)
@@ -275,24 +314,23 @@ class Executor:
         """
         matches = []
         seen: set[tuple] = set()
-        for node in self._iter_controls(root):
+        for s in self._iter_summaries(root):           # ISS-0008 P4：摘要复用
             if name is not None and automation_id is not None:
-                hit = node.Name == name and node.AutomationId == automation_id
+                hit = s["name"] == name and s["automation_id"] == automation_id
             elif name is not None:
-                hit = node.Name == name
+                hit = s["name"] == name
             elif automation_id is not None:
-                hit = node.AutomationId == automation_id
+                hit = s["automation_id"] == automation_id
             else:
                 hit = False
             if not hit:
                 continue
-            rect = self._node_rect(node)
-            key = (node.Name, node.AutomationId,
-                   rect if rect is not None else ())
+            key = (s["name"], s["automation_id"],
+                   s["rect"] if s["rect"] is not None else ())
             if key in seen:
                 continue
             seen.add(key)
-            matches.append(node)
+            matches.append(s["control"])
         return matches
 
     def _resolve_unique_element(self, root, *, name=None, automation_id=None):
@@ -316,9 +354,9 @@ class Executor:
 
     def _candidate_names(self, root) -> str:
         names: list[str] = []
-        for node in self._iter_controls(root):
-            if node.Name and node.Name not in names:
-                names.append(node.Name)
+        for s in self._iter_summaries(root):             # ISS-0008 P4：摘要复用
+            if s["name"] and s["name"] not in names:
+                names.append(s["name"])
             if len(names) >= 10:
                 break
         return ", ".join(names) or "(无可交互元素)"
@@ -581,21 +619,32 @@ class Executor:
                     "width": right - left, "height": bottom - top}
         raise ExecutorError(INTERNAL_ERROR, f"未知截图范围: {scope}")
 
-    def _save_shot(self, region: dict, tag: str) -> Path:
+    def _save_shot(self, region: dict, tag: str, fmt: str = "PNG") -> Path:
         day = time.strftime("%Y%m%d")
         out_dir = self._shots_dir / day
         out_dir.mkdir(parents=True, exist_ok=True)
+        if fmt == "JPEG":                         # ISS-0008 P3：证据图 JPEG 质量 80
+            path = out_dir / f"{time.strftime('%H%M%S')}_{tag}_{int(time.time()*1000)%100000}.jpg"
+            img = self._capture(region)
+            img.convert("RGB").save(path, "JPEG", quality=80)
+            return path
         path = out_dir / f"{time.strftime('%H%M%S')}_{tag}_{int(time.time()*1000)%100000}.png"
         with mss.MSS() as sct:
             img = sct.grab(region)
             mss.tools.to_png(img.rgb, img.size, output=str(path))
         return path
 
-    def _evidence_shot(self, tool: str, tag: str) -> str:
+    def _evidence_shot(self, tool: str, tag: str, rect: tuple | None = None) -> str:
+        """写操作证据图（ISS-0008 P3）：有绑定矩形取绑定窗口区域，否则虚拟桌面全域。"""
         try:
-            with mss.MSS() as sct:
-                mon = sct.monitors[0]
-            return str(self._save_shot(mon, f"{tag}_{tool}"))
+            if rect is not None:
+                l, t, r, b = (int(v) for v in rect)
+                region = {"left": l, "top": t, "width": r - l, "height": b - t}
+            else:
+                with mss.MSS() as sct:
+                    mon = sct.monitors[0]
+                region = mon
+            return str(self._save_shot(region, f"{tag}_{tool}", fmt="JPEG"))
         except Exception:
             return ""
 
@@ -607,7 +656,10 @@ class Executor:
             try:
                 left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
             except AttributeError:
-                left, top, right, bottom = rect[0], rect[1], rect[2], rect[3]
+                try:
+                    left, top, right, bottom = rect[0], rect[1], rect[2], rect[3]
+                except (TypeError, IndexError):
+                    left = top = right = bottom = 0     # 无矩形节点：摘要置零仍续遍历
             nodes.append({
                 "name": control.Name,
                 "control_type": control.ControlTypeName,
@@ -617,7 +669,7 @@ class Executor:
                 "depth": depth,
             })
         except Exception:
-            return
+            pass                          # 本节点摘要失败仅跳过，不中止子树
         try:
             children = control.GetChildren()
         except Exception:
@@ -652,3 +704,32 @@ class Executor:
             return
         for child in children:
             yield from self._iter_controls(child, depth + 1)
+
+    def _iter_summaries(self, control, depth: int = 0):
+        """遍历控件树并产出每节点一次成型的摘要（ISS-0008 P4）。
+
+        uiautomation 包无 CacheRequest 批量协议，本方法在单次遍历中把
+        每个节点的 Name/ControlTypeName/AutomationId/BoundingRectangle/IsEnabled
+        各只读取一次并成dict复用，消除消费方的重复 COM 往返。
+        """
+        if control is None or depth > 8:
+            return
+        try:
+            summary = {
+                "control": control,
+                "name": getattr(control, "Name", "") or "",
+                "control_type": getattr(control, "ControlTypeName", "") or "",
+                "automation_id": getattr(control, "AutomationId", "") or "",
+                "rect": self._node_rect(control),
+                "enabled": bool(getattr(control, "IsEnabled", True)),
+                "depth": depth,
+            }
+        except Exception:
+            return
+        yield summary
+        try:
+            children = control.GetChildren()
+        except Exception:
+            return
+        for child in children:
+            yield from self._iter_summaries(child, depth + 1)

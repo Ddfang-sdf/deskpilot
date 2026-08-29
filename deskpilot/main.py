@@ -172,8 +172,11 @@ def main() -> int:
         print(f"审计目录不可用: {e}", file=sys.stderr)
         return 3
 
+    from .dialog_service import get_dialog_service
+    dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
     notifier = FreezeNotifier(policy.audit_dir,
-                              remind_interval=policy.freeze_remind_interval)
+                              remind_interval=policy.freeze_remind_interval,
+                              dialog_service=dialog_service)
     estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
                          on_state_change=notifier.on_state_change)
     if "--daemon" not in sys.argv and probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
@@ -189,16 +192,18 @@ def main() -> int:
     approvals = ApprovalManager(DenyAllChannel(), policy.approval_ttl, time.monotonic)
     try:
         from .approval_ui import TkApprovalChannel
-        approvals.set_channel(TkApprovalChannel())
+        approvals.set_channel(TkApprovalChannel(dialog_service=dialog_service))
     except Exception as e:
         print(f"审批弹窗通道不可用（L3 将恒拒绝）: {e}", file=sys.stderr)
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
                         policy.wait_timeout_max)
-    try:
+
+    def _ocr_factory():
+        """ISS-0008 P2：OCR 懒加载工厂——首次 ocr 调用才加载模型。"""
         from rapidocr_onnxruntime import RapidOCR
-        executor._ocr_engine = _build_ocr_engine(RapidOCR())
-    except Exception as e:
-        print(f"OCR 引擎不可用（ocr 工具将显式报错）: {e}", file=sys.stderr)
+        return _build_ocr_engine(RapidOCR())
+
+    executor.ocr_factory = _ocr_factory
     enforcement = Enforcement(policy, bindings, approvals, estop, executor, audit)
     ctx = ToolContext(policy=policy, enforcement=enforcement, bindings=bindings,
                       executor=executor, audit=audit)
@@ -207,7 +212,8 @@ def main() -> int:
     if "--daemon" in sys.argv:
         # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
         from .httpd import HttpDaemon
-        daemon = HttpDaemon(ctx, estop=estop)
+        daemon = HttpDaemon(ctx, estop=estop,
+                            idle_timeout_s=policy.idle_timeout_minutes * 60)
         daemon.start()
         audit.record_event("服务启动",
                            f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}")
