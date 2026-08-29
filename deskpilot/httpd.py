@@ -38,7 +38,12 @@ class HttpDaemon:
 
         ctx = self._ctx
         handler_cls = self._make_handler(ctx, call_tool, self._estop)
-        self._httpd = HTTPServer((self._host, self._port), handler_cls)
+        try:
+            self._httpd = HTTPServer((self._host, self._port), handler_cls)
+        except OSError as e:
+            raise RuntimeError(
+                f"常驻服务端口 {self._host}:{self._port} 已被占用"
+                f"（已有 daemon 在线？）: {e}") from e
         self.port = self._httpd.server_address[1]
         self._thread = threading.Thread(target=self._httpd.serve_forever,
                                         daemon=True)

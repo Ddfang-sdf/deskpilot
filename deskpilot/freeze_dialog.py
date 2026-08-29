@@ -9,11 +9,10 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
-from .freeze_notify import LOCK_FILE, REQ_FILE, STATE_FILE
+from .freeze_notify import STATE_FILE
 
 FRAME_MS = 16               # 动画帧间隔（约 60fps）
 SLIDE_MS = 240              # 滑入/滑出时长（对称原则：同长反向）
@@ -22,6 +21,40 @@ WIN_W = 440                 # 弹窗尺寸
 WIN_H = 210
 MARGIN_RIGHT = 16           # 落位：主屏右下角
 MARGIN_BOTTOM = 48          # 避开任务栏
+
+# ---- 单例互斥（ISS-0006 §6）----
+SINGLETON_NAME = r"Local\DeskPilotFreezeDialog"
+_mutex_handle = None
+
+
+def acquire_singleton(name: str = SINGLETON_NAME) -> bool:
+    """抢到命名互斥体并持有 → True；已被他进程持有或系统调用失败 → False。"""
+    global _mutex_handle
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return False                              # 系统调用失败：不建窗
+    if kernel32.GetLastError() == 183:            # ERROR_ALREADY_EXISTS
+        kernel32.CloseHandle(handle)
+        return False
+    _mutex_handle = handle
+    return True
+
+
+def release_singleton() -> None:
+    """释放单例互斥体；重复调用安全。"""
+    global _mutex_handle
+    if _mutex_handle:
+        import ctypes
+        ctypes.windll.kernel32.CloseHandle(_mutex_handle)
+        _mutex_handle = None
+
+
+def reset_click_action(state: str) -> str:
+    """乐观关闭决策（ISS-0006 §6）：
+    "SHOWN" → "write_req_and_slide_out"；其他 → "wait"。"""
+    return "write_req_and_slide_out" if state == "SHOWN" else "wait"
 
 # ---- 视觉样式（ISS-0005，Tk 逻辑像素；改外观只动这里）----
 CHROMA = "#010101"          # 色键透明色：禁止与任何样式色相同（TC-N-EST-15）
@@ -57,8 +90,8 @@ def read_state(audit_dir: str) -> dict | None:
 
 
 def write_reset_request(audit_dir: str, seq: int) -> None:
-    """写 estop-reset.req（立即解冻请求，携带其响应的状态 seq）。"""
-    (Path(audit_dir) / REQ_FILE).write_text(
+    """写 estop-reset-<seq>.req（立即解冻请求，携带其响应的状态 seq）。"""
+    (Path(audit_dir) / f"estop-reset-{seq}.req").write_text(
         json.dumps({"seq": seq}), encoding="utf-8")
 
 
@@ -114,6 +147,9 @@ def main() -> None:
 
     audit_dir = sys.argv[1]
     interval = float(sys.argv[2]) if len(sys.argv) > 2 else 180.0
+
+    if not acquire_singleton():                   # ISS-0006：互斥单例，抢不到即退出
+        return
 
     root = tk.Tk()
     root.title("DeskPilot 急停")
@@ -178,15 +214,20 @@ def main() -> None:
                             f"{str(st.get('ts', ''))[:19]}")
 
     def on_reset_now():
-        # 点击即时反馈：先置灰再发请求；若请求未被消费（仍冻结），
-        # poll 会在下一拍恢复按钮——点没点中一眼可辨（ISS-0004 v0.4）。
+        # 乐观关闭（ISS-0006 方案 F）：写请求即滑出隐藏；请求若未被消费
+        # （仍冻结），重提醒机制在下一周期自然补一个弹窗，而不是让用户连点。
+        if reset_click_action(holder["state"]) != "write_req_and_slide_out":
+            return
         st = read_state(audit_dir)
         seq = int(st["seq"]) if st and "seq" in st else holder["last_seq"]
         if seq is None:
             return
         write_reset_request(audit_dir, seq)
-        btn_reset.config(text="解冻请求已发送…", state="disabled",
-                         bg=STYLE["primary"]["disabled_bg"])
+        import time
+        holder["state"] = "SNOOZE_OUT"
+        holder["frames"] = list(frames_out)
+        holder["snooze_start"] = time.monotonic()
+        root.after(FRAME_MS, slide_step)         # 按钮回调须自启动画链
 
     def on_snooze():
         import time
@@ -220,14 +261,6 @@ def main() -> None:
     _flat_button(f"稍后提醒（{interval:.0f}s）", on_snooze,
                  STYLE["secondary"], 140).place(x=226, y=144)
 
-    def heartbeat():
-        try:
-            (Path(audit_dir) / LOCK_FILE).write_text(
-                f"pid={os.getpid()}", encoding="utf-8")
-        except OSError:
-            pass
-        root.after(1000, heartbeat)
-
     def slide_step():
         """滑动画帧驱动：frames (x, alpha) 播完进入下一阶段。"""
         frames = holder["frames"]
@@ -255,11 +288,6 @@ def main() -> None:
         state = holder["state"]
         if st:
             holder["last_seq"] = int(st.get("seq", 0))
-        # 点击反馈的回落：请求发出后一拍（250ms）仍冻结 = 未被消费，恢复按钮可重试
-        if (state == "SHOWN" and frozen
-                and str(btn_reset["state"]) == "disabled"):
-            btn_reset.config(text="立即解冻", state="normal",
-                             bg=STYLE["primary"]["bg"])
         if state == "SHOWN":
             if next_action("SHOWN", frozen) == "slide_out_exit":
                 holder["state"] = "SLIDE_OUT"
@@ -281,10 +309,6 @@ def main() -> None:
         root.after(POLL_MS, poll)
 
     refresh_source()
-    heartbeat()
     root.after(FRAME_MS, slide_step)
     root.mainloop()
-    try:
-        (Path(audit_dir) / LOCK_FILE).unlink(missing_ok=True)
-    except OSError:
-        pass
+    release_singleton()

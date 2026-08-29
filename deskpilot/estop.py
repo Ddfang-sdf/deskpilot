@@ -50,6 +50,10 @@ class EstopMonitor:
         """冻结提示弹窗"立即解冻"入口：复位并记审计（ISS-0004）。"""
         self._reset("冻结提示弹窗")
 
+    def shared_sync_reset(self) -> None:
+        """共享状态同步复位入口（ISS-0006 §6）：复位并记审计（复位-共享同步）。"""
+        self._reset("复位-共享同步")
+
     def check_corner(self, x: int, y: int) -> None:
         """鼠标位置轮询回调：甩角防抖判定。
 

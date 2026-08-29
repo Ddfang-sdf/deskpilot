@@ -85,12 +85,14 @@ def _hotkey_loop(estop: EstopMonitor, audit: AuditLogger,
 
 
 def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier) -> None:
-    """鼠标甩角轮询线程（50ms）；兼任弹窗解冻请求消费（ISS-0004）。"""
+    """鼠标甩角轮询线程（50ms）；兼任弹窗解冻请求消费（ISS-0004）与
+    解冻全局同步（ISS-0006：共享 frozen=false → 本地立即复位）。"""
     import pyautogui
     while True:
         pos = pyautogui.position()
         estop.check_corner(pos.x, pos.y)
         notifier.check_reset_request(estop)
+        notifier.sync_local_with_shared_state(estop)
         time.sleep(0.05)
 
 

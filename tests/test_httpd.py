@@ -178,3 +178,18 @@ class TestAttachRouting:
         assert r.data["token"]
         assert r.data["process"] == "notepad.exe"
         assert bindings.validate(r.data["token"]) is not None
+
+
+class TestDaemonPortOccupied:
+    """TC-ISS6-08 端口被占用时 start() 显式失败（ISS-0006 §6，方案 D）。"""
+
+    def test_start_raises_when_port_occupied(self):
+        import socket
+
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            s.listen(1)
+            port = s.getsockname()[1]
+            d = HttpDaemon(ctx=None, port=port)
+            with pytest.raises(RuntimeError, match="已被占用"):
+                d.start()

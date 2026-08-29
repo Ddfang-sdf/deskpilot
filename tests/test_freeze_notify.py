@@ -1,17 +1,17 @@
-"""冻结人类通知（ISS-0004 / ISS-0005）单元测试。
+"""冻结人类通知（ISS-0004 / ISS-0005 / ISS-0006）单元测试。
 
-覆盖：TC-N-EST-07～15（测试设计说明书 §3.8）。
-入口：FreezeNotifier（on_state_change / check_reset_request）、
-freeze_dialog 纯逻辑函数（read_state / write_reset_request / should_remind /
-next_action / slide_in_xs / slide_out_xs / slide_in_frames / slide_out_frames）、
-样式常量表 STYLE 与色键 CHROMA、EstopMonitor 公开复位入口。
+覆盖：TC-N-EST-07、10～15（测试设计说明书 §3.8）、
+TC-ISS6-04～07（ISS-0006 §6：解冻请求协议 / spawn 不猜测 / seq 共享 / 全局同步）。
+入口：FreezeNotifier（on_state_change / check_reset_request /
+sync_local_with_shared_state）、freeze_dialog 纯逻辑函数（read_state /
+should_remind / next_action / slide_*）、样式常量表 STYLE 与色键 CHROMA、
+EstopMonitor 公开复位入口。
 断言值来源：文件邮箱持久化内容 / 桩调用记录 / 审计 JSONL / 纯函数返回值。
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -22,7 +22,7 @@ from deskpilot.estop import EstopMonitor
 from deskpilot.freeze_dialog import (CHROMA, STYLE, next_action, should_remind,
                                      slide_in_frames, slide_in_xs,
                                      slide_out_frames, slide_out_xs)
-from deskpilot.freeze_notify import LOCK_FILE, REQ_FILE, STATE_FILE, FreezeNotifier
+from deskpilot.freeze_notify import STATE_FILE, FreezeNotifier
 
 from .conftest import FakeClock, read_audit
 
@@ -75,69 +75,125 @@ class TestStateFile:
         assert json.loads(raw2)["frozen"] is False
 
 
-class TestResetRequestGuard:
-    """TC-N-EST-08 解冻请求消费守卫。"""
+class TestResetRequestProtocol:
+    """TC-ISS6-04 解冻请求协议（方案 B：seq 命名 + 先验后删）。"""
 
     def _write_req(self, tmp_path, seq):
-        (tmp_path / REQ_FILE).write_text(json.dumps({"seq": seq}),
-                                         encoding="utf-8")
+        (tmp_path / f"estop-reset-{seq}.req").write_text(
+            json.dumps({"seq": seq}), encoding="utf-8")
 
-    def test_matching_seq_consumed(self, tmp_path, notifier, estop_n):
-        estop_n.on_trigger_hotkey()                # seq=1, frozen
+    def _req_files(self, tmp_path):
+        return sorted(tmp_path.glob("estop-reset-*.req"))
+
+    def test_matching_frozen_owner_consumes(self, tmp_path, notifier, estop_n):
+        estop_n.on_trigger_hotkey()                # 共享 seq=1, frozen
         self._write_req(tmp_path, 1)
         notifier.check_reset_request(estop_n)
         assert estop_n.is_frozen() is False
-        assert not (tmp_path / REQ_FILE).exists()
+        assert self._req_files(tmp_path) == []
         records = read_audit(str(tmp_path / "audit"))
         resets = [r for r in records
                   if r.get("event") == "急停复位" and "冻结提示弹窗" in r["detail"]]
         assert len(resets) == 1
 
-    def test_stale_seq_discarded(self, tmp_path, notifier, estop_n):
+    def test_stale_seq_deleted(self, tmp_path, notifier, estop_n):
         estop_n.on_trigger_hotkey()                # seq=1
-        estop_n.cli_reset()                        # seq=2, 未冻结
+        estop_n.cli_reset()                        # seq=2
         estop_n.on_trigger_hotkey()                # seq=3, 新一轮冻结
         self._write_req(tmp_path, 1)               # 陈旧请求（对着 seq=1 的冻结）
         notifier.check_reset_request(estop_n)
         assert estop_n.is_frozen() is True         # 不误解冻新冻结
-        assert not (tmp_path / REQ_FILE).exists()
+        assert self._req_files(tmp_path) == []     # 陈旧请求清理
 
-    def test_request_when_unfrozen_discarded(self, tmp_path, notifier, estop_n):
+    def test_req_for_unfrozen_shared_deleted(self, tmp_path, notifier, estop_n):
         estop_n.on_trigger_hotkey()                # seq=1
         estop_n.cli_reset()                        # seq=2, 未冻结
         self._write_req(tmp_path, 2)
         notifier.check_reset_request(estop_n)
         assert estop_n.is_frozen() is False
-        assert not (tmp_path / REQ_FILE).exists()
+        assert self._req_files(tmp_path) == []     # 已解冻,请求作废删除
         records = read_audit(str(tmp_path / "audit"))
         resets = [r for r in records
                   if r.get("event") == "急停复位" and "冻结提示弹窗" in r["detail"]]
         assert resets == []
 
+    def test_non_frozen_owner_leaves_req_for_frozen_one(self, tmp_path, notifier,
+                                                        estop_n, policy, clock,
+                                                        audit_log):
+        """先验后删（R1 修复）：共享冻结中，未冻结进程的 tick 不吞请求。"""
+        estop_n.on_trigger_hotkey()                # 共享 seq=1 frozen
+        self._write_req(tmp_path, 1)
+        other = EstopMonitor(policy.corner_hold_ms, clock, audit_log)  # 未冻结进程
+        notifier.check_reset_request(other)
+        assert other.is_frozen() is False
+        assert len(self._req_files(tmp_path)) == 1          # 请求保留给冻结 owner
+        notifier.check_reset_request(estop_n)               # 冻结 owner 消费
+        assert estop_n.is_frozen() is False
+        assert self._req_files(tmp_path) == []
 
-class TestDialogSingleton:
-    """TC-N-EST-09 弹窗单例守卫。"""
+    def test_future_seq_kept(self, tmp_path, notifier, estop_n):
+        estop_n.on_trigger_hotkey()                # seq=1 frozen
+        self._write_req(tmp_path, 5)               # N > 共享 seq（异常时序）
+        notifier.check_reset_request(estop_n)
+        assert len(self._req_files(tmp_path)) == 1
+        assert estop_n.is_frozen() is True
 
-    def test_no_respawn_while_lock_alive(self, tmp_path, notifier, estop_n,
-                                         spawn_log):
-        estop_n.on_trigger_hotkey()
-        assert len(spawn_log) == 1                 # 首次置位拉起弹窗
-        (tmp_path / LOCK_FILE).write_text("pid=1", encoding="utf-8")  # 活心跳
-        estop_n.cli_reset()
-        estop_n.on_trigger_hotkey()
-        assert len(spawn_log) == 1                 # 心跳存活 → 不重复拉起
 
-    def test_respawn_when_lock_stale(self, tmp_path, notifier, estop_n,
+class TestSpawnOnEveryFrozenEdge:
+    """TC-ISS6-05 owner 不做存活猜测（方案 A：子进程互斥兜底）。"""
+
+    def test_each_frozen_edge_spawns(self, tmp_path, notifier, estop_n,
                                      spawn_log):
         estop_n.on_trigger_hotkey()
-        assert len(spawn_log) == 1
-        lock = tmp_path / LOCK_FILE
-        lock.write_text("pid=1", encoding="utf-8")
-        old = time.time() - 4                      # 心跳龄 4s > LOCK_MAX_AGE
-        os.utime(lock, (old, old))
         estop_n.cli_reset()
         estop_n.on_trigger_hotkey()
-        assert len(spawn_log) == 2                 # 心跳陈旧 → 允许再拉起
+        estop_n.cli_reset()
+        estop_n.on_trigger_hotkey()
+        assert len(spawn_log) == 3
+
+
+class TestSharedSeq:
+    """TC-ISS6-06 seq 共享单调（方案 C）。"""
+
+    def test_seq_monotonic_across_notifier_instances(self, tmp_path, spawn_log):
+        n1 = FreezeNotifier(str(tmp_path), clock=time.monotonic,
+                            spawn=spawn_log.append)
+        n1.on_state_change(True, "a")
+        assert _read_state(tmp_path)["seq"] == 1
+        n2 = FreezeNotifier(str(tmp_path), clock=time.monotonic,
+                            spawn=spawn_log.append)
+        n2.on_state_change(False, "b")
+        assert _read_state(tmp_path)["seq"] == 2
+        n1.on_state_change(True, "c")
+        assert _read_state(tmp_path)["seq"] == 3
+
+
+class TestSharedSyncReset:
+    """TC-ISS6-07 解冻全局同步（方案 E）。"""
+
+    def _write_shared(self, tmp_path, frozen, seq, source):
+        (tmp_path / STATE_FILE).write_text(json.dumps(
+            {"frozen": frozen, "seq": seq, "source": source, "ts": "t"}),
+            encoding="utf-8")
+
+    def test_sync_resets_frozen_local(self, tmp_path, notifier, estop_n):
+        estop_n.on_trigger_hotkey()                # 本地 frozen, 共享 seq=1 frozen
+        self._write_shared(tmp_path, False, 2, "另一进程")  # 另一进程已全局解冻
+        assert notifier.sync_local_with_shared_state(estop_n) is True
+        assert estop_n.is_frozen() is False
+        records = read_audit(str(tmp_path / "audit"))
+        syncs = [r for r in records
+                 if r.get("event") == "急停复位" and "共享同步" in r["detail"]]
+        assert len(syncs) == 1
+
+    def test_sync_noop_when_shared_frozen(self, tmp_path, notifier, estop_n):
+        estop_n.on_trigger_hotkey()
+        assert notifier.sync_local_with_shared_state(estop_n) is False
+        assert estop_n.is_frozen() is True
+
+    def test_sync_noop_when_local_unfrozen(self, tmp_path, notifier, estop_n):
+        self._write_shared(tmp_path, False, 1, "x")
+        assert notifier.sync_local_with_shared_state(estop_n) is False
 
 
 class TestRemindLogic:
