@@ -159,6 +159,30 @@ def load_policy(path: str) -> Policy:
             or idle_timeout_minutes < 0):
         raise _fail("timeouts.idle_timeout_minutes 必须为非负数（0=禁用）")
 
+    cleanup_cfg = data.get("cleanup", {})
+    if not isinstance(cleanup_cfg, dict):
+        raise _fail("cleanup 必须为映射")
+    shots_max_age_days = cleanup_cfg.get("shots_max_age_days", 14.0)
+    if (isinstance(shots_max_age_days, bool)
+            or not isinstance(shots_max_age_days, (int, float))
+            or shots_max_age_days <= 0):
+        raise _fail("cleanup.shots_max_age_days 必须为正数")
+    shots_max_bytes = cleanup_cfg.get("shots_max_bytes", 2147483648)
+    if (isinstance(shots_max_bytes, bool)
+            or not isinstance(shots_max_bytes, int) or shots_max_bytes <= 0):
+        raise _fail("cleanup.shots_max_bytes 必须为正整数")
+    cleanup_grace_seconds = cleanup_cfg.get("cleanup_grace_seconds", 600.0)
+    if (isinstance(cleanup_grace_seconds, bool)
+            or not isinstance(cleanup_grace_seconds, (int, float))
+            or cleanup_grace_seconds < 0):
+        raise _fail("cleanup.cleanup_grace_seconds 必须为非负数")
+    cleanup_interval_seconds = cleanup_cfg.get("cleanup_interval_seconds",
+                                               3600.0)
+    if (isinstance(cleanup_interval_seconds, bool)
+            or not isinstance(cleanup_interval_seconds, (int, float))
+            or cleanup_interval_seconds < 0):
+        raise _fail("cleanup.cleanup_interval_seconds 必须为非负数（0=仅启动时）")
+
     audit_dir = str(data["audit_dir"]).strip()
     if not audit_dir:
         raise _fail("audit_dir 不能为空")
@@ -180,4 +204,8 @@ def load_policy(path: str) -> Policy:
         freeze_remind_interval=float(freeze_remind_interval),
         audit_dir=audit_dir,
         idle_timeout_minutes=float(idle_timeout_minutes),
+        shots_max_age_days=float(shots_max_age_days),
+        shots_max_bytes=int(shots_max_bytes),
+        cleanup_grace_seconds=float(cleanup_grace_seconds),
+        cleanup_interval_seconds=float(cleanup_interval_seconds),
     )

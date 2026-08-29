@@ -151,6 +151,32 @@ def _build_ocr_engine(rapid):
     return engine
 
 
+def _start_janitor(policy, audit: AuditLogger) -> None:
+    """ISS-0010 C：清理者装配——启动时跑一遍；interval>0 时按周期定时跑。"""
+    from .janitor import run_janitor
+
+    def once():
+        try:
+            run_janitor(policy.audit_dir, time.time(),
+                        policy.shots_max_age_days * 86400,
+                        policy.shots_max_bytes,
+                        policy.cleanup_grace_seconds, audit_log=audit)
+        except Exception as e:
+            try:
+                audit.record_event("截图清理异常", str(e))
+            except Exception:
+                pass
+
+    once()
+    if policy.cleanup_interval_seconds > 0:
+        def loop():
+            while True:
+                time.sleep(policy.cleanup_interval_seconds)
+                once()
+
+        threading.Thread(target=loop, daemon=True).start()
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     if "--reset" in sys.argv:
@@ -174,6 +200,8 @@ def main() -> int:
 
     from .dialog_service import get_dialog_service
     dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
+    from .audit_paths import AuditPaths
+    audit_paths = AuditPaths(policy.audit_dir)    # ISS-0010 B：受管目录归队
     notifier = FreezeNotifier(policy.audit_dir,
                               remind_interval=policy.freeze_remind_interval,
                               dialog_service=dialog_service)
@@ -192,7 +220,8 @@ def main() -> int:
     approvals = ApprovalManager(DenyAllChannel(), policy.approval_ttl, time.monotonic)
     try:
         from .approval_ui import TkApprovalChannel
-        approvals.set_channel(TkApprovalChannel(dialog_service=dialog_service))
+        approvals.set_channel(TkApprovalChannel(dialog_service=dialog_service,
+                                                audit_paths=audit_paths))
     except Exception as e:
         print(f"审批弹窗通道不可用（L3 将恒拒绝）: {e}", file=sys.stderr)
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
@@ -209,6 +238,7 @@ def main() -> int:
                       executor=executor, audit=audit)
 
     audit.record_event("服务启动", "MCP stdio 就绪")
+    _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
     if "--daemon" in sys.argv:
         # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
         from .httpd import HttpDaemon

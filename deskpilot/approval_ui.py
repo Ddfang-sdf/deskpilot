@@ -27,11 +27,13 @@ class TkApprovalChannel:
                  clock: Callable[[], float] = time.monotonic,
                  popen_factory: Callable[..., Any] | None = None,
                  result_root: str | None = None,
-                 dialog_service=None):
+                 dialog_service=None,
+                 audit_paths=None):
         self._timeout = timeout
         self._clock = clock
         self._popen = popen_factory or subprocess.Popen
         self._dialog_service = dialog_service   # ISS-0008 P6：线程弹窗（可选）
+        self._audit_paths = audit_paths         # ISS-0010 B：临时文件归队（可选）
         self._result_root = Path(result_root) if result_root else Path(
             sys.executable).parent.parent  # 默认服务工作目录
         self.last_request: dict[str, str] | None = None   # 测试观测口
@@ -44,8 +46,11 @@ class TkApprovalChannel:
         "timeout"。任何异常（描述写盘失败、结果读取失败、非法内容）一律按
         拒绝类返回（fail-closed）。"""
         request_id = uuid.uuid4().hex[:16]
-        result_path = self._result_root / f"deskpilot-approval-{request_id}.result"
-        desc_path = self._result_root / f"deskpilot-approval-{request_id}.desc"
+        # ISS-0010 B：提供 AuditPaths 时临时文件落 approval/ 受管子目录
+        base_dir = (self._audit_paths.approval if self._audit_paths is not None
+                    else self._result_root)
+        result_path = base_dir / f"deskpilot-approval-{request_id}.result"
+        desc_path = base_dir / f"deskpilot-approval-{request_id}.desc"
         try:
             desc_path.write_text(description, encoding="utf-8")
         except OSError:

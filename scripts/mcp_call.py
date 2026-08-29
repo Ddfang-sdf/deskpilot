@@ -147,7 +147,13 @@ async def call_and_print(session: ClientSession, tool: str, args: dict) -> list[
             print(content.text)
             texts.append(content.text)
         elif content.type == "image":
-            out = REPO_ROOT / f"mcp_shot_{int(time.time() * 1000)}.png"
+            # ISS-0010 B：图片落盘归队到受管目录（不再散落仓库根）
+            from deskpilot.audit_paths import AuditPaths, resolve_audit_dir
+            out_dir = AuditPaths(
+                str(resolve_audit_dir("./audit",
+                                      str(REPO_ROOT / "policy.yml")))
+                ).client_shots
+            out = out_dir / f"mcp_shot_{int(time.time() * 1000)}.png"
             out.write_bytes(base64.b64decode(content.data))
             print(f"IMAGE_SAVED {out}")
     return texts
