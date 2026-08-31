@@ -435,6 +435,8 @@ class TestManagerWindow:
             def pack_forget(self): pass
             def get(self): return self._text_value
             def create_line(self, *a, **k): pass
+            def create_rectangle(self, *a, **k): pass
+            def create_oval(self, *a, **k): pass
             def delete(self, *a, **k): pass
 
         class Btn(W):
@@ -465,13 +467,16 @@ class TestManagerWindow:
         return buttons, win
 
     def test_row_remove_callback(self, monkeypatch):
+        """移出图标按钮(X 图标,action=remove)回调进程名(类注册表直出)。"""
+        import deskpilot.whitelist_window as ww
+        ww._IconButton.instances.clear()
         removed, cleared = [], []
         entries = {"static": {"notepad.exe": "L2", "excel.exe": "L2"},
                    "session": {"a.exe": "L2"}}
-        buttons, _ = self._build(monkeypatch, entries, removed, cleared)
-        excel_btn = [b for b in buttons
-                     if b.text == "移出" and b.command is not None][1]
-        excel_btn.command()
+        self._build(monkeypatch, entries, removed, cleared)
+        removes = [b for b in ww._IconButton.instances if b.action == "remove"]
+        assert len(removes) == 3                        # 三行各一(直出)
+        removes[1].command()
         assert removed == ["excel.exe"]
 
     def test_clear_session_callback(self, monkeypatch):
@@ -492,11 +497,13 @@ class TestManagerWindow:
 
     def test_more_button_expands_beyond_five(self, monkeypatch):
         """默认每区 5 条;尖角按钮▼更多 N 项→点击展开→▲收起。"""
+        import deskpilot.whitelist_window as ww
+        ww._IconButton.instances.clear()
         removed, cleared = [], []
         entries = {"static": {f"app{i}.exe": "L2" for i in range(7)},
                    "session": {}}
         buttons, win = self._build(monkeypatch, entries, removed, cleared)
-        initial = [b for b in buttons if b.text == "移出"]
+        initial = [b for b in ww._IconButton.instances if b.action == "remove"]
         assert len(initial) == 5                        # 默认 5 条(直出)
         ui = win._manager
         more = ui._blocks["static"]["more"]
@@ -507,17 +514,15 @@ class TestManagerWindow:
         assert more.label.text == "收起"
         assert len(ui._filtered(entries["static"])) == 7
 
-    def test_scrollbar_auto_hide(self, monkeypatch):
-        """滚动条按内容量显隐:行数≤容量隐藏,展开超出出现。"""
+    def test_no_scrollbar_widgets(self, monkeypatch):
+        """滚动条已按用户指令整体移除(无滚动条部件;滚轮滚动保留)。"""
         removed, cleared = [], []
         entries = {"static": {f"app{i}.exe": "L2" for i in range(7)},
                    "session": {}}
         buttons, win = self._build(monkeypatch, entries, removed, cleared)
         ui = win._manager
-        blk = ui._blocks["static"]
-        assert blk["scroll_visible"] is False           # 5 行=容量,隐藏(直出)
-        blk["more"]._command()                          # 展开 7 行
-        assert blk["scroll_visible"] is True            # 超出容量,出现(直出)
+        assert "sb" not in ui._blocks["static"]         # 部件不存在(直出)
+        assert "sb" not in ui._blocks["session"]
 
     def test_search_filters_rows(self, monkeypatch):
         """搜索串同时匹配显示名与进程名,过滤非匹配行。"""
@@ -583,7 +588,89 @@ class TestTrayMenu:
         assert "manage" in ids
 
 
-# ---------- E3 AI 请求撤回工具（单元） ----------
+# ---------- E2 移出禁止图标（TC-ICON-01~04,2026-08-31 评审通过） ----------
+
+class _FakeCanvas:
+    """绘图/调度记录型 Canvas 替身(直出)。"""
+    tk_calls: list = ()
+
+    def __init__(self, *a, **k):
+        self.calls = []
+        self.handlers = {}
+        self.afters = []
+        self.cancelled = []
+
+    def pack(self, *a, **k): pass
+    def delete(self, *a, **k): self.calls.append(("delete", a))
+    def create_oval(self, *a, **k): self.calls.append(("create_oval", a, k))
+    def create_line(self, *a, **k): self.calls.append(("create_line", a, k))
+    def create_rectangle(self, *a, **k): self.calls.append(("create_rectangle", a, k))
+    def bind(self, seq, h): self.handlers[seq] = h
+    def after(self, ms, fn):
+        self.afters.append(ms)
+        return f"after-{len(self.afters)}"
+    def after_cancel(self, i): self.cancelled.append(i)
+
+
+class _FakeFrame:
+    def __init__(self):
+        self.handlers = {}
+
+    def pack(self, *a, **k): pass
+    def bind(self, seq, h): self.handlers[seq] = h
+    def after(self, ms, fn): return "after-1"
+    def after_cancel(self, i): pass
+
+
+class TestRemoveIcon:
+    """TC-ICON-01~04:移出禁止图标(红圆环+粗横杆,悬停动效)。
+    断言:Canvas 绘图调用/after 调度/颜色状态(替身记录直出)。"""
+
+    def _make(self, monkeypatch):
+        import deskpilot.whitelist_window as ww
+        ww._IconButton.instances.clear()
+        cv = _FakeCanvas()
+        frame = _FakeFrame()
+        monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: cv)
+        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: frame)
+        monkeypatch.setattr(ww, "_Tooltip",
+                            lambda w, text: setattr(w, "_tip_text", text))
+        btn = ww._IconButton(frame, action="remove", tooltip="移出白名单",
+                             command=lambda: None)
+        return ww, btn, cv, frame
+
+    def test_icon01_prohibit_glyph(self, monkeypatch):
+        """TC-ICON-01:图标由圆环(create_oval)+横杆(create_line)构成。"""
+        _, btn, cv, _ = self._make(monkeypatch)
+        kinds = [c[0] for c in cv.calls]
+        assert "create_oval" in kinds                 # 圆环(直出)
+        assert "create_line" in kinds                 # 横杆(直出)
+
+    def test_icon02_hover_animation(self, monkeypatch):
+        """TC-ICON-02:Enter 调度动效(≤50ms)且颜色向红;Leave 停止并还原。"""
+        ww, btn, cv, _ = self._make(monkeypatch)
+        cv.handlers["<Enter>"](None)
+        assert cv.afters and min(cv.afters) <= 50     # 动效已调度(直出)
+        # 动效帧颜色相对基色向红变化
+        assert btn._current_color() != btn._base_color
+        afters_before = len(cv.afters)
+        cv.handlers["<Leave>"](None)
+        assert btn._current_color() == btn._base_color  # 还原(直出)
+        assert len(cv.afters) <= afters_before + 1    # 不再持续调度
+
+    def test_icon03_command_unchanged(self, monkeypatch):
+        """TC-ICON-03:点击行为与回调进程名不变。"""
+        ww, btn, cv, _ = self._make(monkeypatch)
+        removed = []
+        btn.command = lambda p="excel.exe": removed.append(p)
+        btn.command()
+        assert removed == ["excel.exe"]
+
+    def test_icon04_tooltip_kept(self, monkeypatch):
+        """TC-ICON-04:「移出白名单」悬浮提示绑定保留。"""
+        _, btn, cv, frame = self._make(monkeypatch)
+        assert getattr(frame, "_tip_text", None) == "移出白名单" or \
+            getattr(cv, "_tip_text", None) == "移出白名单"
 
 class TestRequestRemoveTool:
     """场景:AI 请求撤回,人类裁决后才执行。

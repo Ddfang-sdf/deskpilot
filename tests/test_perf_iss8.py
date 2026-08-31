@@ -237,27 +237,45 @@ class TestEvidenceShots:
     预期:click 的前后图区域=绑定矩形且路径 .jpg;launch_app 回退虚拟桌面全域。
     断言:execute() 返回的 before/after_shot 路径扩展名、被捕获的区域 dict(直出)。"""
 
-    def test_binding_rect_and_jpeg(self, m3_executor):
+    def test_binding_rect_and_jpeg(self, m3_executor, monkeypatch):
         regions = []
         m3_executor._shot_fn = lambda region: regions.append(region) or \
             __import__("PIL.Image", fromlist=["Image"]).new("RGB", (4, 4))
+        # 测试卫生:像素动作只记录不真点(禁止测试操作真实桌面)
+        clicks = []
+        monkeypatch.setattr("deskpilot.executor.core.pyautogui.click",
+                            lambda *a, **k: clicks.append(a))
+        monkeypatch.setattr("deskpilot.executor.core.pyautogui.moveTo",
+                            lambda *a, **k: None)
         r = m3_executor.execute(
             {"tool": "click", "params": {"x": 300, "y": 300},
              "binding_hwnd": FIXTURE_HWND})
         assert r["before_shot"].endswith(".jpg")
         assert r["after_shot"].endswith(".jpg")
+        assert clicks == [(300, 300)]                # 驱动参数直出,未真点
         l, t, w, h = (regions[0]["left"], regions[0]["top"],
                       regions[0]["width"], regions[0]["height"])
         assert (l, t, w, h) == (FIXTURE_RECT[0], FIXTURE_RECT[1],
                                 FIXTURE_RECT[2] - FIXTURE_RECT[0],
                                 FIXTURE_RECT[3] - FIXTURE_RECT[1])
 
-    def test_no_binding_falls_back_full_desktop(self, m3_executor):
+    def test_no_binding_falls_back_full_desktop(self, m3_executor, monkeypatch):
         regions = []
         m3_executor._shot_fn = lambda region: regions.append(region) or \
             __import__("PIL.Image", fromlist=["Image"]).new("RGB", (4, 4))
+        # 测试卫生:进程拉起只记录不真开(此前每跑必开一个真记事本)
+        launched = []
+
+        class FakePopen:
+            def __init__(self, cmd, *a, **k):
+                launched.append(cmd)
+                self.pid = 424242                 # 替身进程号(直出)
+
+        monkeypatch.setattr("deskpilot.executor.core.subprocess.Popen",
+                            FakePopen)
         m3_executor.execute({"tool": "launch_app", "params": {"app": "notepad.exe"},
                              "binding_hwnd": None})
+        assert launched == [["notepad.exe"]]           # 驱动参数直出,未真开
         assert regions and regions[0]["width"] > 0 and regions[0]["height"] > 0
 
 

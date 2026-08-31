@@ -54,15 +54,6 @@ def _wheelable(canvas) -> None:
                 lambda e, c=canvas: c.unbind_all("<MouseWheel>"))
 
 
-def _slim_scrollbar(parent, canvas) -> tk.Scrollbar:
-    """纤细扁平滚动条（Fluent 观感）；由调用方按内容量自动显隐。"""
-    sb = tk.Scrollbar(parent, orient="vertical", command=canvas.yview,
-                      width=6, bd=0, relief="flat", bg="#CFCFCF",
-                      troughcolor=_BG, activebackground="#A8A8A8",
-                      highlightthickness=0, elementborderwidth=0)
-    return sb
-
-
 def _draw_chevron(canvas, direction: str, color: str) -> None:
     """Fluent 风细线尖角：down=收拢(更多)，up=展开(收起)；1.5px 圆角描边。"""
     canvas.delete("chev")
@@ -107,6 +98,100 @@ class _ChevronButton:
 
     def pack_forget(self) -> None:
         self.frame.pack_forget()
+
+
+class _IconButton:
+    """行内图标按钮（禁止样式 ⛔：圆环+粗横杆；悬停动效：灰→红+横杆划入）。
+
+    业界语义：禁止/移出关联（UX.SE/NNg 共识）；icon-only 配悬浮提示（SSW）。
+    instances：类级注册表（测试观测口）。
+    _base_color / _current_color()：动效状态观测口（TC-ICON-02 断言点）。
+    """
+
+    instances: list = []
+
+    _BASE = "#999999"
+    _HOVER = "#C8391F"
+    _STEPS = 6
+    _STEP_MS = 40
+
+    def __init__(self, parent, action: str, tooltip: str, command):
+        self.action = action
+        self.command = command
+        self._base_color = self._BASE
+        self._color = self._BASE
+        self._step = 0
+        self._anim_id = None
+        self.frame = tk.Frame(parent, bg=_BG, cursor="hand2")
+        self.cv = tk.Canvas(self.frame, width=22, height=22, bg=_BG,
+                            highlightthickness=0, cursor="hand2")
+        self.cv.pack()
+        self._draw_static(self._BASE)
+        for w in (self.frame, self.cv):
+            w.bind("<Button-1>", lambda e: self.command())
+        self.cv.bind("<Enter>", self._on_enter)
+        self.cv.bind("<Leave>", self._on_leave)
+        _Tooltip(self.frame, tooltip)          # 提示绑 frame,避免与动效抢绑定
+        _IconButton.instances.append(self)
+
+    # ---- 观测口 ----
+
+    def _current_color(self) -> str:
+        return self._color
+
+    # ---- 绘制 ----
+
+    def _draw_static(self, color: str) -> None:
+        self._color = color
+        self.cv.delete("x")
+        self.cv.create_oval(3, 3, 19, 19, outline=color, width=1.8, tags="x")
+        self.cv.create_line(6.5, 11, 15.5, 11, fill=color, width=2.5,
+                            capstyle="round", tags="x")
+
+    def _draw_frame(self, color: str, frac: float) -> None:
+        self._color = color
+        self.cv.delete("x")
+        self.cv.create_oval(3, 3, 19, 19, outline=color, width=1.8, tags="x")
+        # 横杆自左向右划入
+        self.cv.create_line(6.5, 11, 6.5 + 9.0 * frac, 11, fill=color,
+                            width=2.5, capstyle="round", tags="x")
+
+    # ---- 动效 ----
+
+    def _on_enter(self, _e=None) -> None:
+        self._cancel_anim()
+        self._step = 0
+        self._animate_in()
+
+    def _animate_in(self) -> None:
+        self._step += 1
+        frac = self._step / self._STEPS
+        self._draw_frame(_mix_hex(self._BASE, self._HOVER, frac), frac)
+        if self._step < self._STEPS:
+            self._anim_id = self.cv.after(self._STEP_MS, self._animate_in)
+
+    def _on_leave(self, _e=None) -> None:
+        self._cancel_anim()
+        self._draw_static(self._BASE)
+
+    def _cancel_anim(self) -> None:
+        if self._anim_id is not None:
+            try:
+                self.cv.after_cancel(self._anim_id)
+            except Exception:
+                pass
+            self._anim_id = None
+
+    def pack(self, *a, **k):
+        self.frame.pack(*a, **k)
+
+
+def _mix_hex(c1: str, c2: str, frac: float) -> str:
+    """两个 #RRGGBB 颜色按 frac 线性插值。"""
+    a = tuple(int(c1[i:i + 2], 16) for i in (1, 3, 5))
+    b = tuple(int(c2[i:i + 2], 16) for i in (1, 3, 5))
+    m = tuple(round(a[i] + (b[i] - a[i]) * frac) for i in range(3))
+    return f"#{m[0]:02x}{m[1]:02x}{m[2]:02x}"
 
 
 class _Tooltip:
@@ -204,8 +289,6 @@ class _ManagerUI:
         wrap.pack(fill="x", padx=16)
         canvas = tk.Canvas(wrap, bg=_BG, highlightthickness=0,
                            height=_ROW_H * _VISIBLE_N)
-        sb = _slim_scrollbar(wrap, canvas)
-        canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="x", expand=True)
         body = tk.Frame(canvas, bg=_BG)
         body_id = canvas.create_window((0, 0), window=body, anchor="nw")
@@ -218,8 +301,7 @@ class _ManagerUI:
         foot = tk.Frame(win, bg=_BG)
         foot.pack(fill="x", padx=16)
         more = _ChevronButton(foot, command=lambda k=None: None)
-        return {"canvas": canvas, "body": body, "sb": sb, "more": more,
-                "scroll_visible": False}
+        return {"canvas": canvas, "body": body, "more": more}
 
     # ---- 渲染 ----
 
@@ -253,15 +335,6 @@ class _ManagerUI:
                      anchor="w").pack(fill="x", pady=2)
         for proc, level, display in visible:
             _row(body, proc, level, display, self._on_remove)
-
-        # 滚动条按内容量显隐：行数超出可视容量才出现，否则隐藏
-        need_scroll = len(visible) > _VISIBLE_N
-        if need_scroll and not blk["scroll_visible"]:
-            blk["sb"].pack(side="right", fill="y")
-            blk["scroll_visible"] = True
-        elif not need_scroll and blk["scroll_visible"]:
-            blk["sb"].pack_forget()
-            blk["scroll_visible"] = False
 
         rest = len(rows) - _VISIBLE_N
         more = blk["more"]
@@ -314,12 +387,9 @@ def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
     name_lbl.pack(fill="x")
     tk.Label(left, text=f"{proc} · {level}", bg=_BG, fg=_HINT_FG,
              font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
-    btn = tk.Button(row, text="移出", width=7, relief="flat", bg=_BTN_BG,
-                    fg=_REMOVE_FG, font=("Microsoft YaHei", 9),
-                    cursor="hand2",
-                    command=lambda p=proc: on_remove(p))
+    btn = _IconButton(row, action="remove", tooltip="移出白名单",
+                      command=lambda p=proc: on_remove(p))
     btn.pack(side="right", padx=(10, 0))
-    _hover(btn, _BTN_BG, _BTN_HOVER)
     tk.Frame(parent, bg=_SEP, height=1).pack(fill="x", pady=(4, 0))
     # 悬浮描述（OS/厂商数据源；500ms 悬停浮出）
     _Tooltip(name_lbl, app_description(proc))
