@@ -15,6 +15,7 @@ from typing import Callable
 _WM_APP = 0x8000
 _WM_TRAY = _WM_APP + 1
 _WM_RBUTTONUP = 0x0205
+_WM_LBUTTONUP = 0x0202
 _WM_COMMAND = 0x0111
 _WM_DESTROY = 0x0002
 _NIM_ADD = 0x0
@@ -26,6 +27,7 @@ _IDI_APPLICATION = 32512
 _IMAGE_ICON = 1
 _LR_SHARED = 0x8000
 _LR_DEFAULTSIZE = 0x40
+_LR_LOADFROMFILE = 0x10
 _TPM_RETURNCMD = 0x100
 _MF_STRING = 0x0
 
@@ -33,11 +35,73 @@ _user32 = ctypes.windll.user32
 _shell32 = ctypes.windll.shell32
 _kernel32 = ctypes.windll.kernel32
 
+# 全量签名声明（ISS-0012 E1 实盘缺陷修复）：
+# 缺省时 ctypes 按 32 位 int 截断 64 位句柄/指针参数，lParam>2^31 即
+# OverflowError——窗口过程消息分发被破坏，托盘菜单渲染空白（实盘实证）
+_user32.DefWindowProcW.restype = wintypes.LPARAM
+_user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                   wintypes.WPARAM, wintypes.LPARAM]
+_user32.RegisterClassW.argtypes = [wintypes.LPVOID]
+_user32.CreateWindowExW.restype = wintypes.HWND
+_user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR,
+                                    wintypes.LPCWSTR, wintypes.DWORD,
+                                    ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int,
+                                    wintypes.HWND, wintypes.HMENU,
+                                    wintypes.HINSTANCE, wintypes.LPVOID]
+_user32.GetMessageW.argtypes = [wintypes.LPVOID, wintypes.HWND,
+                                wintypes.UINT, wintypes.UINT]
+_user32.TranslateMessage.argtypes = [wintypes.LPVOID]
+_user32.DispatchMessageW.argtypes = [wintypes.LPVOID]
+_user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                 wintypes.WPARAM, wintypes.LPARAM]
+_user32.PostQuitMessage.argtypes = [ctypes.c_int]
+_user32.LoadImageW.restype = wintypes.HICON
+_user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR,
+                               wintypes.UINT, ctypes.c_int, ctypes.c_int,
+                               wintypes.UINT]
+_user32.CreatePopupMenu.restype = wintypes.HMENU
+_user32.AppendMenuW.argtypes = [wintypes.HMENU, wintypes.UINT,
+                                wintypes.ULONG, wintypes.LPCWSTR]
+_user32.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                   wintypes.HWND, wintypes.LPVOID]
+_user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+_user32.GetCursorPos.argtypes = [wintypes.LPVOID]
+_user32.DestroyMenu.argtypes = [wintypes.HMENU]
+_user32.MessageBoxW.argtypes = [wintypes.HWND, wintypes.LPCWSTR,
+                                wintypes.LPCWSTR, wintypes.UINT]
+_shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, wintypes.LPVOID]
+_shell32.ExtractIconW.restype = wintypes.HICON
+_shell32.ExtractIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR,
+                                  wintypes.UINT]
+_kernel32.GetModuleHandleW.restype = wintypes.HINSTANCE
+_kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+
 
 def menu_items() -> tuple[tuple[str, str], ...]:
     """ISS-0012 §6 E1：托盘菜单模型纯函数——(动作ID, 显示名)。"""
     return (("manage", "白名单管理…"),
             ("status", "运行状态…"))
+
+
+def _load_tray_icon():
+    """托盘图标：冻结形态取 exe 自身图标（spec 已设），源码形态读
+    assets/deskpilot.ico；全失败回退系统通用图标。"""
+    import sys
+    from pathlib import Path
+    if getattr(sys, "frozen", False):
+        h = _shell32.ExtractIconW(None, sys.executable, 0)
+        if h:
+            return h
+    assets = Path(__file__).resolve().parents[1] / "assets" / "deskpilot.ico"
+    if assets.is_file():
+        h = _user32.LoadImageW(None, str(assets), _IMAGE_ICON, 0, 0,
+                               _LR_LOADFROMFILE | _LR_DEFAULTSIZE)
+        if h:
+            return h
+    return _user32.LoadImageW(None, _IDI_APPLICATION, _IMAGE_ICON,
+                              0, 0, _LR_SHARED | _LR_DEFAULTSIZE)
 
 
 class _WNDCLASSW(ctypes.Structure):
@@ -130,8 +194,7 @@ class TrayIcon:
         if not self._hwnd:
             return
 
-        icon = _user32.LoadImageW(None, _IDI_APPLICATION, _IMAGE_ICON,
-                                  0, 0, _LR_SHARED | _LR_DEFAULTSIZE)
+        icon = _load_tray_icon()
         nid = _NOTIFYICONDATAW()
         nid.cbSize = ctypes.sizeof(_NOTIFYICONDATAW)
         nid.hWnd = self._hwnd
@@ -155,8 +218,8 @@ class TrayIcon:
         self._hwnd = None
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
-        if msg == _WM_TRAY and lparam == _WM_RBUTTONUP:
-            self._popup(hwnd)
+        if msg == _WM_TRAY and lparam in (_WM_RBUTTONUP, _WM_LBUTTONUP):
+            self._popup(hwnd)              # 左键右键均弹菜单（实盘"点击没有反应"）
             return 0
         if msg == _WM_COMMAND:
             action = self._actions.get(wparam & 0xFFFF)

@@ -113,6 +113,7 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 | v0.5 | 2026-08-31 | 实盘目击设计缺陷：入白弹窗裸进程名不可理解（"我都不知道这是个啥软件"）——sdfang 批示不另立单、回本单补丁：新增整改项 F（显示名解析：窗口标题/FileDescription/回退进程名）与对应测试，已批准开工 |
 | v0.6 | 2026-08-31 | F 实现完成：appnames.app_display_name 三级解析（窗口标题/FileDescription/回退进程名，ctypes 零依赖）；_describe_enroll/_describe 两段式显示名；新增 7 用例，全量 334 全绿；生产实证 desc=「Windows Calculator」 |
 | v0.7 | 2026-08-31 | F2/F3 定稿：sdfang 批示中英双语且"不要自己维护国际化"——撤内置中文表，中文名走系统规范：MUI 资源 + AppX 包资源（Executable 精确匹配 + FileDescription↔包短名归一化恒等匹配，覆盖 calc.exe stub；ms-resource 经 SHLoadIndirectString 按界面语言解析）；实证 calc.exe→「计算器（Windows Calculator）」，全量 334 全绿 |
+| v0.8 | 2026-08-31 | E1 实盘缺陷修复：tray Win32 调用全量签名声明（缺省 32 位截断致窗口过程 OverflowError、菜单渲染空白，stderr 实证）；左键同弹菜单；托盘图标换用设计图标（assets/deskpilot.ico 多尺寸，spec 挂 exe 图标）；拒绝按钮链路实盘验证通过（APPROVAL_DENIED）；approval_ttl 定 90s 且倒计时接线 policy 驱动；新增 5 用例，全量 339 全绿 |
 
 ## 6. 接口定义（SDD 公开入口；测试只允许调用以下入口）
 
