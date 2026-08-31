@@ -82,6 +82,10 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "at_least_one": ["title", "hwnd", "process"],
     },
     "detach": {"required": {"token": ("str",)}, "optional": {}},
+    # ISS-0012 §6 E3：AI 请求撤回白名单（人类弹窗裁决后才执行）
+    "request_remove_from_whitelist": {
+        "required": {"process": ("str",)}, "optional": {},
+    },
     # ---- L2 写入类（详细设计 §14.4）----
     "launch_app": {"required": {"app": ("str",)}, "optional": {}},
     "activate_window": {"required": {"token": ("str",)}, "optional": {}},

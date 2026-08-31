@@ -44,13 +44,14 @@ class TestGate1Binding:
 
 class TestGate2Whitelist:
     def test_process_not_whitelisted(self, enforcement, bindings, probe):
-        """TC-S-WL-02：目标进程不在白名单 → NOT_WHITELISTED，含申请说明。"""
+        """TC-S-WL-02（ISS-0012 语义更新）：非白名单进程 → 入白审批；
+        审批器拒绝 → APPROVAL_DENIED，消息含进程名。"""
         probe.processes[FIXTURE_HWND] = "evil.exe"
         rec = bindings.create(FIXTURE_HWND, "evil.exe", FIXTURE_RECT)
         d = enforcement.submit(_req("type_text", {"text": "x"}, rec.token))
         assert d.allowed is False
-        assert d.reason_code == errors.NOT_WHITELISTED
-        assert "白名单" in d.message                 # 附申请加入白名单说明
+        assert d.reason_code == errors.APPROVAL_DENIED
+        assert "evil.exe" in d.message
 
     def test_policy_violation_level_cap(self, enforcement, bindings, probe):
         """TC-S-WL-03：explorer.exe 上限 L1，发起 L2 写入 → POLICY_VIOLATION。"""
@@ -112,10 +113,10 @@ class TestDescribePlainLanguage:
         assert "notepad.exe" in d.message
 
     def test_launch_app_plain_action(self, enforcement):
-        """非白名单 launch_app 升 L3：人话为「启动应用 xxx」。"""
+        """非白名单 launch_app 入白审批（ISS-0012）：拒绝消息含进程名。"""
         d = enforcement.submit(_req("launch_app", {"app": "evil.exe"}))
         assert d.reason_code == errors.APPROVAL_DENIED
-        assert "启动应用 evil.exe" in d.message
+        assert "evil.exe" in d.message
 
     def test_type_text_plain_action(self, enforcement, bound_record):
         d = enforcement.submit(_req("key", {"key": "ctrl+shift+escape"},
@@ -323,11 +324,10 @@ class TestLaunchAppExemption:
         assert len(executor.instructions) == 1
 
     def test_launch_app_non_whitelist_escalates(self, enforcement):
-        """launch 非白名单目标 → 升级 L3 → APPROVAL_DENIED。"""
+        """launch 非白名单目标 → 入白审批（ISS-0012）；审批器拒绝 → APPROVAL_DENIED。"""
         d = enforcement.submit(_req("launch_app", {"app": "mspaint.exe"}))
         assert d.allowed is False
         assert d.reason_code == errors.APPROVAL_DENIED
-        assert d.effective_level == "L3"
 
 
 class TestExecutionAndAudit:
@@ -366,8 +366,10 @@ class TestExecutionAndAudit:
         records = read_audit(str(tmp_path / "audit"))
         denied = [r for r in records if r["decision"] == "拒绝"]
         assert len(denied) == 4
+        # ISS-0012：闸二未命中改为入白审批拒绝（APPROVAL_DENIED）；
+        # NOT_WHITELISTED 仅余自保护硬拒语义
         assert [r["reason_code"] for r in denied] == [
-            errors.NO_BINDING, errors.NOT_WHITELISTED,
+            errors.NO_BINDING, errors.APPROVAL_DENIED,
             errors.KEY_UNKNOWN, errors.APPROVAL_DENIED]
         assert any(r["decision"] == "放行" for r in records)
 
@@ -397,8 +399,9 @@ class TestAttachGate:
         assert executor.instructions == []          # attach 不落执行层
 
     def test_attach_not_whitelisted(self, enforcement):
+        """ISS-0012：非白名单进程改为入白审批流——审批器拒绝 → APPROVAL_DENIED。"""
         d = enforcement.submit(_req("attach", {"process": "evil.exe"}))
-        assert d.reason_code == errors.NOT_WHITELISTED
+        assert d.reason_code == errors.APPROVAL_DENIED
 
     def test_attach_terminal_is_l3(self, enforcement):
         d = enforcement.submit(_req("attach", {"process": "cmd.exe"}))

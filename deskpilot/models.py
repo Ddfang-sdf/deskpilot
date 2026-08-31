@@ -24,6 +24,8 @@ TOOL_LEVELS: Mapping[str, str] = {
     "launch_app": L2, "activate_window": L2, "click_element": L2,
     "type_element": L2, "click": L2, "type_text": L2, "key": L2,
     "set_clipboard": L2, "drag": L2,
+    # ISS-0012 §6 E3：AI 请求撤回白名单（人类弹窗裁决后才执行，L1 请求类）
+    "request_remove_from_whitelist": L1,
 }
 
 # 需要有效绑定的工具（详细设计 §12.4 / §13.4 / §14.4 输入项中含"绑定令牌✱"者；

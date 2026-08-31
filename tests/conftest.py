@@ -82,11 +82,13 @@ class FakeApprover:
 
     def request(self, description: str, fingerprint: str,
                 image_path: str | None = None,
-                target_rect: tuple | None = None) -> str:
+                target_rect: tuple | None = None,
+                enroll: str | None = None) -> str:
         self.requests.append({"description": description,
                               "fingerprint": fingerprint,
                               "image_path": image_path,
-                              "target_rect": target_rect})
+                              "target_rect": target_rect,
+                              "enroll": enroll})
         d = self.decision
         return d() if callable(d) else d
 

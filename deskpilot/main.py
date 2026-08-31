@@ -170,6 +170,57 @@ def _build_ocr_engine(rapid):
     return engine
 
 
+def policy_sha256_audit(policy_path: str, audit) -> str:
+    """ISS-0012 §6 C：启动指纹审计——计算 policy.yml SHA-256 并写审计。
+
+    返回指纹（小写 hex）；审计事件"策略指纹"含路径与指纹。
+    """
+    from .whitelist_admin import file_sha256
+    fp = file_sha256(policy_path)
+    audit.record_event("策略指纹", f"{policy_path} sha256={fp}")
+    return fp
+
+
+class _PolicyWatchThread(threading.Thread):
+    """ISS-0012 §6 C：策略文件指纹周期比对线程（stop() 可停）。"""
+
+    def __init__(self, policy_path: str, audit, interval: float,
+                 fingerprint: str):
+        super().__init__(daemon=True, name="deskpilot-policy-watch")
+        self._path = policy_path
+        self._audit = audit
+        self._interval = interval
+        self._fp = fingerprint
+        self._stopped = threading.Event()
+
+    def run(self) -> None:
+        from .whitelist_admin import file_sha256
+        while not self._stopped.wait(self._interval):
+            try:
+                cur = file_sha256(self._path)
+            except OSError:
+                continue
+            if cur != self._fp:
+                try:
+                    self._audit.record_event(
+                        "策略文件被外部修改",
+                        f"{self._path} sha256 {self._fp} -> {cur}")
+                except Exception:
+                    pass
+                self._fp = cur
+
+    def stop(self) -> None:
+        self._stopped.set()
+
+
+def _start_policy_watch(policy_path: str, audit, interval: float = 60.0,
+                        fingerprint: str = "") -> _PolicyWatchThread:
+    """ISS-0012 §6 C：启动策略守望线程（不重载不冻结，仅留痕告警）。"""
+    t = _PolicyWatchThread(policy_path, audit, interval, fingerprint)
+    t.start()
+    return t
+
+
 def _start_janitor(policy, audit: AuditLogger) -> None:
     """ISS-0010 C：清理者装配——启动时跑一遍；interval>0 时按周期定时跑。"""
     from .janitor import run_janitor
@@ -217,6 +268,14 @@ def main() -> int:
         print(f"审计目录不可用: {e}", file=sys.stderr)
         return 3
 
+    # ISS-0012 C：策略指纹入审计 + 运行期外部修改留痕
+    fp = policy_sha256_audit(str(policy_path), audit)
+    _start_policy_watch(str(policy_path), audit, fingerprint=fp)
+    # ISS-0012 A/D：运行期白名单管理（静态∪会话；落盘由 daemon 原子完成）
+    from .whitelist_admin import WhitelistAdmin
+    whitelist_admin = WhitelistAdmin(str(policy_path), policy.whitelist,
+                                     audit=audit)
+
     from .dialog_service import get_dialog_service
     dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
     from .audit_paths import AuditPaths
@@ -252,9 +311,20 @@ def main() -> int:
         return _build_ocr_engine(RapidOCR())
 
     executor.ocr_factory = _ocr_factory
-    enforcement = Enforcement(policy, bindings, approvals, estop, executor, audit)
+    enforcement = Enforcement(policy, bindings, approvals, estop, executor,
+                              audit, whitelist_admin=whitelist_admin)
+    # ISS-0012 E3/E4：撤回确认通道与入白撤销 toast 接线
+    from .whitelist_window import DialogRevokeChannel
+    revoke_channel = DialogRevokeChannel(dialog_service,
+                                         audit_paths=audit_paths)
+    whitelist_admin.notify_permanent = lambda proc: dialog_service.show(
+        "enroll_notice",
+        {"process": proc,
+         "on_undo": lambda p=proc: whitelist_admin.remove(p)})
     ctx = ToolContext(policy=policy, enforcement=enforcement, bindings=bindings,
-                      executor=executor, audit=audit)
+                      executor=executor, audit=audit,
+                      whitelist_admin=whitelist_admin,
+                      revoke_channel=revoke_channel)
 
     audit.record_event("服务启动", "MCP stdio 就绪")
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
@@ -262,16 +332,39 @@ def main() -> int:
         # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
         from .httpd import HttpDaemon
         daemon = HttpDaemon(ctx, estop=estop,
-                            idle_timeout_s=policy.idle_timeout_minutes * 60)
+                            idle_timeout_s=policy.idle_timeout_minutes * 60,
+                            whitelist_admin=whitelist_admin)
         daemon.start()
         audit.record_event("服务启动",
                            f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}")
         print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
               file=sys.stderr)
+        # ISS-0012 E1：系统托盘图标（白名单管理可视化入口；托盘即在跑）
+        from .tray import TrayIcon
+        base_url = f"http://127.0.0.1:{daemon.port}"
+
+        def _open_manager() -> None:
+            import subprocess
+            if getattr(sys, "frozen", False):
+                cmd = [sys.executable, "--whitelist-manager", base_url]
+                env = {k: v for k, v in os.environ.items()
+                       if k != "_MEIPASS2"}
+            else:
+                cmd = [sys.executable, "-m", "deskpilot.whitelist_window",
+                       base_url]
+                env = None
+            try:
+                subprocess.Popen(cmd, env=env)
+            except OSError:
+                pass
+
+        tray = TrayIcon(on_manage=_open_manager)
+        tray.start()
         try:
             while True:
                 time.sleep(3600)
         except KeyboardInterrupt:
+            tray.stop()
             daemon.stop()
             audit.record_event("服务停止", "常驻服务停止")
             return 0

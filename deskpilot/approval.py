@@ -39,15 +39,22 @@ def compute_fingerprint(tool: str, params: Mapping[str, Any]) -> str:
 
 
 class ApprovalChannel(Protocol):
-    """本地审批通道（M3 弹窗 / 测试模拟审批器），同步裁决语义（ISS-0003）。"""
+    """本地审批通道（M3 弹窗 / 测试模拟审批器），同步裁决语义（ISS-0003）。
+
+    enroll（ISS-0012 §6）：非 None 时为入白审批——弹窗呈现三态
+    「本次允许 / 永久加入 / 拒绝」，返回值域扩 "approve_always"。
+    """
 
     def request(self, description: str, fingerprint: str,
                 image_path: str | None = None,
-                target_rect: tuple | None = None) -> str:
-        """向人类请求批准并同步等待裁决；返回 "approve" / "deny" / "timeout"。
+                target_rect: tuple | None = None,
+                enroll: str | None = None) -> str:
+        """向人类请求批准并同步等待裁决。
 
+        返回 "approve" / "approve_always"（仅入白）/ "deny" / "timeout"。
         image_path：目标窗口实拍图（可选），供弹窗展示"操作的是哪个窗口"。
         target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。
+        enroll（ISS-0012）：入白审批的目标进程名；None 为常规 L3 审批。
         """
         ...
 
@@ -57,7 +64,8 @@ class DenyAllChannel:
 
     def request(self, description: str, fingerprint: str,
                 image_path: str | None = None,
-                target_rect: tuple | None = None) -> str:
+                target_rect: tuple | None = None,
+                enroll: str | None = None) -> str:
         return "deny"
 
 
@@ -82,6 +90,22 @@ class ApprovalManager:
                                          image_path=image_path,
                                          target_rect=target_rect)
         if decision == "approve":
+            self.issue_token(fingerprint)
+        return decision
+
+    def request_enroll(self, process: str, description: str, fingerprint: str,
+                       image_path: str | None = None,
+                       target_rect: tuple | None = None) -> str:
+        """ISS-0012 §6：入白审批（三态：本次允许 / 永久加入 / 拒绝）。
+
+        返回 "approve"（本次允许=会话放行）/ "approve_always"（永久入白）/
+        "deny" / "timeout"；两种批准均签发令牌（当前操作即放行）。
+        """
+        decision = self._channel.request(description, fingerprint,
+                                         image_path=image_path,
+                                         target_rect=target_rect,
+                                         enroll=process)
+        if decision in ("approve", "approve_always"):
             self.issue_token(fingerprint)
         return decision
 

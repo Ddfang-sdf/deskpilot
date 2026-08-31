@@ -35,6 +35,8 @@ class ToolContext:
     bindings: Any = None
     executor: Any = None
     audit: Any = None
+    whitelist_admin: Any = None     # ISS-0012 E2/E3：白名单运行期管理
+    revoke_channel: Any = None      # ISS-0012 E3：AI 请求撤回的人类确认通道
 
 
 def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> ToolResult:
@@ -49,6 +51,8 @@ def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> Too
                       process=params.get("process"))
     if tool == "detach":
         return detach(ctx, token=params.get("token", ""))
+    if tool == "request_remove_from_whitelist":
+        return request_remove_from_whitelist(ctx, process=params["process"])
 
     if tool in _L0_DIRECT or tool in _L1_DIRECT:
         return _run_sensing(ctx, tool, params)
@@ -164,6 +168,33 @@ def detach(ctx: ToolContext, *, token: str) -> ToolResult:
                           message=decision.message)
     ctx.bindings.detach(params["token"])
     return ToolResult(ok=True, error_code="", message="已解绑")
+
+
+# ---- ISS-0012 §6 E3：AI 请求撤回白名单 ----
+
+def request_remove_from_whitelist(ctx: ToolContext, *, process: str) -> ToolResult:
+    """AI 请求把进程移出白名单：人类在本地确认窗点[移出]才执行（特权收缩）。
+
+    保留/超时/通道未装配一律 removed=False（不产生任何策略变更）。
+    """
+    t0 = time.monotonic()
+    proc = str(process).strip().lower()
+    admin = ctx.whitelist_admin
+    channel = ctx.revoke_channel
+    removed = False
+    if admin is not None and channel is not None and proc:
+        decision = channel.request(proc)
+        if decision == "remove":
+            removed = admin.remove(proc) is not None
+            if removed and ctx.audit is not None:
+                try:
+                    ctx.audit.record_event("白名单移除-经AI请求", proc)
+                except Exception:
+                    pass
+    result = {"removed": removed}
+    _light_audit(ctx, "request_remove_from_whitelist",
+                 {"process": proc}, f"removed={removed}", t0)
+    return ToolResult(ok=True, error_code="", message="ok", data=result)
 
 
 # ---- L2 写入类公开入口（M1）----

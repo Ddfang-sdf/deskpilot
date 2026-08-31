@@ -1,8 +1,9 @@
 """PyInstaller 打包入口：python -m deskpilot 的等价脚本。
 
-冻结形态下兼作弹窗子进程入口：
-  deskpilot.exe --approval-dialog <desc_path> <result_path> <timeout>
+冻结形态下各弹窗子进程入口：
+  deskpilot.exe --approval-dialog <desc_path> <result_path> <timeout> [image] [enroll]
   deskpilot.exe --freeze-notify <audit_dir> <remind_interval>
+  deskpilot.exe --whitelist-manager <base_url>     （ISS-0012 E2 白名单管理窗口）
 （TkApprovalChannel / FreezeNotifier 在非冻结形态用 python -m 拉起弹窗；
 onefile 下 sys.executable 是本 exe 自身，-m 参数无效，须由此分发。）
 """
@@ -17,6 +18,10 @@ elif sys.argv[1:2] == ["--freeze-notify"]:
     sys.argv = [sys.argv[0], *sys.argv[2:]]
     from deskpilot.freeze_dialog import main as freeze_main
     freeze_main()
+elif sys.argv[1:2] == ["--whitelist-manager"]:
+    sys.argv = [sys.argv[0], *sys.argv[2:]]
+    from deskpilot.whitelist_window import main as manager_main
+    manager_main()
 else:
     from deskpilot.main import main
     raise SystemExit(main())

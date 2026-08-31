@@ -19,10 +19,10 @@ class TestSchemaCompleteness:
         """全部工具均有参数模式声明（与设计工具清单一致）。
 
         注：设计文档按功能条目计 22 个，其中 attach / detach 占同一条目行，
-        协议方法实为 23 个。
+        协议方法实为 23 个；ISS-0012 增 request_remove_from_whitelist 后为 24 个。
         """
         assert set(TOOL_SCHEMAS.keys()) == set(TOOL_LEVELS.keys())
-        assert len(TOOL_SCHEMAS) == 23
+        assert len(TOOL_SCHEMAS) == 24
 
     def test_unknown_tool_rejected(self, policy):
         """TC-S-CH-02 基础：未发布的方法名直接拒绝。"""

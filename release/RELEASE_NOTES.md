@@ -28,4 +28,4 @@ claude mcp add deskpilot -- "C:\tools\deskpilot\deskpilot.exe"
 
 ### 系统要求
 
-Windows 10/11 x64；无需安装 Python。默认白名单：notepad / explorer / mspaint / powerpnt（编辑 exe 同目录的 policy.yml 调整）。
+Windows 10/11 x64；无需安装 Python。默认白名单：notepad / explorer / mspaint / powerpnt（新软件经审批弹窗一键加入，或托盘「白名单管理」查看移出；亦可编辑 exe 同目录的 policy.yml）。

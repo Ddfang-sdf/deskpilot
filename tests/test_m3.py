@@ -325,14 +325,15 @@ class TestSpawnDialogFrozen:
         assert result.read_text(encoding="utf-8") == "timeout"
 
     def test_spawn_forwards_image_path(self, tmp_path):
-        """审批通道把目标窗口截图路径作为末位参数传给弹窗进程。"""
+        """审批通道把目标窗口截图路径传给弹窗进程（ISS-0012：enroll 参数居末位）。"""
         captured = {}
         ch = TkApprovalChannel(
             popen_factory=lambda cmd, env=None: captured.update(cmd=cmd),
             result_root=str(tmp_path))
         ch._spawn_dialog(tmp_path / "a.desc", tmp_path / "a.result",
                          "C:/shots/x.png")
-        assert captured["cmd"][-1] == "C:/shots/x.png"
+        assert captured["cmd"][-2] == "C:/shots/x.png"
+        assert captured["cmd"][-1] == ""          # enroll 缺省空串
 
     def test_spawn_without_image_passes_empty(self, tmp_path):
         """无截图时末位参数为空串（弹窗端据此跳过图像区）。"""

@@ -40,13 +40,16 @@ class TkApprovalChannel:
 
     def request(self, description: str, fingerprint: str,
                 image_path: str | None = None,
-                target_rect: tuple | None = None) -> str:
+                target_rect: tuple | None = None,
+                enroll: str | None = None) -> str:
         """向人类请求批准并同步等待裁决（ISS-0003）。
 
-        弹窗独立进程运行，裁决经结果文件回传；返回 "approve" / "deny" /
-        "timeout"。任何异常（描述写盘失败、结果读取失败、非法内容）一律按
+        弹窗独立进程运行，裁决经结果文件回传；返回 "approve" /
+        "approve_always"（仅入白，ISS-0012）/ "deny" / "timeout"。
+        任何异常（描述写盘失败、结果读取失败、非法内容）一律按
         拒绝类返回（fail-closed）。
-        target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。"""
+        target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。
+        enroll（ISS-0012）：入白审批的目标进程名。"""
         request_id = uuid.uuid4().hex[:16]
         # ISS-0010 B：提供 AuditPaths 时临时文件落 approval/ 受管子目录
         base_dir = (self._audit_paths.approval if self._audit_paths is not None
@@ -61,14 +64,15 @@ class TkApprovalChannel:
                              "fingerprint": fingerprint,
                              "result_path": str(result_path)}
         self._spawn_dialog(desc_path, result_path, image_path or "",
-                           target_rect)
+                           target_rect, enroll)
         deadline = self._clock() + self._timeout
         while self._clock() < deadline:
             try:
                 if result_path.exists():
                     decision = result_path.read_text(encoding="utf-8").strip()
                     result_path.unlink(missing_ok=True)
-                    if decision in ("approve", "deny", "timeout"):
+                    if decision in ("approve", "approve_always",
+                                    "deny", "timeout"):
                         return decision
                     return "deny"      # 非法内容按拒绝（fail-closed）
             except OSError:
@@ -80,7 +84,8 @@ class TkApprovalChannel:
 
     def _spawn_dialog(self, desc_path: Path, result_path: Path,
                       image_path: str = "",
-                      target_rect: tuple | None = None) -> None:
+                      target_rect: tuple | None = None,
+                      enroll: str | None = None) -> None:
         timeout = f"{self._timeout:.0f}"
         if self._dialog_service is not None:
             # ISS-0008 P6：共享 Tk 线程内建窗，替代拉起子进程 exe
@@ -92,7 +97,8 @@ class TkApprovalChannel:
             self._dialog_service.show("approval", {
                 "description": description, "result_path": str(result_path),
                 "timeout_s": self._timeout, "image_path": image_path,
-                "target_screen": self._screen_of_target(target_rect)})
+                "target_screen": self._screen_of_target(target_rect),
+                "enroll": enroll})
             return
         if getattr(sys, "frozen", False):
             # PyInstaller onefile：sys.executable 是 deskpilot.exe 自身，
@@ -100,11 +106,13 @@ class TkApprovalChannel:
             # 子进程须剥离 _MEIPASS2：否则与父进程共享 onefile 解压目录，
             # 父进程先退出会删除目录，子进程读取依赖文件中途崩溃。
             cmd = [sys.executable, "--approval-dialog",
-                   str(desc_path), str(result_path), timeout, image_path]
+                   str(desc_path), str(result_path), timeout, image_path,
+                   enroll or ""]
             env = {k: v for k, v in os.environ.items() if k != "_MEIPASS2"}
         else:
             cmd = [sys.executable, "-m", "deskpilot.approval_dialog",
-                   str(desc_path), str(result_path), timeout, image_path]
+                   str(desc_path), str(result_path), timeout, image_path,
+                   enroll or ""]
             env = None
         try:
             self._popen(cmd, env=env)

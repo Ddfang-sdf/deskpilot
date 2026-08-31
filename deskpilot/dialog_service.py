@@ -100,12 +100,23 @@ class DialogService:
             build_window(self._tk_root, payload["description"],
                          payload["result_path"], payload["timeout_s"],
                          payload.get("image_path", ""),
-                         target_screen=payload.get("target_screen"))
+                         target_screen=payload.get("target_screen"),
+                         enroll=payload.get("enroll"))
         elif kind == "freeze":
             from .freeze_dialog import build_window
             build_window(self._tk_root, payload["audit_dir"],
                          payload["interval"],
                          target_screen=payload.get("target_screen"))
+        elif kind == "enroll_notice":
+            # ISS-0012 E4：入白确认 toast（[撤销] 回调由装配侧注入）
+            from .whitelist_window import build_enroll_notice
+            build_enroll_notice(self._tk_root, payload["process"],
+                                on_undo=payload["on_undo"])
+        elif kind == "revoke":
+            # ISS-0012 E3：AI 请求撤回的人类确认窗
+            from .whitelist_window import build_revoke_confirm
+            build_revoke_confirm(self._tk_root, payload["process"],
+                                 payload["result_path"], payload["timeout_s"])
         else:
             raise ValueError(f"未知弹窗类型: {kind}")
 

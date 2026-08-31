@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Ddfang-sdf/deskpilot" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="Platform">
   <img src="https://img.shields.io/badge/MCP-stdio-6E56CF" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-270%20passed-2DA44E" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-323%20passed-2DA44E" alt="Tests">
 </p>
 
 <p align="center">
@@ -88,11 +88,11 @@ AI 客户端 ──MCP(stdio)──▶ deskpilot ──四道闸硬校验──�
                               └─ 全程审计 → 截图 + JSONL 留痕
 ```
 
-23 个 MCP 工具（截图 / OCR / 元素树 / 点击 / 输入 / 窗口管理……）。安全模型、四道闸细节、协议设计的完整文档在 [docs/](docs/DESIGN.md)。
+24 个 MCP 工具（截图 / OCR / 元素树 / 点击 / 输入 / 窗口管理……）。安全模型、四道闸细节、协议设计的完整文档在 [docs/](docs/DESIGN.md)。
 
 ## 安全说明
 
-- 默认只能操作白名单里的日常软件（记事本、画图、资源管理器、PowerPoint），其他程序 AI 碰不到；想加软件，编辑 exe 旁边的 `policy.yml`
+- 默认只能操作白名单里的日常软件（记事本、画图、资源管理器、PowerPoint），其他程序 AI 碰不到；想让 AI 操作新软件，它发起请求时**你在弹窗里点一下「永久加入」即可**，不用改任何文件；系统托盘图标可随时打开「白名单管理」查看和移出
 - 危险操作（关窗口、删除等）一律弹本地审批窗，超时自动拒绝；审批令牌不经 AI 之手
 - 任何时候觉得不对劲：**`Ctrl+Shift+F12` 立即熔断**一切操作，`Ctrl+Shift+F11` 恢复；或者把鼠标甩到主屏左上角按住不放（多显示器时触发角固定为主屏左上角）
 

@@ -52,13 +52,17 @@ def _hover(btn: tk.Button, base: str, hover: str) -> None:
 
 
 def build_window(parent, description: str, result_path, timeout_s: float,
-                 image_path: str = "", target_screen: dict | None = None):
+                 image_path: str = "", target_screen: dict | None = None,
+                 enroll: str | None = None):
     """在 parent（共享 Tk root）线程内构建审批 toast（Toplevel，ISS-0008 P6）。
 
     人类决定写入结果文件（批准一次 / 拒绝）；倒计时结束默认拒绝（fail-closed）。
     image_path 非空时内嵌目标窗口实拍缩略图（动态增高）。
     target_screen（ISS-0007 §6）：显示器 dict 时 toast 落该屏右下角
     （审批调用方按目标窗口所在屏传入；缺省保持主屏右下）。
+    enroll（ISS-0012 §6）：非 None 为入白审批——三按钮
+    「本次允许(approve) / 永久加入(approve_always) / 拒绝」，
+    标题与默认焦点不变（安全项优先）。
     """
     result_path = Path(result_path)
 
@@ -77,7 +81,7 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     height = _HEIGHT + (img_h + 8 if photo_im is not None else 0)
 
     win = tk.Toplevel(parent)
-    win.title("DeskPilot 审批")
+    win.title("DeskPilot 入白审批" if enroll else "DeskPilot 审批")
     win.overrideredirect(True)                  # 无边框 toast
     win.attributes("-topmost", True)
     win.configure(bg=_BG)
@@ -102,7 +106,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     header.pack(fill="x")
     tk.Label(header, text="⚠", bg=_BG, fg=_ACCENT,
              font=("Microsoft YaHei", 13, "bold")).pack(side="left")
-    tk.Label(header, text="DeskPilot 审批", bg=_BG, fg=_TITLE_FG,
+    tk.Label(header, text="DeskPilot 入白审批" if enroll else "DeskPilot 审批",
+             bg=_BG, fg=_TITLE_FG,
              font=("Microsoft YaHei", 11, "bold")).pack(side="left", padx=(8, 0))
 
     headline, _, detail = description.partition("\n---\n")
@@ -144,14 +149,37 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     # 按钮行右对齐：安全项在左（默认焦点），后果项在右
     bar = tk.Frame(body, bg=_BG)
     bar.pack(fill="x", pady=(14, 0))
-    approve = tk.Button(bar, text="批准一次", width=_BTN_WIDTH, relief="flat",
-                        bg=_APPROVE_BG, fg="#FFFFFF",
-                        activebackground=_APPROVE_HOVER, activeforeground="#FFFFFF",
-                        font=("Microsoft YaHei", 10), cursor="hand2",
-                        command=lambda: decide("approve"))
-    approve.pack(side="right")
-    _hover(approve, _APPROVE_BG, _APPROVE_HOVER)
-    deny = tk.Button(bar, text="拒绝", width=_BTN_WIDTH, relief="flat",
+    if enroll:
+        # ISS-0012 入白三态：本次允许（会话）/ 永久加入（落盘）/ 拒绝
+        always = tk.Button(bar, text="永久加入", width=_BTN_WIDTH, relief="flat",
+                           bg=_APPROVE_BG, fg="#FFFFFF",
+                           activebackground=_APPROVE_HOVER,
+                           activeforeground="#FFFFFF",
+                           font=("Microsoft YaHei", 10), cursor="hand2",
+                           command=lambda: decide("approve_always"))
+        always.pack(side="right")
+        _hover(always, _APPROVE_BG, _APPROVE_HOVER)
+        once = tk.Button(bar, text="本次允许", width=_BTN_WIDTH, relief="flat",
+                         bg=_DENY_BG, fg=_TITLE_FG,
+                         activebackground=_DENY_HOVER,
+                         activeforeground=_TITLE_FG,
+                         font=("Microsoft YaHei", 10), cursor="hand2",
+                         command=lambda: decide("approve"))
+        once.pack(side="right", padx=(0, _BTN_GAP))
+        _hover(once, _DENY_BG, _DENY_HOVER)
+        deny_text = "拒绝"
+    else:
+        approve = tk.Button(bar, text="批准一次", width=_BTN_WIDTH,
+                            relief="flat",
+                            bg=_APPROVE_BG, fg="#FFFFFF",
+                            activebackground=_APPROVE_HOVER,
+                            activeforeground="#FFFFFF",
+                            font=("Microsoft YaHei", 10), cursor="hand2",
+                            command=lambda: decide("approve"))
+        approve.pack(side="right")
+        _hover(approve, _APPROVE_BG, _APPROVE_HOVER)
+        deny_text = "拒绝"
+    deny = tk.Button(bar, text=deny_text, width=_BTN_WIDTH, relief="flat",
                      bg=_DENY_BG, fg=_TITLE_FG,
                      activebackground=_DENY_HOVER, activeforeground=_TITLE_FG,
                      font=("Microsoft YaHei", 10), cursor="hand2",
@@ -184,7 +212,7 @@ def build_window(parent, description: str, result_path, timeout_s: float,
 def main() -> None:
     """独立子进程入口（非 daemon / stdio 回退路径）。
 
-    argv: <desc_path> <result_path> <timeout_s> [image_path]
+    argv: <desc_path> <result_path> <timeout_s> [image_path] [enroll_process]
     """
     desc_path = Path(sys.argv[1])
     result_path = Path(sys.argv[2])
@@ -197,7 +225,9 @@ def main() -> None:
     root = tk.Tk()
     root.withdraw()
     image_path = sys.argv[4] if len(sys.argv) > 4 else ""
-    win = build_window(root, description, result_path, timeout_s, image_path)
+    enroll = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None
+    win = build_window(root, description, result_path, timeout_s, image_path,
+                       enroll=enroll)
     # 独立形态：本窗关闭即退出 mainloop（共享线程形态由服务托管，不绑此事件）
     win.bind("<Destroy>", lambda e: root.quit() if e.widget is win else None)
     root.mainloop()

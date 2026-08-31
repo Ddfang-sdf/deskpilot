@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0012 |
 | 标题 | 非白名单软件"改 YAML 再重启"的 UX 断裂（启动批了却不让操作）；拒绝文案直授提权路径；policy.yml 可被 AI 经白名单应用静默编辑 |
 | 严重级 | **中**（功能可用但体验断裂自相矛盾；策略完整性属纵深防御缺口，非威胁模型内失效） |
-| 状态 | 已批准（2026-08-31 sdfang 批准 A~D+E3；否决 CLI 管理路线（E1/E2 过于技术化），E 改为全可视化管理（托盘+管理窗口+撤销键）；新增自保护约束：deskpilot.exe 不可入白） |
+| 状态 | 开发完成待实盘验收（2026-08-31：方案 A~E 实现完毕，新增 34 用例 + 全量 323 用例全绿；托盘图标可见性/三态弹窗实盘/管理窗口实盘待 §4.2 验收） |
 | 提出 | 2026-08-31（sdfang 设计质疑：白名单形同虚设/用户不该感知白名单/黑名单化之议） |
 
 ## 1. 问题现状
@@ -105,3 +105,72 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 |------|------|------|
 | v0.1 | 2026-08-31 | 建立问题单（现状 1~4 实证：enforcement.py:81-92/policy.py:3；根因 R1~R3；方案 A~D/备选/测试），待评审 |
 | v0.2 | 2026-08-31 | sdfang 批准 A~D+E3；否决 CLI 管理路线（"用户当成白痴，任何难用的点都应该消除"），E 修订为全可视化：托盘图标+管理窗口+入白撤销键+E3 撤回弹窗；新增自保护铁律（deskpilot.exe 不可入白）与管理零命令约束 |
+| v0.3 | 2026-08-31 | 开工前补 §6 接口定义（SDD 公开入口） |
+| v0.4 | 2026-08-31 | A~E 实现完成：whitelist_admin（三态+原子写盘+自保护）、闸二入白审批流、弹窗三态、/whitelist 三端点、管理窗口、入白撤销 toast、撤回确认通道、托盘图标、指纹审计与守望、request_remove_from_whitelist 工具；DESIGN/功能/详细/测试设计/README/INSTALL/RELEASE_NOTES 同步；新增 34 用例，全量 323 全绿 |
+
+## 6. 接口定义（SDD 公开入口；测试只允许调用以下入口）
+
+### whitelist_admin（新增模块 `deskpilot/whitelist_admin.py`）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `NEVER_ENROLL` | `frozenset[str]` | 永不可入白进程集（含 `"deskpilot.exe"`，自保护铁律） |
+| `file_sha256` | `(path: str) -> str` | 文件 SHA-256 小写 hex（C 指纹用，纯函数） |
+| `WhitelistAdmin` | `(policy_path: str, static: Mapping[str,str], never_enroll=NEVER_ENROLL, audit=None)` | 运行期白名单状态：静态（含永久热生效）+ 会话两视图 |
+| `cap_of` | `(process: str) -> str \| None` | 进程级别上限（静态∪会话合并视图；进程名小写归一） |
+| `add_session` | `(process: str, level: str = "L2") -> None` | 会话放行（仅内存）；never_enroll 命中 → PolicyError |
+| `add_permanent` | `(process: str, level: str = "L2") -> None` | 原子写 policy.yml（先写 .bak）+ 内存热生效 + 审计"白名单入白-永久"；never_enroll 命中 → PolicyError |
+| `remove` | `(process: str) -> str \| None` | 撤回：命中静态 → 原子改盘 + 审计"白名单移除"，返回 "static"；命中会话返回 "session"；未命中 None |
+| `clear_session` | `() -> int` | 清空会话放行，返回清除条数 |
+| `entries` | `() -> dict` | `{"static": {proc: level}, "session": {proc: level}}` |
+
+### approval / enforcement（A 审批入白）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `ApprovalChannel.request`（行为变更） | 新增可选参 `enroll: str \| None = None`；返回值域扩 `"approve_always"` | enroll 非 None 时为入白审批（三态语义）；DenyAll 恒 deny 不变 |
+| `ApprovalManager.request_enroll`（新增） | `(process, description, fingerprint, image_path=None, target_rect=None) -> str` | 入白审批；"approve"/"approve_always" 均签发令牌（当前操作即放行） |
+| `Enforcement`（行为变更） | 构造新增可选参 `whitelist_admin=None` | 闸二未命中且非终端/非自保护 → 走 request_enroll；approve→add_session、approve_always→add_permanent；自保护进程硬拒；拒绝文案不含 "policy.yml" |
+
+### approval_dialog / approval_ui（A 弹窗三态）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `build_window`（行为变更） | 新增可选参 `enroll: str \| None = None` | enroll 非 None：三按钮「本次允许 / 永久加入 / 拒绝」+ 入白文案（含进程名）；结果文件合法值扩 `"approve_always"` |
+| `TkApprovalChannel.request`（行为变更） | 透传 enroll 与 "approve_always" | 结果文件非法内容仍按 deny（fail-closed） |
+
+### httpd（E2 管理端点，仅 127.0.0.1）
+
+| 入口 | 语义 |
+|------|------|
+| `GET /whitelist` | `{"ok":true,"data":{"static":{...},"session":{...}}}` |
+| `POST /whitelist/remove` `{"process": str}` | daemon 撤回；`data.removed` ∈ "static"/"session"/null |
+| `POST /whitelist/clear_session` | 清空会话；`data.cleared` 条数 |
+
+### whitelist_window（E2 新增模块 `deskpilot/whitelist_window.py`）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `build_window` | `(parent, entries: dict, on_remove, on_clear_session)` | 管理窗口：静态/会话分组列出，逐行 [移出]、会话区 [全部清空] |
+| `build_enroll_notice` | `(parent, process: str, on_undo)` | E4 入白确认 toast：「已加入白名单 [撤销]」 |
+| `main` | `() -> None` | `--whitelist-manager <base_url>` 进程入口：经 HTTP 拉取/操作 |
+
+### tray（E1 新增模块 `deskpilot/tray.py`）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `menu_items` | `() -> tuple[tuple[str, str], ...]` | 菜单模型纯函数：(动作ID, 显示名)，含 ("manage", ...) |
+| `TrayIcon` | `(on_manage, tooltip="DeskPilot")` | start()/stop()；ctypes Shell_NotifyIconW，不引第三方依赖 |
+
+### tools（E3 AI 请求撤回）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `request_remove_from_whitelist`（新工具，L1） | `(process: str) -> {"removed": bool}` | 弹本地确认窗「是否移出 X？[移出/保留]」（15s 默认保留）；移出 → admin.remove + 审计；保留/超时 → removed=False |
+
+### main（C 指纹审计与装配）
+
+| 入口 | 签名 | 语义 |
+|------|------|------|
+| `policy_sha256_audit`（新增，模块级公开函数） | `(policy_path: str, audit) -> str` | 启动指纹审计：算 sha256 写审计"策略指纹"，返回指纹 |
+| `_start_policy_watch`（新增） | `(policy_path, audit, interval=60.0, fingerprint="") -> threading.Thread` | 周期比对指纹，变更写审计"策略文件被外部修改"（不重载不冻结） |

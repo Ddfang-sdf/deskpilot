@@ -41,9 +41,10 @@ class HttpDaemon:
     """常驻服务：start 后于后台线程服务 HTTP，持有共享 ctx。"""
 
     def __init__(self, ctx, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                 estop=None, idle_timeout_s: float = 0.0):
+                 estop=None, idle_timeout_s: float = 0.0, whitelist_admin=None):
         self._ctx = ctx
         self._estop = estop            # 急停复位端点用（ISS-0002，段3 接线）
+        self._whitelist_admin = whitelist_admin   # 白名单管理端点用（ISS-0012 E2）
         self._host = host
         self._port = port
         self._idle_timeout_s = idle_timeout_s   # ISS-0008 §6：>0 启用 idle 自停
@@ -191,6 +192,12 @@ class HttpDaemon:
                 elif self.path == "/version":
                     import deskpilot
                     self._send(200, {"version": deskpilot.__version__})
+                elif self.path == "/whitelist" and \
+                        daemon._whitelist_admin is not None:
+                    # ISS-0012 E2：白名单管理窗口数据源（仅 127.0.0.1）
+                    self._send(200, {"ok": True, "error_code": "",
+                                     "message": "ok",
+                                     "data": daemon._whitelist_admin.entries()})
                 else:
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",
                                      "message": "端点不存在"})
@@ -207,6 +214,34 @@ class HttpDaemon:
                                      "message": ("急停已复位" if was
                                                  else "复位请求已记录（当前未冻结）"),
                                      "data": {"was_frozen": was, "frozen": False}})
+                    return
+                admin = daemon._whitelist_admin
+                if admin is not None and self.path in (
+                        "/whitelist/remove", "/whitelist/clear_session"):
+                    # ISS-0012 E2：白名单管理动作（仅 127.0.0.1；写盘由 admin 原子完成）
+                    if self.path == "/whitelist/clear_session":
+                        n = admin.clear_session()
+                        self._send(200, {"ok": True, "error_code": "",
+                                         "message": "ok", "data": {"cleared": n}})
+                        return
+                    try:
+                        length = int(self.headers.get("Content-Length", 0))
+                        body = json.loads(self.rfile.read(length).decode("utf-8"))
+                        proc = str(body.get("process", "")).strip().lower()
+                    except (ValueError, UnicodeDecodeError) as e:
+                        self._send(400, {"ok": False,
+                                         "error_code": "INVALID_PARAMS",
+                                         "message": f"请求体非法: {e}"})
+                        return
+                    if not proc:
+                        self._send(400, {"ok": False,
+                                         "error_code": "INVALID_PARAMS",
+                                         "message": "缺少 process 参数"})
+                        return
+                    removed = admin.remove(proc)
+                    self._send(200, {"ok": True, "error_code": "",
+                                     "message": "ok",
+                                     "data": {"removed": removed}})
                     return
                 if self.path != "/call":
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",

@@ -24,6 +24,7 @@ from .models import (BINDING_REQUIRED_TOOLS, L0, L1, L2, L3, TOOL_LEVELS,
                      AuditEntry, BindingRecord, Decision, OperationRequest,
                      Policy)
 from .policy import normalize_key
+from .whitelist_admin import NEVER_ENROLL, WhitelistAdmin
 
 _LEVEL_ORDER = {L0: 0, L1: 1, L2: 2, L3: 3}
 _TEXT_TOOLS = {"type_text", "type_element", "set_clipboard"}
@@ -34,13 +35,16 @@ class Enforcement:
 
     def __init__(self, policy: Policy, bindings: BindingManager,
                  approvals: ApprovalManager, estop: EstopMonitor,
-                 executor: Executor, audit_log: AuditLogger):
+                 executor: Executor, audit_log: AuditLogger,
+                 whitelist_admin: WhitelistAdmin | None = None):
         self._policy = policy
         self._bindings = bindings
         self._approvals = approvals
         self._estop = estop
         self._executor = executor
         self._audit = audit_log
+        # ISS-0012 §6：运行期白名单视图（静态∪会话）；缺省内存态兼容装配
+        self._admin = whitelist_admin or WhitelistAdmin(None, policy.whitelist)
 
     def submit(self, request: OperationRequest) -> Decision:
         """对写操作请求执行四道闸裁决（详细设计 §8.7 流程）。"""
@@ -71,25 +75,46 @@ class Enforcement:
         if target_proc and target_proc in self._policy.terminal_apps:
             eff = L3                          # 终端窗口规则（attach 终端即 L3）
 
-        # 闸二 应用白名单（INV-2）
+        # 闸二 应用白名单（INV-2；ISS-0012 A：未命中 → 本地审批入白三态）
         if tool == "launch_app":
-            target = str(request.params.get("app", "")).strip().lower()
+            proc = str(request.params.get("app", "")).strip().lower()
             # 路径归一：允许按完整路径启动（取进程基名比对白名单）
-            target = target.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
-            if target in self._policy.whitelist:
-                cap = self._policy.whitelist[target]
-            else:
-                cap = L3
-                eff = L3                                      # launch 非白名单升 L3
+            proc = proc.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
         else:
-            cap = self._policy.whitelist.get(target_proc)
-            if cap is None and target_proc in self._policy.terminal_apps:
-                cap = L3            # 终端类成员资格满足闸二（attach 已经 L3 审批）
-            if cap is None:
-                return self._deny(
-                    request, eff, NOT_WHITELISTED,
-                    f"目标进程 {target_proc} 不在白名单。如需加入：请人类管理员在 "
-                    f"policy.yml 的 whitelist 节添加该进程并重启服务（INV-9）", t0)
+            proc = target_proc
+        cap = self._admin.cap_of(proc) if proc else None
+        if cap is None and proc in self._policy.terminal_apps:
+            cap = L3            # 终端类成员资格满足闸二（attach 已经 L3 审批）；
+            if tool == "launch_app":
+                eff = L3        # launch 终端维持升 L3 逐次审批（禁永久入白终端）
+        if cap is None and proc and proc in NEVER_ENROLL:
+            # 自保护铁律（ISS-0012 约束）：本服务进程永不可入白、不走审批
+            return self._deny(request, eff, NOT_WHITELISTED,
+                              f"目标进程 {proc} 未经本地授权"
+                              f"（该进程受系统保护，不可加入白名单）", t0)
+        if cap is None and proc:
+            # 审批入白：人类三态裁决（本次允许=会话 / 永久加入=落盘 / 拒绝）
+            fp = compute_fingerprint(tool, self._fingerprint_params(request))
+            desc = self._describe_enroll(request, binding, proc)
+            decision = self._approvals.request_enroll(
+                proc, desc, fp, image_path=self._capture_target(binding),
+                target_rect=binding.window_rect if binding else None)
+            if decision == "approve_always":
+                self._admin.add_permanent(proc, L2)
+                cap = L2
+            elif decision == "approve":
+                self._admin.add_session(proc, L2)
+                cap = L2
+            else:
+                code = APPROVAL_TIMEOUT if decision == "timeout" \
+                    else APPROVAL_DENIED
+                guidance = ("入白审批超时：人类未在时限内裁决，请留意本地审批"
+                            "弹窗后重新发起" if decision == "timeout" else
+                            "非白名单进程未获人类授权")
+                return self._deny(request, eff, code, f"{guidance}：{proc}", t0)
+        if cap is None:
+            return self._deny(request, eff, NOT_WHITELISTED,
+                              "目标进程未经本地授权", t0)
         if _LEVEL_ORDER[eff] > _LEVEL_ORDER[cap]:
             return self._deny(request, eff, POLICY_VIOLATION,
                               f"操作级别 {eff} 超出该进程白名单条目上限 {cap}", t0)
@@ -249,6 +274,15 @@ class Enforcement:
             action = self._TOOL_ACTIONS.get(request.tool, f"执行 {request.tool}")
             headline = f"{action}{plain_target}"
             tech = f"{request.tool}（参数 {self._digest(request)}）作用于{tech_target}"
+        return f"{headline}\n---\n{tech}"
+
+    def _describe_enroll(self, request: OperationRequest,
+                         binding: BindingRecord | None, proc: str) -> str:
+        """入白审批描述（ISS-0012 A）：人话标题 + 三态含义底注。"""
+        headline = f"AI 请求操作新应用「{proc}」"
+        tech = (f"进程 {proc} 当前未经本地授权（请求动作 {request.tool}）。"
+                f"本次允许 = 仅本次会话有效，重启后需重新授权；"
+                f"永久加入 = 写入白名单长期有效，可随时在白名单管理中移出")
         return f"{headline}\n---\n{tech}"
 
     def _digest(self, request: OperationRequest) -> str:
