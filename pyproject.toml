@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "deskpilot"
 version = "0.3.1"
@@ -15,6 +19,11 @@ dependencies = [
     "opencv-python>=4.8",
     "rapidocr-onnxruntime>=1.2",
 ]
+
+# 显式限定包发现范围：仓库根还有 audit/ assets/ release/ 等顶层目录,
+# setuptools flat-layout 自动发现会报 Multiple top-level packages(ISS-0011 流水线实证)
+[tool.setuptools.packages.find]
+include = ["deskpilot*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
