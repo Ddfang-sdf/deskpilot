@@ -128,7 +128,7 @@ keys:
   l3_controlled: [delete, alt+f4, ctrl+w, ...]    # 需本地审批的键
 
 timeouts:
-  approval_ttl: 60          # 审批窗最长等待（秒），超时自动拒绝
+  approval_ttl: 90          # 审批窗最长等待（秒），超时自动拒绝
 
 estop:
   corner_hold_ms: 200       # 甩角（主屏左上角）停留多少毫秒触发急停

@@ -298,8 +298,11 @@ def main() -> int:
     approvals = ApprovalManager(DenyAllChannel(), policy.approval_ttl, time.monotonic)
     try:
         from .approval_ui import TkApprovalChannel
-        approvals.set_channel(TkApprovalChannel(dialog_service=dialog_service,
-                                                audit_paths=audit_paths))
+        # 弹窗倒计时须由 policy.approval_ttl 驱动（此前硬编码默认 60s，
+        # policy 调大不生效——"5 分钟承诺实际 60 秒"事故）
+        approvals.set_channel(TkApprovalChannel(
+            timeout=policy.approval_ttl,
+            dialog_service=dialog_service, audit_paths=audit_paths))
     except Exception as e:
         print(f"审批弹窗通道不可用（L3 将恒拒绝）: {e}", file=sys.stderr)
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
