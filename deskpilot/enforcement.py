@@ -259,8 +259,12 @@ class Enforcement:
             tech_target = (f"进程 {binding.process_name} 的窗口"
                            f"（句柄 {binding.hwnd}）")
         else:
-            plain_target = str(request.params.get("app", ""))
-            tech_target = f"应用 {plain_target}"
+            # ISS-0012 F：launch 无绑定窗口，plain_target 用显示名（裸进程名不可读）
+            from .appnames import app_display_name
+            app_raw = str(request.params.get("app", ""))
+            proc = app_raw.strip().lower().rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+            plain_target = app_display_name(proc)
+            tech_target = f"应用 {app_raw}"
 
         if request.tool == "key":
             key = normalize_key(str(request.params.get("key", "")))
@@ -278,9 +282,23 @@ class Enforcement:
 
     def _describe_enroll(self, request: OperationRequest,
                          binding: BindingRecord | None, proc: str) -> str:
-        """入白审批描述（ISS-0012 A）：人话标题 + 三态含义底注。"""
-        headline = f"AI 请求操作新应用「{proc}」"
-        tech = (f"进程 {proc} 当前未经本地授权（请求动作 {request.tool}）。"
+        """入白审批描述（ISS-0012 A+F）：主标题显示名，底注进程名+三态含义。
+
+        F 补丁：显示名三级解析——attach 用窗口实况标题、launch 读版本信息
+        FileDescription、全失败回退进程名（"我都不知道这是个啥软件"教训）。
+        """
+        from .appnames import app_display_name
+        title = self._live_title(binding) if binding is not None else ""
+        display = app_display_name(proc, title)
+        if title:
+            src = "窗口标题"
+        elif display != proc:
+            src = "版本信息"
+        else:
+            src = "进程名"
+        headline = f"AI 请求操作新应用「{display}」"
+        tech = (f"进程 {proc}（显示名来源：{src}）当前未经本地授权"
+                f"（请求动作 {request.tool}）。"
                 f"本次允许 = 仅本次会话有效，重启后需重新授权；"
                 f"永久加入 = 写入白名单长期有效，可随时在白名单管理中移出")
         return f"{headline}\n---\n{tech}"
