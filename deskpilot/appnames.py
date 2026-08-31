@@ -37,12 +37,45 @@ def app_display_name(process: str, window_title: str = "") -> str:
     if not proc:
         return str(process)
     path = _resolve_exe(proc)
-    eng = _file_description(path) if path else None
+    eng = _file_string(path, "FileDescription") if path else None
     local = (_mui_description(path) if path else None) \
         or _appx_display_name(proc, eng)
     if local and eng and local.lower() != eng.lower():
         return f"{local}（{eng}）"
     return local or eng or proc
+
+
+def app_description(process: str) -> str:
+    """ISS-0012 E2：进程 → 用户可读描述（悬浮提示用；全部来自 OS/厂商数据）。
+
+    解析序：① UWP 清单 Description（ms-resource 本地化，与名称同源，
+    含 stub 的 FileDescription↔包短名恒等匹配）；② 版本信息
+    FileDescription + CompanyName 组合；③ 回退进程名本身。
+    """
+    proc = str(process).strip()
+    if not proc:
+        return str(process)
+    key = proc.lower()
+    for full, _short, exes, _disp, desc in _package_index():
+        if key in exes and desc:
+            r = _resolve_ms_resource(desc, full) or desc
+            if r:
+                return r
+    path = _resolve_exe(proc)
+    eng = _file_string(path, "FileDescription") if path else None
+    if eng:
+        fd = _norm(eng)
+        for full, short, _e, _d, desc in _package_index():
+            cands = {_norm(short)}
+            if "." in short:
+                cands.add(_norm(short.split(".", 1)[1]))
+            if fd in cands and desc:
+                r = _resolve_ms_resource(desc, full) or desc
+                if r:
+                    return r
+        company = _file_string(path, "CompanyName")
+        return f"{eng} · {company}" if company else eng
+    return proc
 
 
 def _resolve_exe(proc: str) -> str | None:
@@ -119,14 +152,14 @@ def _appx_display_name(proc: str, eng_desc: str | None) -> str | None:
     if key in _APPX_CACHE:
         return _APPX_CACHE[key]
     result: str | None = None
-    for full_name, short, exes, display in _package_index():
+    for full_name, short, exes, display, _desc in _package_index():
         if key in exes:
             result = _resolve_ms_resource(display, full_name) or display
             break
     if result is None and eng_desc:
         fd = _norm(eng_desc)
         if fd:
-            for full_name, short, exes, display in _package_index():
+            for full_name, short, exes, display, _desc in _package_index():
                 cands = {_norm(short)}
                 if "." in short:            # 去厂商前缀形:WindowsCalculator
                     cands.add(_norm(short.split(".", 1)[1]))
@@ -142,11 +175,12 @@ def _norm(s: str) -> str:
     return "".join(c for c in s.lower() if c.isalnum())
 
 
-_PKG_INDEX: list[tuple[str, str, frozenset, str]] | None = None
+_PKG_INDEX: list[tuple[str, str, frozenset, str, str]] | None = None
 
 
-def _package_index() -> list[tuple[str, str, frozenset, str]]:
-    """包清单索引（进程级只建一次）：[(包全名, 短名, 可执行名集, DisplayName)]。"""
+def _package_index() -> list[tuple[str, str, frozenset, str, str]]:
+    """包清单索引（进程级只建一次）：
+    [(包全名, 短名, 可执行名集, DisplayName, Description)]。"""
     global _PKG_INDEX
     if _PKG_INDEX is None:
         idx = []
@@ -155,7 +189,7 @@ def _package_index() -> list[tuple[str, str, frozenset, str]]:
             if not manifest.is_file():
                 continue
             try:
-                entries = _parse_manifest(
+                entries, pkg_desc = _parse_manifest(
                     manifest.read_text(encoding="utf-8", errors="replace"))
             except Exception:
                 continue
@@ -163,7 +197,7 @@ def _package_index() -> list[tuple[str, str, frozenset, str]]:
             display = next((d for _e, d in entries if d), "")
             if exes or display:
                 idx.append((full_name, full_name.split("_")[0],
-                            exes, display))
+                            exes, display, pkg_desc))
         _PKG_INDEX = idx
     return _PKG_INDEX
 
@@ -202,10 +236,11 @@ def _read_package_root(packages_key, full_name: str) -> Path | None:
     return None
 
 
-def _parse_manifest(xml_text: str) -> list[tuple[str, str]]:
-    """解析 AppxManifest.xml：[(executable基名, DisplayName)]（命名空间无关）。
+def _parse_manifest(xml_text: str) -> tuple[list[tuple[str, str]], str]:
+    """解析 AppxManifest.xml：([(executable基名, DisplayName)], 包级 Description)。
 
-    DisplayName 优先取 Application 的 VisualElements，回退包 Properties。
+    DisplayName 优先取 Application 的 VisualElements，回退包 Properties；
+    Description 取包 Properties（ms-resource 本地化引用或字面量）。
     """
     root = ET.fromstring(xml_text)
 
@@ -213,11 +248,14 @@ def _parse_manifest(xml_text: str) -> list[tuple[str, str]]:
         return tag.rsplit("}", 1)[-1]
 
     pkg_display = ""
+    pkg_desc = ""
     apps: list[tuple[str, str]] = []
     for el in root.iter():
         name = local(el.tag)
         if name == "DisplayName" and not pkg_display and el.text:
             pkg_display = el.text.strip()
+        elif name == "Description" and not pkg_desc and el.text:
+            pkg_desc = el.text.strip()
         elif name == "Application":
             exe = el.get("Executable", "")
             visual = ""
@@ -227,7 +265,7 @@ def _parse_manifest(xml_text: str) -> list[tuple[str, str]]:
                     break
             if exe:
                 apps.append((Path(exe).name, visual))
-    return [(exe, visual or pkg_display) for exe, visual in apps]
+    return [(exe, visual or pkg_display) for exe, visual in apps], pkg_desc
 
 
 def _resolve_ms_resource(display: str, package_full_name: str) -> str | None:
@@ -253,6 +291,11 @@ def _resolve_ms_resource(display: str, package_full_name: str) -> str | None:
 
 def _file_description(path: str) -> str | None:
     """读 exe 版本信息 FileDescription（首个翻译对）；失败返回 None。"""
+    return _file_string(path, "FileDescription")
+
+
+def _file_string(path: str, key: str) -> str | None:
+    """读 exe 版本信息指定字符串（FileDescription/CompanyName 等，首个翻译对）。"""
     try:
         size = _version.GetFileVersionInfoSizeW(path, None)
         if not size:
@@ -272,7 +315,7 @@ def _file_description(path: str) -> str | None:
         lang = int.from_bytes(raw[:2], "little")
         cpage = int.from_bytes(raw[2:], "little")
 
-        sub = rf"\StringFileInfo\{lang:04x}{cpage:04x}\FileDescription"
+        sub = rf"\StringFileInfo\{lang:04x}{cpage:04x}\{key}"
         val = ctypes.c_void_p()
         vlen = wintypes.UINT()
         if not _version.VerQueryValueW(buf, sub, ctypes.byref(val),

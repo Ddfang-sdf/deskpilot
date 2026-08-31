@@ -434,6 +434,8 @@ class TestManagerWindow:
             def destroy(self): pass
             def pack_forget(self): pass
             def get(self): return self._text_value
+            def create_line(self, *a, **k): pass
+            def delete(self, *a, **k): pass
 
         class Btn(W):
             def __init__(self, *a, **k):
@@ -489,21 +491,33 @@ class TestManagerWindow:
         assert any("notepad.exe" in s for s in labels)  # 次行进程名(直出)
 
     def test_more_button_expands_beyond_five(self, monkeypatch):
-        """默认每区 5 条;[更多 N 项] 点击后展示全部,文案变收起。"""
+        """默认每区 5 条;尖角按钮▼更多 N 项→点击展开→▲收起。"""
         removed, cleared = [], []
         entries = {"static": {f"app{i}.exe": "L2" for i in range(7)},
                    "session": {}}
         buttons, win = self._build(monkeypatch, entries, removed, cleared)
         initial = [b for b in buttons if b.text == "移出"]
         assert len(initial) == 5                        # 默认 5 条(直出)
-        more = [b for b in buttons if b.text == "更多 2 项"][0]
-        more.command()                                  # 展开
         ui = win._manager
-        body = ui._blocks["static"]["body"]
-        # 重新渲染后行数=7(经控制器状态直出)
-        rows = ui._filtered(entries["static"])
-        assert len(rows) == 7
-        assert more.text == "收起"
+        more = ui._blocks["static"]["more"]
+        assert more.direction == "down"                 # ▼ 收拢态(直出)
+        assert more.label.text == "更多 2 项"
+        more._command()                                 # 展开
+        assert more.direction == "up"                   # ▲ 展开态(直出)
+        assert more.label.text == "收起"
+        assert len(ui._filtered(entries["static"])) == 7
+
+    def test_scrollbar_auto_hide(self, monkeypatch):
+        """滚动条按内容量显隐:行数≤容量隐藏,展开超出出现。"""
+        removed, cleared = [], []
+        entries = {"static": {f"app{i}.exe": "L2" for i in range(7)},
+                   "session": {}}
+        buttons, win = self._build(monkeypatch, entries, removed, cleared)
+        ui = win._manager
+        blk = ui._blocks["static"]
+        assert blk["scroll_visible"] is False           # 5 行=容量,隐藏(直出)
+        blk["more"]._command()                          # 展开 7 行
+        assert blk["scroll_visible"] is True            # 超出容量,出现(直出)
 
     def test_search_filters_rows(self, monkeypatch):
         """搜索串同时匹配显示名与进程名,过滤非匹配行。"""

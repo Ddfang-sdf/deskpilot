@@ -50,6 +50,20 @@ class TestAppDisplayName:
         assert time.monotonic() - t1 < 0.1
 
 
+class TestAppDescription:
+    """场景(E2):进程→用户可读描述(悬浮提示),全部来自 OS/厂商数据。
+    断言:app_description 返回字符串(直出)。"""
+
+    def test_calc_description_from_os(self):
+        from deskpilot.appnames import app_description
+        d = app_description("calc.exe")
+        assert d and ("计算" in d or "Calculator" in d)
+
+    def test_unknown_process_falls_back(self):
+        from deskpilot.appnames import app_description
+        assert app_description("no-such-xyz.exe") == "no-such-xyz.exe"
+
+
 class TestEnrollDescription:
     """场景:入白审批描述两段式——主标题显示名、底注进程名。
     断言:_describe_enroll 返回字符串(直出)。"""

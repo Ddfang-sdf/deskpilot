@@ -44,6 +44,115 @@ def _hover(btn, base: str, hover: str) -> None:
     btn.bind("<Leave>", lambda e: btn.configure(bg=base))
 
 
+def _wheelable(canvas) -> None:
+    """滚轮只作用于鼠标悬停的滚动区（修复全局绑定被后注册者通吃）。"""
+    canvas.bind("<Enter>",
+                lambda e, c=canvas: c.bind_all(
+                    "<MouseWheel>",
+                    lambda ev: c.yview_scroll(int(-ev.delta / 120), "units")))
+    canvas.bind("<Leave>",
+                lambda e, c=canvas: c.unbind_all("<MouseWheel>"))
+
+
+def _slim_scrollbar(parent, canvas) -> tk.Scrollbar:
+    """纤细扁平滚动条（Fluent 观感）；由调用方按内容量自动显隐。"""
+    sb = tk.Scrollbar(parent, orient="vertical", command=canvas.yview,
+                      width=6, bd=0, relief="flat", bg="#CFCFCF",
+                      troughcolor=_BG, activebackground="#A8A8A8",
+                      highlightthickness=0, elementborderwidth=0)
+    return sb
+
+
+def _draw_chevron(canvas, direction: str, color: str) -> None:
+    """Fluent 风细线尖角：down=收拢(更多)，up=展开(收起)；1.5px 圆角描边。"""
+    canvas.delete("chev")
+    if direction == "down":
+        pts = (1, 1, 6, 6, 11, 1)
+    else:
+        pts = (1, 6, 6, 1, 11, 6)
+    canvas.create_line(*pts, fill=color, width=1.5,
+                       capstyle="round", joinstyle="round", tags="chev")
+
+
+class _ChevronButton:
+    """尖角图标按钮（▼ 更多 / ▲ 收起）：无底色、悬停变色、点击整行。"""
+
+    def __init__(self, parent, command):
+        self._command = command
+        self.direction = "down"
+        self.frame = tk.Frame(parent, bg=_BG, cursor="hand2")
+        self.chevron = tk.Canvas(self.frame, width=12, height=8, bg=_BG,
+                                 highlightthickness=0, cursor="hand2")
+        self.chevron.pack(side="left", pady=(3, 0))
+        self.label = tk.Label(self.frame, text="", bg=_BG, fg="#666666",
+                              font=("Microsoft YaHei", 9), cursor="hand2")
+        self.label.pack(side="left", padx=(4, 0))
+        _draw_chevron(self.chevron, "down", "#666666")
+        for w in (self.frame, self.chevron, self.label):
+            w.bind("<Button-1>", lambda e: self._command())
+            w.bind("<Enter>", lambda e: self._set_color("#202020"))
+            w.bind("<Leave>", lambda e: self._set_color("#666666"))
+
+    def _set_color(self, color: str) -> None:
+        self.label.configure(fg=color)
+        _draw_chevron(self.chevron, self.direction, color)
+
+    def set_state(self, text: str, direction: str) -> None:
+        self.direction = direction
+        self.label.configure(text=text)
+        _draw_chevron(self.chevron, direction, "#666666")
+
+    def pack(self, *a, **k):
+        self.frame.pack(*a, **k)
+
+    def pack_forget(self) -> None:
+        self.frame.pack_forget()
+
+
+class _Tooltip:
+    """行悬浮提示：悬停 500ms 浮出描述气泡，移开即消。"""
+
+    def __init__(self, widget, text: str):
+        self._w = widget
+        self._text = text
+        self._tip = None
+        self._after_id = None
+        widget.bind("<Enter>", self._schedule)
+        widget.bind("<Leave>", self._hide)
+
+    def _schedule(self, _e) -> None:
+        self._after_id = self._w.after(500, self._show)
+
+    def _show(self) -> None:
+        if self._tip is not None or not self._text:
+            return
+        tip = tk.Toplevel(self._w)
+        tip.overrideredirect(True)
+        tip.attributes("-topmost", True)
+        tip.configure(bg="#2B2B2B")
+        tk.Label(tip, text=self._text, bg="#2B2B2B", fg="#FFFFFF",
+                 font=("Microsoft YaHei", 9), wraplength=300,
+                 justify="left", anchor="w").pack(padx=10, pady=6)
+        x = self._w.winfo_rootx() + 24
+        y = self._w.winfo_rooty() + self._w.winfo_height() + 6
+        tip.geometry(f"+{x}+{y}")
+        self._tip = tip
+
+    def _hide(self, _e) -> None:
+        if self._after_id is not None:
+            try:
+                self._w.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+        if self._tip is not None:
+            try:
+                self._tip.destroy()
+            except Exception:
+                pass
+            self._tip = None
+
+
 class _ManagerUI:
     """白名单管理窗口控制器：搜索过滤 + 两区分立滚动 + 更多/收起。"""
 
@@ -95,9 +204,8 @@ class _ManagerUI:
         wrap.pack(fill="x", padx=16)
         canvas = tk.Canvas(wrap, bg=_BG, highlightthickness=0,
                            height=_ROW_H * _VISIBLE_N)
-        sb = tk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        sb = _slim_scrollbar(wrap, canvas)
         canvas.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="x", expand=True)
         body = tk.Frame(canvas, bg=_BG)
         body_id = canvas.create_window((0, 0), window=body, anchor="nw")
@@ -105,18 +213,13 @@ class _ManagerUI:
                   lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
         canvas.bind("<Configure>",
                     lambda e, c=canvas, i=body_id: c.itemconfig(i, width=e.width))
-        canvas.bind_all("<MouseWheel>",
-                        lambda e, c=canvas: c.yview_scroll(
-                            int(-e.delta / 120), "units"))
+        _wheelable(canvas)
 
         foot = tk.Frame(win, bg=_BG)
         foot.pack(fill="x", padx=16)
-        more = tk.Button(foot, text="", width=12, relief="flat", bg=_BTN_BG,
-                         fg=_TITLE_FG, font=("Microsoft YaHei", 9),
-                         cursor="hand2")
-        more.pack(side="left", pady=4)
-        _hover(more, _BTN_BG, _BTN_HOVER)
-        return {"canvas": canvas, "body": body, "more": more}
+        more = _ChevronButton(foot, command=lambda k=None: None)
+        return {"canvas": canvas, "body": body, "sb": sb, "more": more,
+                "scroll_visible": False}
 
     # ---- 渲染 ----
 
@@ -151,12 +254,23 @@ class _ManagerUI:
         for proc, level, display in visible:
             _row(body, proc, level, display, self._on_remove)
 
+        # 滚动条按内容量显隐：行数超出可视容量才出现，否则隐藏
+        need_scroll = len(visible) > _VISIBLE_N
+        if need_scroll and not blk["scroll_visible"]:
+            blk["sb"].pack(side="right", fill="y")
+            blk["scroll_visible"] = True
+        elif not need_scroll and blk["scroll_visible"]:
+            blk["sb"].pack_forget()
+            blk["scroll_visible"] = False
+
         rest = len(rows) - _VISIBLE_N
         more = blk["more"]
         if not self._query and rest > 0:
-            more.configure(
-                text=("收起" if self._expanded[key] else f"更多 {rest} 项"),
-                command=lambda k=key: self._toggle(k))
+            more._command = (lambda k=key: self._toggle(k))
+            if self._expanded[key]:
+                more.set_state("收起", "up")
+            else:
+                more.set_state(f"更多 {rest} 项", "down")
             more.pack(side="left", pady=4)
         else:
             more.pack_forget()
@@ -189,13 +303,15 @@ def build_window(parent, entries: dict, on_remove: Callable[[str], None],
 
 
 def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
+    from .appnames import app_description
     row = tk.Frame(parent, bg=_BG)
     row.pack(fill="x", pady=(4, 0))
     left = tk.Frame(row, bg=_BG)
     left.pack(side="left", fill="x", expand=True)
-    tk.Label(left, text=display, bg=_BG, fg=_TITLE_FG,
-             font=("Microsoft YaHei", 10, "bold"),
-             anchor="w").pack(fill="x")
+    name_lbl = tk.Label(left, text=display, bg=_BG, fg=_TITLE_FG,
+                        font=("Microsoft YaHei", 10, "bold"),
+                        anchor="w")
+    name_lbl.pack(fill="x")
     tk.Label(left, text=f"{proc} · {level}", bg=_BG, fg=_HINT_FG,
              font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
     btn = tk.Button(row, text="移出", width=7, relief="flat", bg=_BTN_BG,
@@ -205,6 +321,8 @@ def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
     btn.pack(side="right", padx=(10, 0))
     _hover(btn, _BTN_BG, _BTN_HOVER)
     tk.Frame(parent, bg=_SEP, height=1).pack(fill="x", pady=(4, 0))
+    # 悬浮描述（OS/厂商数据源；500ms 悬停浮出）
+    _Tooltip(name_lbl, app_description(proc))
 
 
 # ---------- E4 入白确认 toast ----------
