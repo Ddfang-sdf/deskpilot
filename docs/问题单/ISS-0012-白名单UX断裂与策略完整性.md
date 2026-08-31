@@ -114,6 +114,7 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 | v0.6 | 2026-08-31 | F 实现完成：appnames.app_display_name 三级解析（窗口标题/FileDescription/回退进程名，ctypes 零依赖）；_describe_enroll/_describe 两段式显示名；新增 7 用例，全量 334 全绿；生产实证 desc=「Windows Calculator」 |
 | v0.7 | 2026-08-31 | F2/F3 定稿：sdfang 批示中英双语且"不要自己维护国际化"——撤内置中文表，中文名走系统规范：MUI 资源 + AppX 包资源（Executable 精确匹配 + FileDescription↔包短名归一化恒等匹配，覆盖 calc.exe stub；ms-resource 经 SHLoadIndirectString 按界面语言解析）；实证 calc.exe→「计算器（Windows Calculator）」，全量 334 全绿 |
 | v0.8 | 2026-08-31 | E1 实盘缺陷修复：tray Win32 调用全量签名声明（缺省 32 位截断致窗口过程 OverflowError、菜单渲染空白，stderr 实证）；左键同弹菜单；托盘图标换用设计图标（assets/deskpilot.ico 多尺寸，spec 挂 exe 图标）；拒绝按钮链路实盘验证通过（APPROVAL_DENIED）；approval_ttl 定 90s 且倒计时接线 policy 驱动；新增 5 用例，全量 339 全绿 |
+| v0.9 | 2026-08-31 | 验收期迭代（均先测试设计评审后开发）：管理窗口 v2~v4（显示名/两区分立滚动/更多搜索/悬浮描述/滚动条移除/移出禁止图标带悬停动效）；托盘菜单撤半成品运行状态、管理入口 NameError 修复（main 补 import os）；按钮文案「本次会话允许」消歧（TC-LABEL）；测试卫生两例（真开记事本/真点屏幕改为只记录）；全量 353 全绿 |
 
 ## 6. 接口定义（SDD 公开入口；测试只允许调用以下入口）
 
