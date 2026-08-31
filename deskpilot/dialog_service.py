@@ -22,7 +22,9 @@ class DialogService:
     def __init__(self, clock: Callable[[], float] = time.monotonic,
                  window_factory: Callable[[str, dict], Any] | None = None):
         self._clock = clock
-        self._factory = window_factory
+        # ISS-0013：默认装配必须接线——window_factory 缺省（生产形态）时
+        # 触达真实 _default_factory；缺 or 接线曾致生产弹窗全静默（P0）
+        self._factory = window_factory or self._default_factory
         self._use_tk = window_factory is None   # 仅默认工厂走共享 Tk 宿主
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
@@ -78,7 +80,12 @@ class DialogService:
         try:
             self._factory(kind, payload)
         except Exception:
-            pass                    # 弹窗是通知层，异常不波及调用方
+            # ISS-0013 B：容错不阻断调用方的语义不变，但吞错必须留痕——
+            # 静默吞异常曾让"默认工厂未接线"隐形两天（P0）
+            import sys
+            import traceback
+            print(f"弹窗派发异常（{kind}）:", file=sys.stderr)
+            traceback.print_exc()
         self.visible_latency_s = self._clock() - t0
 
     def _drain(self) -> None:
