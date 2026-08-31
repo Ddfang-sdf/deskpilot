@@ -140,8 +140,10 @@ class FreezeNotifier:
         否则回退子进程——onefile 经打包入口分发；剥离 _MEIPASS2，
         与 approval_ui 同款约束）。"""
         if self._dialog_service is not None:
+            # ISS-0007 B：冻结弹窗按鼠标所在屏落位
             self._dialog_service.show(
-                "freeze", {"audit_dir": audit_dir, "interval": self._remind})
+                "freeze", {"audit_dir": audit_dir, "interval": self._remind,
+                           "target_screen": self._mouse_screen()})
             return
         if getattr(sys, "frozen", False):
             cmd = [sys.executable, "--freeze-notify", audit_dir,
@@ -155,3 +157,14 @@ class FreezeNotifier:
             subprocess.Popen(cmd, env=env)
         except OSError:
             pass                    # 弹窗是通知层，拉起失败不影响冻结语义
+
+    @staticmethod
+    def _mouse_screen() -> dict | None:
+        """ISS-0007 B：鼠标所在屏（冻结落位屏）。"""
+        try:
+            import pyautogui
+            from .monitors import enum_monitors, screen_of_point
+            pos = pyautogui.position()
+            return screen_of_point(enum_monitors(), pos.x, pos.y)
+        except Exception:
+            return None

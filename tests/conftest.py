@@ -81,10 +81,12 @@ class FakeApprover:
         self.requests: list[dict] = []  # 送达通道的审批请求
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> str:
+                image_path: str | None = None,
+                target_rect: tuple | None = None) -> str:
         self.requests.append({"description": description,
                               "fingerprint": fingerprint,
-                              "image_path": image_path})
+                              "image_path": image_path,
+                              "target_rect": target_rect})
         d = self.decision
         return d() if callable(d) else d
 

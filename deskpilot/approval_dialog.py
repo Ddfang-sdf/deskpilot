@@ -33,12 +33,17 @@ _DENY_BG, _DENY_HOVER = "#F0F0F0", "#DDDDDD"            # 拒绝：中性灰
 _BTN_WIDTH, _BTN_GAP = 12, 12                         # 字符宽 / 像素距
 
 
-def _toast_placement(screen_w: int, screen_h: int,
-                     width: int = _WIDTH, height: int = _HEIGHT):
-    """右下角 toast 落位：返回 (x, y_start, y_final)；y_start 在屏外供滑入。"""
-    x = max(0, screen_w - width - _MARGIN)
-    y_final = max(0, screen_h - height - _TASKBAR - _MARGIN)
-    return x, screen_h, y_final
+def _toast_placement(screen: dict, width: int = _WIDTH, height: int = _HEIGHT):
+    """ISS-0007 §6：toast 在目标屏 work_area 右下角落位。
+
+    入参 screen 为显示器 dict（含 rect/work_area）；返回 (x, y_start, y_final)，
+    y_start 在该屏底缘外侧供滑入。单屏时与旧主屏语义一致。
+    """
+    _, _, sr, rb = screen["rect"]
+    _, _, _, wb = screen["work_area"]
+    x = sr - width - _MARGIN
+    y_final = wb - height - _TASKBAR - _MARGIN
+    return x, rb, y_final
 
 
 def _hover(btn: tk.Button, base: str, hover: str) -> None:
@@ -47,11 +52,13 @@ def _hover(btn: tk.Button, base: str, hover: str) -> None:
 
 
 def build_window(parent, description: str, result_path, timeout_s: float,
-                 image_path: str = ""):
+                 image_path: str = "", target_screen: dict | None = None):
     """在 parent（共享 Tk root）线程内构建审批 toast（Toplevel，ISS-0008 P6）。
 
     人类决定写入结果文件（批准一次 / 拒绝）；倒计时结束默认拒绝（fail-closed）。
     image_path 非空时内嵌目标窗口实拍缩略图（动态增高）。
+    target_screen（ISS-0007 §6）：显示器 dict 时 toast 落该屏右下角
+    （审批调用方按目标窗口所在屏传入；缺省保持主屏右下）。
     """
     result_path = Path(result_path)
 
@@ -75,8 +82,12 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     win.attributes("-topmost", True)
     win.configure(bg=_BG)
 
-    x, y_start, y_final = _toast_placement(
-        win.winfo_screenwidth(), win.winfo_screenheight(), _WIDTH, height)
+    if target_screen is None:                   # 缺省：主屏右下（现状语义）
+        target_screen = {"rect": (0, 0, win.winfo_screenwidth(),
+                                  win.winfo_screenheight()),
+                         "work_area": (0, 0, win.winfo_screenwidth(),
+                                       win.winfo_screenheight() - _TASKBAR)}
+    x, y_start, y_final = _toast_placement(target_screen, _WIDTH, height)
     win.geometry(f"{_WIDTH}x{height}+{x}+{y_start}")
 
     card = tk.Frame(win, bg=_BG, highlightthickness=1,

@@ -349,24 +349,28 @@ class TestSpawnDialogFrozen:
 class TestToastPlacement:
     def test_bottom_right_with_margins(self):
         from deskpilot.approval_dialog import _toast_placement
-        x, y_start, y_final = _toast_placement(2560, 1440, 440, 210)
+        screen = {"rect": (0, 0, 2560, 1440), "work_area": (0, 0, 2560, 1392)}
+        x, y_start, y_final = _toast_placement(screen, 440, 210)
         assert x == 2560 - 440 - 16
-        assert y_final == 1440 - 210 - 48 - 16      # 任务栏 + 边距
-        assert y_start == 1440                       # 滑入起点：屏外底部
+        assert y_final == 1392 - 210 - 48 - 16            # 任务栏 + 边距
+        assert y_start == 1440                             # 滑入起点：屏外底部
 
     def test_default_size_bottom_right(self):
         """默认 480×216 尺寸的落位（Fluent toast 规格）。"""
         from deskpilot.approval_dialog import _toast_placement
-        x, y_start, y_final = _toast_placement(2560, 1440)
+        screen = {"rect": (0, 0, 2560, 1440), "work_area": (0, 0, 2560, 1392)}
+        x, y_start, y_final = _toast_placement(screen, 480, 216)
         assert x == 2560 - 480 - 16
-        assert y_final == 1440 - 216 - 48 - 16
+        assert y_final == 1392 - 216 - 48 - 16
         assert y_start == 1440
 
-    def test_small_screen_clamps_nonnegative(self):
+    def test_small_screen_negative_coords_allowed(self):
+        """小屏退化为屏外坐标（虚拟桌面坐标系允许负值，不再钳零，ISS-0007）。"""
         from deskpilot.approval_dialog import _toast_placement
-        x, _, y_final = _toast_placement(300, 200, 440, 210)
-        assert x == 0
-        assert y_final == 0
+        screen = {"rect": (0, 0, 300, 200), "work_area": (0, 0, 300, 200)}
+        x, _, y_final = _toast_placement(screen, 440, 210)
+        assert x == 300 - 440 - 16
+        assert y_final == 200 - 210 - 48 - 16
 
 
 # ---------- OCR 引擎装配（RapidOCR 1.2 适配） ----------

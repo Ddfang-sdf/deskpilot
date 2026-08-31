@@ -117,8 +117,10 @@ class Enforcement:
             fp = compute_fingerprint(tool, self._fingerprint_params(request))
             desc = self._describe(request, binding)
             image_path = self._capture_target(binding)
-            decision = self._approvals.request_approval(desc, fp,
-                                                        image_path=image_path)
+            # ISS-0007 B：审批弹窗按目标窗口所在屏落位
+            target_rect = binding.window_rect if binding else None
+            decision = self._approvals.request_approval(
+                desc, fp, image_path=image_path, target_rect=target_rect)
             if decision != "approve":
                 code = APPROVAL_TIMEOUT if decision == "timeout" \
                     else APPROVAL_DENIED

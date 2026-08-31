@@ -98,11 +98,14 @@ class DialogService:
         if kind == "approval":
             from .approval_dialog import build_window
             build_window(self._tk_root, payload["description"],
-                         payload["result_path"], payload["timeout_s"])
+                         payload["result_path"], payload["timeout_s"],
+                         payload.get("image_path", ""),
+                         target_screen=payload.get("target_screen"))
         elif kind == "freeze":
             from .freeze_dialog import build_window
             build_window(self._tk_root, payload["audit_dir"],
-                         payload["interval"])
+                         payload["interval"],
+                         target_screen=payload.get("target_screen"))
         else:
             raise ValueError(f"未知弹窗类型: {kind}")
 

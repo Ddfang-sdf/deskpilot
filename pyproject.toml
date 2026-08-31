@@ -1,6 +1,6 @@
 [project]
 name = "deskpilot"
-version = "0.2.0"
+version = "0.3.1"
 description = "自定义的安全桌面驾驶舱——让 AI agent 自主、安全地操作 Windows 电脑"
 requires-python = ">=3.12"
 dependencies = [

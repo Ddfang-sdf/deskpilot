@@ -110,7 +110,14 @@ class Executor:
     def screenshot(self, scope: str, rect=None, window=None) -> dict:
         region = self._resolve_region(scope, rect, window)
         path = self._save_shot(region, "sense")
-        return {"path": str(path), "width": region["width"], "height": region["height"]}
+        out = {"path": str(path), "width": region["width"],
+               "height": region["height"]}
+        if scope == "fullscreen":
+            # ISS-0007 C：坐标系声明 + 每屏边界列表
+            from ..monitors import enum_monitors
+            out["coord_space"] = "virtual_desktop"
+            out["monitors"] = enum_monitors()
+        return out
 
     def find_windows(self, title=None, process=None, hwnd=None) -> list[dict]:
         return self._probe.find_windows(title=title, process=process, hwnd=hwnd)
@@ -120,7 +127,10 @@ class Executor:
         root = self._element_root(hwnd)      # 走元素源接缝（测试可注入）
         nodes: list[dict] = []
         self._walk(root, nodes, depth=0)
-        return {"hwnd": hwnd, "elements": nodes, "truncated": len(nodes) >= 800}
+        # ISS-0007 C：坐标系声明（rect 为虚拟桌面坐标，可含负值）
+        return {"hwnd": hwnd, "elements": nodes,
+                "truncated": len(nodes) >= 800,
+                "coord_space": "virtual_desktop"}
 
     def get_cursor(self) -> dict:
         pos = pyautogui.position()

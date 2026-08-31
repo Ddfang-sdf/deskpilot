@@ -39,12 +39,14 @@ class TkApprovalChannel:
         self.last_request: dict[str, str] | None = None   # 测试观测口
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> str:
+                image_path: str | None = None,
+                target_rect: tuple | None = None) -> str:
         """向人类请求批准并同步等待裁决（ISS-0003）。
 
         弹窗独立进程运行，裁决经结果文件回传；返回 "approve" / "deny" /
         "timeout"。任何异常（描述写盘失败、结果读取失败、非法内容）一律按
-        拒绝类返回（fail-closed）。"""
+        拒绝类返回（fail-closed）。
+        target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。"""
         request_id = uuid.uuid4().hex[:16]
         # ISS-0010 B：提供 AuditPaths 时临时文件落 approval/ 受管子目录
         base_dir = (self._audit_paths.approval if self._audit_paths is not None
@@ -58,7 +60,8 @@ class TkApprovalChannel:
         self.last_request = {"description": description,
                              "fingerprint": fingerprint,
                              "result_path": str(result_path)}
-        self._spawn_dialog(desc_path, result_path, image_path or "")
+        self._spawn_dialog(desc_path, result_path, image_path or "",
+                           target_rect)
         deadline = self._clock() + self._timeout
         while self._clock() < deadline:
             try:
@@ -76,7 +79,8 @@ class TkApprovalChannel:
     # ---- 内部 ----
 
     def _spawn_dialog(self, desc_path: Path, result_path: Path,
-                      image_path: str = "") -> None:
+                      image_path: str = "",
+                      target_rect: tuple | None = None) -> None:
         timeout = f"{self._timeout:.0f}"
         if self._dialog_service is not None:
             # ISS-0008 P6：共享 Tk 线程内建窗，替代拉起子进程 exe
@@ -87,7 +91,8 @@ class TkApprovalChannel:
                 description = "(审批描述读取失败)"
             self._dialog_service.show("approval", {
                 "description": description, "result_path": str(result_path),
-                "timeout_s": self._timeout, "image_path": image_path})
+                "timeout_s": self._timeout, "image_path": image_path,
+                "target_screen": self._screen_of_target(target_rect)})
             return
         if getattr(sys, "frozen", False):
             # PyInstaller onefile：sys.executable 是 deskpilot.exe 自身，
@@ -105,3 +110,18 @@ class TkApprovalChannel:
             self._popen(cmd, env=env)
         except OSError:
             pass
+
+    @staticmethod
+    def _screen_of_target(target_rect: tuple | None) -> dict | None:
+        """ISS-0007 B：审批落位屏——目标窗口所在屏；无绑定回退鼠标所在屏。"""
+        from .monitors import enum_monitors, screen_of_point, screen_of_rect
+        if target_rect is not None:
+            mon = screen_of_rect(enum_monitors(), target_rect)
+            if mon is not None:
+                return mon
+        try:
+            import pyautogui
+            pos = pyautogui.position()
+            return screen_of_point(enum_monitors(), pos.x, pos.y)
+        except Exception:
+            return None

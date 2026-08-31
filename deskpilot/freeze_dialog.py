@@ -136,11 +136,14 @@ def slide_out_xs(screen_w: int, win_w: int = WIN_W) -> list[int]:
     return [x for x, _ in slide_out_frames(screen_w, win_w)]
 
 
-def build_window(parent, audit_dir: str, interval: float):
+def build_window(parent, audit_dir: str, interval: float,
+                 target_screen: dict | None = None):
     """在 parent（共享 Tk root）线程内构建冻结提示 toast（Toplevel，ISS-0008 P6）。
 
     状态机：SLIDE_IN → SHOWN ⇄ SNOOZED → SLIDE_OUT → 退出；
     状态文件 frozen=false（任何来源复位）即滑出退出。
+    target_screen（ISS-0007 §6）：显示器 dict 时 toast 落该屏右下角
+    （冻结调用方按鼠标所在屏传入；缺省保持主屏右下）。
     """
     import math
     import tkinter as tk
@@ -152,8 +155,13 @@ def build_window(parent, audit_dir: str, interval: float):
     win.config(bg=CHROMA)
     win.attributes("-transparentcolor", CHROMA)  # 色键抠除窗外区域 → 圆角生效
     win.attributes("-alpha", 0.0)               # 滑入从全透明开始
-    screen_w = win.winfo_screenwidth()
-    screen_h = win.winfo_screenheight()
+    if target_screen is not None:
+        # ISS-0007：以目标屏右缘/工作区底缘充当"屏宽/屏高"参与现有轨迹计算
+        screen_w = target_screen["rect"][2]
+        screen_h = target_screen["work_area"][3]
+    else:
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
     frames_in = slide_in_frames(screen_w, WIN_W)
     frames_out = slide_out_frames(screen_w, WIN_W)
     y = screen_h - WIN_H - MARGIN_BOTTOM

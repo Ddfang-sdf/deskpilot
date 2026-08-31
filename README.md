@@ -14,13 +14,14 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Ddfang-sdf/deskpilot" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="Platform">
   <img src="https://img.shields.io/badge/MCP-stdio-6E56CF" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-209%20passed-2DA44E" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-270%20passed-2DA44E" alt="Tests">
 </p>
 
 <p align="center">
+  <a href="https://github.com/Ddfang-sdf/deskpilot/releases/latest"><strong>⬇️ 下载最新 exe</strong></a> ·
   <a href="#-30-秒上手">快速开始</a> ·
+  <a href="docs/INSTALL.md">安装指导书</a> ·
   <a href="docs/DESIGN.md">设计文档</a> ·
-  <a href="https://github.com/Ddfang-sdf/deskpilot/releases">下载 Releases</a> ·
   <a href="README_EN.md">English</a>
 </p>
 
@@ -40,7 +41,7 @@
   <em>关闭窗口等危险操作：本地审批窗带目标窗口实拍缩略图与倒计时，超时自动拒绝</em>
 </p>
 
-任何时候觉得不对劲，<code>Ctrl+Shift+F12</code> 一键熔断（或把鼠标甩到屏幕左上角按住），冻结事实会主动弹窗告知，而不是等你发现 AI 不动了：
+任何时候觉得不对劲，<code>Ctrl+Shift+F12</code> 一键熔断（或把鼠标甩到主屏左上角按住；多显示器时触发角固定为主屏左上角），冻结事实会主动弹窗告知，而不是等你发现 AI 不动了：
 
 <p align="center">
   <img src="assets/screenshot-freeze-card.png" alt="急停冻结通知" width="440"><br>
@@ -59,7 +60,7 @@
 
 ## 🚀 30 秒上手
 
-**第一步：下载。** 到 [Releases](https://github.com/Ddfang-sdf/deskpilot/releases) 下载最新的 `deskpilot-vX.Y.Z-windows-x64.zip`，解压到一个固定目录，例如 `C:\tools\deskpilot\`。
+**第一步：下载。** 下载 [最新 Release](https://github.com/Ddfang-sdf/deskpilot/releases/latest) 的 `deskpilot-vX.Y.Z-windows-x64.zip`（附 `.sha256` 校验值），解压到固定目录，例如 `C:\tools\deskpilot\`。
 
 > ⚠️ 解压后**保持 `policy.yml` 和 `deskpilot.exe` 在同一个文件夹**，不要分开。
 
@@ -71,19 +72,11 @@ Claude Code（命令行）:
 claude mcp add deskpilot -- "C:\tools\deskpilot\deskpilot.exe"
 ```
 
-Claude Desktop —— 编辑 `%APPDATA%\Claude\claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "deskpilot": { "command": "C:\\tools\\deskpilot\\deskpilot.exe" }
-  }
-}
-```
-
-Cursor —— 编辑 `%USERPROFILE%\.cursor\mcp.json`（或 Settings → MCP 界面添加），内容与上面相同。其他客户端：凡支持 MCP（stdio 模式）的，把 `command` 指向 `deskpilot.exe` 即可。
+Claude Desktop / Cursor / 通用 stdio 客户端配置样例见[安装指导书](docs/INSTALL.md)。
 
 **第三步：重启客户端，验证。** 对 AI 说一句:「**用 deskpilot 截个屏**」。能看到截图回来，就装好了。
+
+> 📖 生产使用请开**常驻 daemon**（单次调用约 1.2s、绑定跨调用保持）：启动、开机自启、policy.yml 定制、升级、内网分发与常见问题，全在 **[docs/INSTALL.md](docs/INSTALL.md)**；一键安装脚本见 `scripts/install.ps1`。
 
 ## 工作原理
 
@@ -101,7 +94,7 @@ AI 客户端 ──MCP(stdio)──▶ deskpilot ──四道闸硬校验──�
 
 - 默认只能操作白名单里的日常软件（记事本、画图、资源管理器、PowerPoint），其他程序 AI 碰不到；想加软件，编辑 exe 旁边的 `policy.yml`
 - 危险操作（关窗口、删除等）一律弹本地审批窗，超时自动拒绝；审批令牌不经 AI 之手
-- 任何时候觉得不对劲：**`Ctrl+Shift+F12` 立即熔断**一切操作，`Ctrl+Shift+F11` 恢复；或者把鼠标甩到屏幕左上角按住不放
+- 任何时候觉得不对劲：**`Ctrl+Shift+F12` 立即熔断**一切操作，`Ctrl+Shift+F11` 恢复；或者把鼠标甩到主屏左上角按住不放（多显示器时触发角固定为主屏左上角）
 
 ## 客户端超时建议
 

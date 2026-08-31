@@ -13,12 +13,31 @@ import time
 from pathlib import Path
 from typing import Callable
 
+def _set_dpi_awareness() -> str:
+    """ISS-0007 D：DPI 感知——优先 Per-Monitor V2，失败回退 V1，再败不阻断。
+
+    返回所用形态（"pmv2" / "v1" / "none"）。
+    """
+    import ctypes
+    try:
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (HANDLE)-4
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(
+                ctypes.c_void_p(-4).value):
+            return "pmv2"
+    except Exception:
+        pass
+    try:
+        if ctypes.windll.user32.SetProcessDPIAware():
+            return "v1"
+    except Exception:
+        pass
+    return "none"
+
+
 # DPI 感知必须在任何窗口/坐标 API 使用前声明（实盘教训：
-# 150% 缩放主机上 UIA 物理像素与键鼠虚拟坐标错位，画笔落点全偏）。
-try:
-    ctypes.windll.user32.SetProcessDPIAware()
-except Exception:
-    pass
+# 150% 缩放主机上 UIA 物理像素与键鼠虚拟坐标错位，画笔落点全偏；
+# ISS-0007：双屏混合 DPI 下 V1 会在副屏被位图拉伸，须 Per-Monitor V2）。
+_DPI_MODE = _set_dpi_awareness()
 
 from .approval import ApprovalManager, DenyAllChannel
 from .audit import AuditLogger

@@ -42,10 +42,12 @@ class ApprovalChannel(Protocol):
     """本地审批通道（M3 弹窗 / 测试模拟审批器），同步裁决语义（ISS-0003）。"""
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> str:
+                image_path: str | None = None,
+                target_rect: tuple | None = None) -> str:
         """向人类请求批准并同步等待裁决；返回 "approve" / "deny" / "timeout"。
 
         image_path：目标窗口实拍图（可选），供弹窗展示"操作的是哪个窗口"。
+        target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。
         """
         ...
 
@@ -54,7 +56,8 @@ class DenyAllChannel:
     """M1 生产通道：无弹窗，一切 L3 恒拒绝（详细设计 §7.11）。"""
 
     def request(self, description: str, fingerprint: str,
-                image_path: str | None = None) -> str:
+                image_path: str | None = None,
+                target_rect: tuple | None = None) -> str:
         return "deny"
 
 
@@ -68,13 +71,16 @@ class ApprovalManager:
         self._tokens: dict[str, ApprovalToken] = {}
 
     def request_approval(self, description: str, fingerprint: str,
-                         image_path: str | None = None) -> str:
+                         image_path: str | None = None,
+                         target_rect: tuple | None = None) -> str:
         """经审批通道同步请求人类裁决；批准则在服务内部签发授权记录（不经 AI）。
 
         返回 "approve" / "deny" / "timeout"（ISS-0003 同步阻塞模型）。
+        target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。
         """
         decision = self._channel.request(description, fingerprint,
-                                         image_path=image_path)
+                                         image_path=image_path,
+                                         target_rect=target_rect)
         if decision == "approve":
             self.issue_token(fingerprint)
         return decision
