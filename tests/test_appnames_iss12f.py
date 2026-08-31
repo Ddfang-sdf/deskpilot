@@ -21,10 +21,11 @@ class TestAppDisplayName:
         assert app_display_name("whatever.exe", "无标题 - 记事本") == "无标题 - 记事本"
 
     def test_file_description_for_calc(self):
-        """calc.exe 版本信息 FileDescription(系统真实数据)含 Calculator/计算器。"""
+        """calc.exe 显示名含本地化名称(zh-CN 系统含"计算器")且中英并列(F2)。"""
         from deskpilot.appnames import app_display_name
         name = app_display_name("calc.exe")
-        assert ("Calculator" in name) or ("计算器" in name)
+        assert "计算器" in name
+        assert "Calculator" in name
 
     def test_unknown_process_falls_back(self):
         from deskpilot.appnames import app_display_name
@@ -33,13 +34,20 @@ class TestAppDisplayName:
     def test_empty_title_goes_to_parse(self):
         from deskpilot.appnames import app_display_name
         name = app_display_name("calc.exe", "")
-        assert ("Calculator" in name) or ("计算器" in name)
+        assert "计算器" in name
+        assert "Calculator" in name
 
     def test_parse_time_bounded(self):
-        from deskpilot.appnames import app_display_name
+        """冷扫描(清双缓存)<2s;缓存命中 <100ms(F3 时限)。"""
+        from deskpilot import appnames
+        appnames._APPX_CACHE.clear()
+        appnames._PKG_INDEX = None
         t0 = time.monotonic()
-        app_display_name("calc.exe")
-        assert time.monotonic() - t0 < 0.1
+        appnames.app_display_name("calc.exe")
+        assert time.monotonic() - t0 < 2.0
+        t1 = time.monotonic()
+        appnames.app_display_name("calc.exe")
+        assert time.monotonic() - t1 < 0.1
 
 
 class TestEnrollDescription:

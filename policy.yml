@@ -70,7 +70,7 @@ keys:
 
 timeouts:
   binding_ttl: 600
-  approval_ttl: 60
+  approval_ttl: 300
   wait_poll_interval: 0.5
   wait_timeout_max: 300
 

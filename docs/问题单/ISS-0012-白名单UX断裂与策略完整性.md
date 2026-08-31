@@ -57,7 +57,7 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 | C | **策略完整性审计**：启动加载时计算 policy.yml SHA-256 写入审计（含路径与条目数）；运行期每 60s 轮询文件指纹，变更即写审计事件"策略文件被外部修改"（不自动重载、不冻结，仅留痕告警）。 |
 | D | **系统写策略而非 AI**：永久入白的 policy.yml 修改由 daemon 进程内函数完成（读-改-写原子化，先写 .bak）；AI 全程无策略写路径。 |
 | E | **全可视化管理（零命令，2026-08-31 修订，否决原 CLI 路线）**：E1 daemon 系统托盘图标（右键菜单：白名单管理 / 运行状态；ctypes Shell_NotifyIconW，不引第三方依赖）——同时解决 daemon 运行不可见的潜伏问题；E2 白名单管理窗口（tkinter，复用弹窗进程模式）：列出静态+会话条目，逐行 [移出]，会话区 [全部清空]，一切变更由 daemon 原子写 policy.yml + 审计，数据经本机 127.0.0.1 HTTP 端点；E3 AI 请求撤回弹窗（用户说"别动 X"时，弹窗"是否将 X 移出白名单？[移出/保留]"，特权收缩 fail-safe）；E4 入白确认自带 [撤销]（"已加入白名单 [撤销]"，误点立撤）。 |
-| F | **弹窗应用显示名（2026-08-31 补丁，实盘目击"我都不知道这是个啥软件"）**：入白审批主标题从裸进程名改为显示名优先——attach 路径用窗口标题；launch 路径读 exe 版本信息 FileDescription（ctypes，零新依赖）；全部取不到回退进程名（文案 fail-closed）；进程名挪技术底注行保留。常规 L3 审批的 launch_app headline 同源改善。解析有界（<100ms）、失败不阻断闸流。 |
+| F | **弹窗应用显示名（2026-08-31 补丁，实盘目击"我都不知道这是个啥软件"）**：入白审批主标题从裸进程名改为显示名优先——attach 路径用窗口标题；launch 路径读 exe 版本信息 FileDescription（ctypes，零新依赖）；全部取不到回退进程名（文案 fail-closed）；进程名挪技术底注行保留。常规 L3 审批的 launch_app headline 同源改善。解析有界（冷扫描 <2s、命中后缓存 <100ms）、失败不阻断闸流。**F2（同日再补丁，"英文不好的还是懵逼"）**：显示名本地化优先、中英并列「计算器（Windows Calculator）」。**F3（同日定稿，sdfang 批示"不要自己维护国际化"）**：撤掉内置中文名表；UWP 应用中文名走系统规范——注册表包仓库 → AppxManifest.xml 按 Executable 匹配 → ms-resource 经 SHLoadIndirectString 按界面语言解析（与窗口标题同源）。显示名全部来自 OS/厂商数据（窗口标题 / MUI / 包资源 / 版本信息），MCP 不自维护任何翻译。 |
 
 ### 3.3 约束
 
@@ -92,7 +92,7 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 | 入白撤销键 | 审批器回 approve-always 后触发撤销 → policy.yml 回到原样（数据层直出）、操作恢复拒绝 |
 | 自保护 | attach deskpilot.exe → 硬拒且不触发入白审批（断言拒绝码直出）；弹窗进程同理 |
 | 托盘菜单 | 菜单项→动作映射（单元：纯函数直出）；图标可见性留实盘验收 |
-| 显示名解析 | 窗口标题优先（直出）；calc.exe FileDescription 含 Calculator/计算器（系统真实版本信息直出）；未知进程回退进程名原样；单次解析 <100ms |
+| 显示名解析 | 窗口标题优先（直出）；calc.exe 中文名经 AppX 包资源动态解析（断言含"计算器"，机制为系统规范非自维护翻译）且与 FileDescription 中英并列；未知进程回退进程名原样；冷扫描 <2s、缓存命中 <100ms |
 | 入白描述两段式 | _describe_enroll 主标题含显示名、底注含进程名（字符串直出） |
 
 ### 4.2 集成验收
@@ -112,6 +112,7 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 | v0.4 | 2026-08-31 | A~E 实现完成：whitelist_admin（三态+原子写盘+自保护）、闸二入白审批流、弹窗三态、/whitelist 三端点、管理窗口、入白撤销 toast、撤回确认通道、托盘图标、指纹审计与守望、request_remove_from_whitelist 工具；DESIGN/功能/详细/测试设计/README/INSTALL/RELEASE_NOTES 同步；新增 34 用例，全量 323 全绿 |
 | v0.5 | 2026-08-31 | 实盘目击设计缺陷：入白弹窗裸进程名不可理解（"我都不知道这是个啥软件"）——sdfang 批示不另立单、回本单补丁：新增整改项 F（显示名解析：窗口标题/FileDescription/回退进程名）与对应测试，已批准开工 |
 | v0.6 | 2026-08-31 | F 实现完成：appnames.app_display_name 三级解析（窗口标题/FileDescription/回退进程名，ctypes 零依赖）；_describe_enroll/_describe 两段式显示名；新增 7 用例，全量 334 全绿；生产实证 desc=「Windows Calculator」 |
+| v0.7 | 2026-08-31 | F2/F3 定稿：sdfang 批示中英双语且"不要自己维护国际化"——撤内置中文表，中文名走系统规范：MUI 资源 + AppX 包资源（Executable 精确匹配 + FileDescription↔包短名归一化恒等匹配，覆盖 calc.exe stub；ms-resource 经 SHLoadIndirectString 按界面语言解析）；实证 calc.exe→「计算器（Windows Calculator）」，全量 334 全绿 |
 
 ## 6. 接口定义（SDD 公开入口；测试只允许调用以下入口）
 
