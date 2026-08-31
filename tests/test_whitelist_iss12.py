@@ -263,6 +263,7 @@ class TestEnrollDialog:
             def configure(self, *a, **k): pass
             def geometry(self, g): self.geo = g
             def after(self, *a, **k): pass
+            def destroy(self): pass
             def winfo_screenwidth(self): return 2560
             def winfo_screenheight(self): return 1440
 
@@ -285,7 +286,7 @@ class TestEnrollDialog:
         rp = tmp_path / "r.txt"
         ad.build_window(object(), "入白审批 excel.exe", str(rp), 5,
                         enroll="excel.exe")
-        assert "本次允许" in clicks
+        assert "本次会话允许" in clicks
         assert "永久加入" in clicks
         assert "拒绝" in clicks
 
@@ -588,8 +589,89 @@ class TestTrayMenu:
         assert "manage" in ids
 
 
-# ---------- E2 移出禁止图标（TC-ICON-01~04,2026-08-31 评审通过） ----------
+# ---------- 入白弹窗按钮文案（TC-LABEL-01~03,2026-08-31 评审通过） ----------
 
+class TestEnrollLabel:
+    """TC-LABEL:三态按钮文案「本次会话允许」;语义与文档同步回归。
+    断言:按钮文本记录/结果文件内容/文档文本(直出)。"""
+
+    def _fake_tk(self, monkeypatch, mod, clicks):
+        class W:
+            def __init__(self, *a, **k):
+                self.geo = None
+
+            def pack(self, *a, **k): pass
+            def place(self, *a, **k): pass
+            def bind(self, *a, **k): pass
+            def config(self, *a, **k): pass
+            def focus_set(self): pass
+            def title(self, *a): pass
+            def overrideredirect(self, *a): pass
+            def attributes(self, *a, **k): pass
+            def configure(self, *a, **k): pass
+            def geometry(self, g): self.geo = g
+            def after(self, *a, **k): pass
+            def destroy(self): pass
+            def winfo_screenwidth(self): return 2560
+            def winfo_screenheight(self): return 1440
+
+        class Btn(W):
+            def __init__(self, *a, **k):
+                super().__init__()
+                clicks.append(k.get("text", ""))
+                self.command = k.get("command")
+
+        monkeypatch.setattr(mod.tk, "Toplevel", lambda parent: W())
+        monkeypatch.setattr(mod.tk, "Frame", lambda *a, **k: W())
+        monkeypatch.setattr(mod.tk, "Label", lambda *a, **k: W())
+        monkeypatch.setattr(mod.tk, "Button", lambda *a, **k: Btn(*a, **k))
+
+    def test_label01_session_wording(self, monkeypatch, tmp_path):
+        """TC-LABEL-01:会话级按钮=「本次会话允许」,旧文案消失,另两态不变。"""
+        import deskpilot.approval_dialog as ad
+        clicks = []
+        self._fake_tk(monkeypatch, ad, clicks)
+        ad.build_window(object(), "入白审批", str(tmp_path / "r.txt"), 5,
+                        enroll="excel.exe")
+        assert "本次会话允许" in clicks
+        assert "永久加入" in clicks
+        assert "拒绝" in clicks
+        assert "本次允许" not in clicks
+
+    def test_label02_semantics_unchanged(self, monkeypatch, tmp_path):
+        """TC-LABEL-02:点「本次会话允许」结果文件仍写 approve(改名不改值)。"""
+        import deskpilot.approval_dialog as ad
+        clicks = []
+        buttons = []
+
+        class Btn:
+            def __init__(self, *a, **k):
+                self.text = k.get("text", "")
+                self.command = k.get("command")
+                buttons.append(self)
+
+            def pack(self, *a, **k): pass
+            def bind(self, *a, **k): pass
+            def focus_set(self): pass
+
+        self._fake_tk(monkeypatch, ad, clicks)
+        monkeypatch.setattr(ad.tk, "Button", lambda *a, **k: Btn(*a, **k))
+        rp = tmp_path / "r.txt"
+        ad.build_window(object(), "入白审批", str(rp), 5, enroll="excel.exe")
+        btn = [b for b in buttons if b.text == "本次会话允许"][0]
+        btn.command()
+        assert rp.read_text(encoding="utf-8") == "approve"
+
+    def test_label03_install_doc_synced(self):
+        """TC-LABEL-03:INSTALL.md 按钮文案同步,无旧文案残留。"""
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] / "docs" / "INSTALL.md"
+                ).read_text(encoding="utf-8")
+        assert "本次会话允许" in text
+        assert "「**本次允许**」" not in text
+
+
+# ---------- E2 移出禁止图标（TC-ICON-01~04,2026-08-31 评审通过） ----------
 class _FakeCanvas:
     """绘图/调度记录型 Canvas 替身(直出)。"""
     tk_calls: list = ()

@@ -159,7 +159,7 @@ def build_window(parent, description: str, result_path, timeout_s: float,
                            command=lambda: decide("approve_always"))
         always.pack(side="right")
         _hover(always, _APPROVE_BG, _APPROVE_HOVER)
-        once = tk.Button(bar, text="本次允许", width=_BTN_WIDTH, relief="flat",
+        once = tk.Button(bar, text="本次会话允许", width=_BTN_WIDTH, relief="flat",
                          bg=_DENY_BG, fg=_TITLE_FG,
                          activebackground=_DENY_HOVER,
                          activeforeground=_TITLE_FG,
