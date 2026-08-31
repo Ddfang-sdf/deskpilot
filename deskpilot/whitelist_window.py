@@ -28,48 +28,183 @@ _WIDTH = 420
 
 # ---------- E2 管理窗口 ----------
 
+_BG = "#FFFFFF"
+_TITLE_FG = "#202020"
+_HINT_FG = "#999999"
+_SEP = "#EFEFEF"
+_BTN_BG = "#F4F4F4"
+_BTN_HOVER = "#FBE3DD"
+_REMOVE_FG = "#C8391F"
+_ROW_H = 52                      # 行高（双行文本+分隔线）
+_VISIBLE_N = 5                   # 每区默认展示条数，超出经[更多]展开
+
+
+def _hover(btn, base: str, hover: str) -> None:
+    btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
+    btn.bind("<Leave>", lambda e: btn.configure(bg=base))
+
+
+class _ManagerUI:
+    """白名单管理窗口控制器：搜索过滤 + 两区分立滚动 + 更多/收起。"""
+
+    _SECTIONS = (("static", "已永久加入（写入白名单文件）"),
+                 ("session", "本次会话临时允许（重启失效）"))
+
+    def __init__(self, win, entries: dict, on_remove, on_clear_session):
+        self._entries = entries
+        self._on_remove = on_remove
+        self._query = ""
+        self._expanded = {"static": False, "session": False}
+        self._blocks: dict[str, dict] = {}
+
+        header = tk.Frame(win, bg=_BG)
+        header.pack(fill="x", padx=16, pady=(14, 6))
+        tk.Label(header, text="白名单管理", bg=_BG, fg=_TITLE_FG,
+                 font=("Microsoft YaHei", 13, "bold"),
+                 anchor="w").pack(side="left")
+        self._search = tk.Entry(header, width=18, relief="solid", bd=1,
+                                font=("Microsoft YaHei", 9))
+        self._search.pack(side="right")
+        self._search.bind("<KeyRelease>", self._on_search)
+        tk.Label(header, text="搜索", bg=_BG, fg=_HINT_FG,
+                 font=("Microsoft YaHei", 9)).pack(side="right", padx=(0, 6))
+
+        for key, title in self._SECTIONS:
+            self._blocks[key] = self._build_block(win, title)
+
+        bar = tk.Frame(win, bg=_BG)
+        bar.pack(fill="x", padx=16, pady=(0, 14))
+        clear = tk.Button(bar, text="全部清空", width=10, relief="flat",
+                          bg=_BTN_BG, fg=_REMOVE_FG, font=_TEXT_FONT,
+                          cursor="hand2", command=on_clear_session)
+        clear.pack(side="right")
+        _hover(clear, _BTN_BG, _BTN_HOVER)
+
+        self.render()
+
+    # ---- 骨架 ----
+
+    def _build_block(self, win, title: str) -> dict:
+        head = tk.Frame(win, bg=_BG)
+        head.pack(fill="x", padx=16, pady=(8, 2))
+        tk.Label(head, text=title, bg=_BG, fg=_TITLE_FG,
+                 font=("Microsoft YaHei", 10, "bold"),
+                 anchor="w").pack(side="left")
+
+        wrap = tk.Frame(win, bg=_BG)
+        wrap.pack(fill="x", padx=16)
+        canvas = tk.Canvas(wrap, bg=_BG, highlightthickness=0,
+                           height=_ROW_H * _VISIBLE_N)
+        sb = tk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="x", expand=True)
+        body = tk.Frame(canvas, bg=_BG)
+        body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>",
+                  lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e, c=canvas, i=body_id: c.itemconfig(i, width=e.width))
+        canvas.bind_all("<MouseWheel>",
+                        lambda e, c=canvas: c.yview_scroll(
+                            int(-e.delta / 120), "units"))
+
+        foot = tk.Frame(win, bg=_BG)
+        foot.pack(fill="x", padx=16)
+        more = tk.Button(foot, text="", width=12, relief="flat", bg=_BTN_BG,
+                         fg=_TITLE_FG, font=("Microsoft YaHei", 9),
+                         cursor="hand2")
+        more.pack(side="left", pady=4)
+        _hover(more, _BTN_BG, _BTN_HOVER)
+        return {"canvas": canvas, "body": body, "more": more}
+
+    # ---- 渲染 ----
+
+    def _filtered(self, items: dict) -> list[tuple[str, str, str]]:
+        """[(proc, level, display)]；搜索串同时匹配显示名与进程名。"""
+        from .appnames import app_display_name
+        out = []
+        for proc, level in items.items():
+            display = app_display_name(proc)
+            q = self._query
+            if q and q not in display.lower() and q not in proc.lower():
+                continue
+            out.append((proc, level, display))
+        return out
+
+    def render(self) -> None:
+        for key, _title in self._SECTIONS:
+            self._render_block(key)
+
+    def _render_block(self, key: str) -> None:
+        blk = self._blocks[key]
+        body = blk["body"]
+        for child in body.winfo_children():
+            child.destroy()
+        rows = self._filtered(self._entries.get(key, {}))
+        expanded = self._expanded[key] or bool(self._query)
+        visible = rows if expanded else rows[:_VISIBLE_N]
+        if not visible:
+            tk.Label(body, text="（空）" if not self._query else "（无匹配）",
+                     bg=_BG, fg=_HINT_FG, font=_HINT_FONT,
+                     anchor="w").pack(fill="x", pady=2)
+        for proc, level, display in visible:
+            _row(body, proc, level, display, self._on_remove)
+
+        rest = len(rows) - _VISIBLE_N
+        more = blk["more"]
+        if not self._query and rest > 0:
+            more.configure(
+                text=("收起" if self._expanded[key] else f"更多 {rest} 项"),
+                command=lambda k=key: self._toggle(k))
+            more.pack(side="left", pady=4)
+        else:
+            more.pack_forget()
+
+    def _toggle(self, key: str) -> None:
+        self._expanded[key] = not self._expanded[key]
+        self._render_block(key)
+
+    def _on_search(self, _event) -> None:
+        self._query = self._search.get().strip().lower()
+        self.render()
+
+
 def build_window(parent, entries: dict, on_remove: Callable[[str], None],
                  on_clear_session: Callable[[], None]):
-    """ISS-0012 §6 E2：白名单管理窗口。
+    """ISS-0012 §6 E2：白名单管理窗口（v2：两区分立滚动+默认5条更多+搜索）。
 
     entries = {"static": {proc: level}, "session": {proc: level}}；
-    静态区标题"已永久加入"、会话区标题"本次会话临时允许（重启失效）"，
-    逐行 [移出]；会话区底部 [全部清空]。
+    行主名显示应用显示名（与审批弹窗同源），次行进程名·级别；
+    顶部搜索实时过滤（匹配显示名/进程名）；每区默认 5 条，
+    [更多 N 项] 展开全部、[收起] 还原；控制器挂 win._manager（测试观测口）。
     """
     win = tk.Toplevel(parent)
     win.title("DeskPilot 白名单管理")
-    win.geometry(f"{_WIDTH}x360")
-    win.configure(bg="#FFFFFF")
-
-    body = tk.Frame(win, bg="#FFFFFF")
-    body.pack(fill="both", expand=True, padx=16, pady=12)
-
-    tk.Label(body, text="已永久加入（写入白名单文件）", bg="#FFFFFF",
-             font=_TITLE_FONT, anchor="w").pack(fill="x")
-    for proc, level in entries.get("static", {}).items():
-        _row(body, proc, level, on_remove)
-
-    tk.Label(body, text="本次会话临时允许（重启失效）", bg="#FFFFFF",
-             font=_TITLE_FONT, anchor="w").pack(fill="x", pady=(14, 0))
-    for proc, level in entries.get("session", {}).items():
-        _row(body, proc, level, on_remove)
-
-    bar = tk.Frame(body, bg="#FFFFFF")
-    bar.pack(fill="x", pady=(14, 0))
-    tk.Button(bar, text="全部清空", width=10, relief="flat",
-              bg="#F0F0F0", font=_TEXT_FONT, cursor="hand2",
-              command=on_clear_session).pack(side="right")
+    win.geometry("560x560")
+    win.minsize(460, 420)
+    win.configure(bg=_BG)
+    win._manager = _ManagerUI(win, entries, on_remove, on_clear_session)
     return win
 
 
-def _row(parent, proc: str, level: str, on_remove) -> None:
-    row = tk.Frame(parent, bg="#FFFFFF")
-    row.pack(fill="x", pady=2)
-    tk.Label(row, text=f"{proc}    {level}", bg="#FFFFFF", font=_TEXT_FONT,
-             anchor="w").pack(side="left", fill="x", expand=True)
-    tk.Button(row, text="移出", width=8, relief="flat", bg="#F0F0F0",
-              font=_TEXT_FONT, cursor="hand2",
-              command=lambda p=proc: on_remove(p)).pack(side="right")
+def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
+    row = tk.Frame(parent, bg=_BG)
+    row.pack(fill="x", pady=(4, 0))
+    left = tk.Frame(row, bg=_BG)
+    left.pack(side="left", fill="x", expand=True)
+    tk.Label(left, text=display, bg=_BG, fg=_TITLE_FG,
+             font=("Microsoft YaHei", 10, "bold"),
+             anchor="w").pack(fill="x")
+    tk.Label(left, text=f"{proc} · {level}", bg=_BG, fg=_HINT_FG,
+             font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
+    btn = tk.Button(row, text="移出", width=7, relief="flat", bg=_BTN_BG,
+                    fg=_REMOVE_FG, font=("Microsoft YaHei", 9),
+                    cursor="hand2",
+                    command=lambda p=proc: on_remove(p))
+    btn.pack(side="right", padx=(10, 0))
+    _hover(btn, _BTN_BG, _BTN_HOVER)
+    tk.Frame(parent, bg=_SEP, height=1).pack(fill="x", pady=(4, 0))
 
 
 # ---------- E4 入白确认 toast ----------

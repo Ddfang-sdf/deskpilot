@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 import threading
 import time

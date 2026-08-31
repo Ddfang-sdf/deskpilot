@@ -399,39 +399,74 @@ class TestManagerWindow:
     """场景:管理窗口逐行[移出]与会话区[全部清空]回调。
     断言:回调收到的进程名/调用计数(替身记录直出)。"""
 
-    def _build(self, monkeypatch, entries, removed, cleared):
+    def _build(self, monkeypatch, entries, removed, cleared, labels=None):
         import deskpilot.whitelist_window as ww
         buttons = []
+        if labels is None:
+            labels = []
+        tops = []
 
         class W:
-            def pack(self, *a, **k): pass
-            def grid(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def title(self, *a): pass
-            def geometry(self, *a): pass
-            def protocol(self, *a, **k): pass
-
-        class Btn(W):
             def __init__(self, *a, **k):
                 self.text = k.get("text", "")
                 self.command = k.get("command")
+                self._text_value = ""
+
+            def pack(self, *a, **k): pass
+            def grid(self, *a, **k): pass
+            def config(self, *a, **k): pass
+            def configure(self, *a, **k):
+                if "text" in k: self.text = k["text"]
+                if "command" in k: self.command = k["command"]
+            def bind(self, *a, **k): pass
+            def bind_all(self, *a, **k): pass
+            def title(self, *a): pass
+            def geometry(self, *a): pass
+            def minsize(self, *a): pass
+            def protocol(self, *a, **k): pass
+            def yview(self, *a, **k): pass
+            def create_window(self, *a, **k): return 1
+            def itemconfig(self, *a, **k): pass
+            def bbox(self, *a, **k): return (0, 0, 0, 0)
+            def set(self, *a, **k): pass
+            def yview_scroll(self, *a, **k): pass
+            def winfo_children(self): return []
+            def destroy(self): pass
+            def pack_forget(self): pass
+            def get(self): return self._text_value
+
+        class Btn(W):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
                 buttons.append(self)
 
-        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W())
-        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: W())
+        class Lbl(W):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                labels.append(self.text)
+
+        class Top(W):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                tops.append(self)
+
+        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: Top())
+        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W(*a, **k))
+        monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: W(*a, **k))
+        monkeypatch.setattr(ww.tk, "Scrollbar", lambda *a, **k: W(*a, **k))
+        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: Lbl(*a, **k))
         monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: Btn(*a, **k))
-        ww.build_window(object(), entries,
-                        on_remove=lambda p: removed.append(p),
-                        on_clear_session=lambda: cleared.append(1))
-        return buttons
+        monkeypatch.setattr(ww.tk, "Entry", lambda *a, **k: W(*a, **k))
+        win = ww.build_window(object(), entries,
+                              on_remove=lambda p: removed.append(p),
+                              on_clear_session=lambda: cleared.append(1))
+        return buttons, win
 
     def test_row_remove_callback(self, monkeypatch):
         removed, cleared = [], []
         entries = {"static": {"notepad.exe": "L2", "excel.exe": "L2"},
                    "session": {"a.exe": "L2"}}
-        buttons = self._build(monkeypatch, entries, removed, cleared)
+        buttons, _ = self._build(monkeypatch, entries, removed, cleared)
         excel_btn = [b for b in buttons
                      if b.text == "移出" and b.command is not None][1]
         excel_btn.command()
@@ -440,10 +475,46 @@ class TestManagerWindow:
     def test_clear_session_callback(self, monkeypatch):
         removed, cleared = [], []
         entries = {"static": {"notepad.exe": "L2"}, "session": {"a.exe": "L2"}}
-        buttons = self._build(monkeypatch, entries, removed, cleared)
+        buttons, _ = self._build(monkeypatch, entries, removed, cleared)
         clear_btn = [b for b in buttons if b.text == "全部清空"][0]
         clear_btn.command()
         assert cleared == [1]
+
+    def test_rows_show_display_names(self, monkeypatch):
+        """管理窗口行主名显示应用显示名(与审批弹窗同源),次行含进程名。"""
+        removed, cleared, labels = [], [], []
+        entries = {"static": {"notepad.exe": "L2"}, "session": {}}
+        self._build(monkeypatch, entries, removed, cleared, labels)
+        assert "记事本" in labels                       # 显示名(直出)
+        assert any("notepad.exe" in s for s in labels)  # 次行进程名(直出)
+
+    def test_more_button_expands_beyond_five(self, monkeypatch):
+        """默认每区 5 条;[更多 N 项] 点击后展示全部,文案变收起。"""
+        removed, cleared = [], []
+        entries = {"static": {f"app{i}.exe": "L2" for i in range(7)},
+                   "session": {}}
+        buttons, win = self._build(monkeypatch, entries, removed, cleared)
+        initial = [b for b in buttons if b.text == "移出"]
+        assert len(initial) == 5                        # 默认 5 条(直出)
+        more = [b for b in buttons if b.text == "更多 2 项"][0]
+        more.command()                                  # 展开
+        ui = win._manager
+        body = ui._blocks["static"]["body"]
+        # 重新渲染后行数=7(经控制器状态直出)
+        rows = ui._filtered(entries["static"])
+        assert len(rows) == 7
+        assert more.text == "收起"
+
+    def test_search_filters_rows(self, monkeypatch):
+        """搜索串同时匹配显示名与进程名,过滤非匹配行。"""
+        removed, cleared = [], []
+        entries = {"static": {"notepad.exe": "L2", "excel.exe": "L2"},
+                   "session": {}}
+        buttons, win = self._build(monkeypatch, entries, removed, cleared)
+        ui = win._manager
+        ui._query = "notepad"
+        rows = ui._filtered(entries["static"])
+        assert [r[0] for r in rows] == ["notepad.exe"]  # 过滤直出
 
 
 class TestEnrollNotice:

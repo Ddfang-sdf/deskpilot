@@ -80,9 +80,12 @@ _kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
 
 
 def menu_items() -> tuple[tuple[str, str], ...]:
-    """ISS-0012 §6 E1：托盘菜单模型纯函数——(动作ID, 显示名)。"""
-    return (("manage", "白名单管理…"),
-            ("status", "运行状态…"))
+    """ISS-0012 §6 E1：托盘菜单模型纯函数——(动作ID, 显示名)。
+
+    仅保留管理入口：半成品"运行状态"弹框按用户指令撤除
+    （"要搞监控就好好搞，不搞就别给自己找麻烦"）。
+    """
+    return (("manage", "白名单管理…"),)
 
 
 def _load_tray_icon():
@@ -149,11 +152,8 @@ class TrayIcon:
     """ISS-0012 §6 E1：托盘图标（后台线程跑消息循环）。"""
 
     def __init__(self, on_manage: Callable[[], None],
-                 on_status: Callable[[], None] | None = None,
                  tooltip: str = "DeskPilot 运行中"):
         self._on_manage = on_manage
-        self._on_status = on_status or (
-            lambda: _user32.MessageBoxW(None, tooltip, "DeskPilot", 0x40))
         self._tooltip = tooltip
         self._thread: threading.Thread | None = None
         self._hwnd = None
@@ -226,11 +226,6 @@ class TrayIcon:
             if action == "manage":
                 try:
                     self._on_manage()
-                except Exception:
-                    pass
-            elif action == "status":
-                try:
-                    self._on_status()
                 except Exception:
                     pass
             return 0

@@ -37,14 +37,24 @@ class TestWin32Signatures:
 
 
 class TestTrayMenuModel:
-    """场景:菜单模型含管理入口;左键与右键均弹菜单(实盘"点击没有反应"教训)。
-    断言:menu_items 直出;消息常量映射存在左键处理(源码断言)。"""
+    """场景:菜单模型只含管理入口(运行状态半成品已按用户指令撤除);
+    左键与右键均弹菜单(实盘"点击没有反应"教训)。
+    断言:menu_items 直出;源码含左键处理(直出)。"""
 
-    def test_menu_contains_manage(self):
-        ids = [item[0] for item in t.menu_items()]
-        assert "manage" in ids
+    def test_menu_only_manage(self):
+        assert t.menu_items() == (("manage", "白名单管理…"),)
 
     def test_left_click_also_pops(self):
         import inspect
         src = inspect.getsource(t.TrayIcon._wnd_proc)
         assert "_WM_LBUTTONUP" in src
+
+
+class TestMainAssemblyGuard:
+    """场景(R3 装配守门):main 装配所需的 os 模块必须已导入——
+    实盘"白名单管理没有反应"根因:frozen 分支引 os.environ 而 main 未 import os。
+    断言:模块属性存在(直出)。"""
+
+    def test_main_imports_os(self):
+        import deskpilot.main as m
+        assert hasattr(m, "os")
