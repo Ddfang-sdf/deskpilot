@@ -416,8 +416,10 @@ class TestManagerWindow:
                 self.text = k.get("text", "")
                 self.command = k.get("command")
                 self._text_value = ""
+                self.pack_count = 0
+                self.create_line_calls = []
 
-            def pack(self, *a, **k): pass
+            def pack(self, *a, **k): self.pack_count += 1
             def grid(self, *a, **k): pass
             def config(self, *a, **k): pass
             def configure(self, *a, **k):
@@ -440,7 +442,7 @@ class TestManagerWindow:
             def destroy(self): pass
             def pack_forget(self): pass
             def get(self): return self._text_value
-            def create_line(self, *a, **k): pass
+            def create_line(self, *a, **k): self.create_line_calls.append((a, k))
             def create_rectangle(self, *a, **k): pass
             def create_oval(self, *a, **k): pass
             def delete(self, *a, **k): pass
@@ -484,6 +486,47 @@ class TestManagerWindow:
         assert len(removes) == 3                        # 三行各一(直出)
         removes[1].command()
         assert removed == ["excel.exe"]
+
+    def test_empty01_three_elements(self, monkeypatch):
+        """TC-EMPTY-01:区空时渲染 图标绘制+主标题+副提示 三要素。"""
+        import deskpilot.whitelist_window as ww
+        removed, cleared, labels = [], [], []
+        entries = {"static": {}, "session": {}}
+        buttons, win = self._build(monkeypatch, entries, removed, cleared,
+                                   labels)
+        assert any("暂无永久加入的软件" in s for s in labels)      # 主标题(直出)
+        assert any("永久加入」即可出现在这里" in s for s in labels)  # 副提示(直出)
+        ui = win._manager
+        cv = ui._blocks["static"]["empty"]._cv
+        assert cv.create_line_calls                              # 插画绘制(直出)
+
+    def test_empty02_not_scrollable(self, monkeypatch):
+        """TC-EMPTY-02:空态替换滚动区——滚动 canvas 未打包。"""
+        removed, cleared = [], []
+        entries = {"static": {}, "session": {}}
+        buttons, win = self._build(monkeypatch, entries, removed, cleared)
+        ui = win._manager
+        blk = ui._blocks["static"]
+        assert blk["canvas"].pack_count == 0                     # 滚动区未打包(直出)
+        assert blk["empty"] is not None                          # 空态存在(直出)
+
+    def test_empty03_content_hides_empty(self, monkeypatch):
+        """TC-EMPTY-03:有行时不出现空态文案。"""
+        removed, cleared, labels = [], [], []
+        entries = {"static": {"notepad.exe": "L2"}, "session": {}}
+        self._build(monkeypatch, entries, removed, cleared, labels)
+        assert "暂无永久加入的软件" not in labels                # 直出
+
+    def test_empty04_search_no_match(self, monkeypatch):
+        """TC-EMPTY-04:搜索无匹配 → 空态为「无匹配项」。"""
+        removed, cleared, labels = [], [], []
+        entries = {"static": {"notepad.exe": "L2"}, "session": {}}
+        buttons, win = self._build(monkeypatch, entries, removed, cleared,
+                                   labels)
+        ui = win._manager
+        ui._query = "zzz"
+        ui.render()
+        assert any("无匹配项" in s for s in labels)              # 直出
 
     def test_desc01_third_line_is_description(self, monkeypatch):
         """TC-DESC-01:行内第三行为描述(app_description 内容直出)。"""

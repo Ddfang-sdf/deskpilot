@@ -121,6 +121,8 @@ class TestFadeIn:
             def pack_forget(self): pass
             def get(self): return ""
             def create_line(self, *a, **k): pass
+            def create_rectangle(self, *a, **k): pass
+            def create_oval(self, *a, **k): pass
             def delete(self, *a, **k): pass
             def after(self, ms, fn=None):
                 rec["afters"].append(ms)

@@ -54,6 +54,46 @@ def _wheelable(canvas) -> None:
                 lambda e, c=canvas: c.unbind_all("<MouseWheel>"))
 
 
+def _draw_empty_icon(cv, color: str = "#CCCCCC") -> None:
+    """空态插画：灰调细线"托盘"图标（与尖角/禁止同语言）。"""
+    cv.create_rectangle(4, 10, 36, 28, outline=color, width=1.5)
+    cv.create_line(4, 18, 14, 18, fill=color, width=1.5, capstyle="round")
+    cv.create_line(26, 18, 36, 18, fill=color, width=1.5, capstyle="round")
+    cv.create_line(14, 18, 18, 23, fill=color, width=1.5, capstyle="round")
+    cv.create_line(26, 18, 22, 23, fill=color, width=1.5, capstyle="round")
+
+
+class _EmptyState:
+    """空态组件（业界标准：灰调插画+主标题+副提示，居中）；
+    整块替换滚动区——占位符永不进入 Canvas（TC-EMPTY-02）。"""
+
+    def __init__(self, parent, title: str, hint: str):
+        self.frame = tk.Frame(parent, bg=_BG)
+        inner = tk.Frame(self.frame, bg=_BG)
+        inner.pack(expand=True, pady=24)
+        self._cv = tk.Canvas(inner, width=40, height=32, bg=_BG,
+                             highlightthickness=0)
+        self._cv.pack()
+        _draw_empty_icon(self._cv)
+        self._title = tk.Label(inner, text=title, bg=_BG, fg="#999999",
+                               font=("Microsoft YaHei", 10, "bold"))
+        self._title.pack(pady=(8, 0))
+        self._hint = tk.Label(inner, text=hint, bg=_BG, fg="#BBBBBB",
+                              font=("Microsoft YaHei", 8), wraplength=380,
+                              justify="center")
+        self._hint.pack(pady=(4, 0))
+
+    def set_state(self, title: str, hint: str) -> None:
+        self._title.configure(text=title)
+        self._hint.configure(text=hint)
+
+    def pack(self, *a, **k):
+        self.frame.pack(*a, **k)
+
+    def pack_forget(self) -> None:
+        self.frame.pack_forget()
+
+
 def _draw_chevron(canvas, direction: str, color: str) -> None:
     """Fluent 风细线尖角：down=收拢(更多)，up=展开(收起)；1.5px 圆角描边。"""
     canvas.delete("chev")
@@ -309,6 +349,13 @@ class _ManagerUI:
 
     # ---- 骨架 ----
 
+    _EMPTY_TEXT = {
+        "static": ("暂无永久加入的软件",
+                   "AI 请求新应用时，在弹窗选「永久加入」即可出现在这里"),
+        "session": ("本次会话暂无临时允许",
+                    "「本次会话允许」的应用会列在这里，重启后自动清空"),
+    }
+
     def _build_block(self, win, title: str) -> dict:
         head = tk.Frame(win, bg=_BG)
         head.pack(fill="x", padx=16, pady=(8, 2))
@@ -320,7 +367,6 @@ class _ManagerUI:
         wrap.pack(fill="x", padx=16)
         canvas = tk.Canvas(wrap, bg=_BG, highlightthickness=0,
                            height=_ROW_H * _VISIBLE_N)
-        canvas.pack(side="left", fill="x", expand=True)
         body = tk.Frame(canvas, bg=_BG)
         body_id = canvas.create_window((0, 0), window=body, anchor="nw")
         body.bind("<Configure>",
@@ -332,7 +378,8 @@ class _ManagerUI:
         foot = tk.Frame(win, bg=_BG)
         foot.pack(fill="x", padx=16)
         more = _ChevronButton(foot, command=lambda k=None: None)
-        return {"canvas": canvas, "body": body, "more": more}
+        return {"wrap": wrap, "canvas": canvas, "body": body, "more": more,
+                "canvas_packed": False, "empty": None}
 
     # ---- 渲染 ----
 
@@ -356,18 +403,33 @@ class _ManagerUI:
 
     def _render_block(self, key: str) -> None:
         blk = self._blocks[key]
-        body = blk["body"]
-        for child in body.winfo_children():
-            child.destroy()
         rows = self._filtered(self._entries.get(key, {}))
         expanded = self._expanded[key] or bool(self._query)
         visible = rows if expanded else rows[:_VISIBLE_N]
+
         if not visible:
-            tk.Label(body, text="（空）" if not self._query else "（无匹配）",
-                     bg=_BG, fg=_HINT_FG, font=_HINT_FONT,
-                     anchor="w").pack(fill="x", pady=2)
-        for proc, level, display, desc in visible:
-            _row(body, proc, level, display, self._on_remove, desc)
+            # 空态:整块替换滚动区(占位符永不进 Canvas,TC-EMPTY-02)
+            if blk["canvas_packed"]:
+                blk["canvas"].pack_forget()
+                blk["canvas_packed"] = False
+            title, hint = (("无匹配项", "换个关键词试试") if self._query
+                           else self._EMPTY_TEXT[key])
+            if blk["empty"] is None:
+                blk["empty"] = _EmptyState(blk["wrap"], title, hint)
+            else:
+                blk["empty"].set_state(title, hint)
+            blk["empty"].pack(fill="both", expand=True)
+        else:
+            if blk["empty"] is not None:
+                blk["empty"].pack_forget()
+            if not blk["canvas_packed"]:
+                blk["canvas"].pack(side="left", fill="x", expand=True)
+                blk["canvas_packed"] = True
+            body = blk["body"]
+            for child in body.winfo_children():
+                child.destroy()
+            for proc, level, display, desc in visible:
+                _row(body, proc, level, display, self._on_remove, desc)
 
         rest = len(rows) - _VISIBLE_N
         more = blk["more"]
