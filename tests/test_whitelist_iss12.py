@@ -480,6 +480,34 @@ class TestManagerWindow:
         removes[1].command()
         assert removed == ["excel.exe"]
 
+    def test_desc01_third_line_is_description(self, monkeypatch):
+        """TC-DESC-01:行内第三行为描述(app_description 内容直出)。"""
+        from deskpilot.appnames import app_description
+        removed, cleared, labels = [], [], []
+        entries = {"static": {"notepad.exe": "L2"}, "session": {}}
+        self._build(monkeypatch, entries, removed, cleared, labels)
+        expect = app_description("notepad.exe")[:20]
+        assert any(expect in s for s in labels)
+
+    def test_desc02_long_truncated(self, monkeypatch):
+        """TC-DESC-02:超长描述截断 ≤41 字并以省略号结尾。"""
+        monkeypatch.setattr("deskpilot.appnames.app_description",
+                            lambda p: "x" * 80)
+        removed, cleared, labels = [], [], []
+        entries = {"static": {"notepad.exe": "L2"}, "session": {}}
+        self._build(monkeypatch, entries, removed, cleared, labels)
+        third = [s for s in labels if s.startswith("xxxx")][0]
+        assert len(third) <= 41 and third.endswith("…")
+
+    def test_desc03_empty_omits_line(self, monkeypatch):
+        """TC-DESC-03:描述为空时第三行省略(空串标签仅剩尖角按钮初始值)。"""
+        monkeypatch.setattr("deskpilot.appnames.app_description",
+                            lambda p: "")
+        removed, cleared, labels = [], [], []
+        entries = {"static": {"notepad.exe": "L2"}, "session": {}}
+        self._build(monkeypatch, entries, removed, cleared, labels)
+        assert labels.count("") == 2        # 两区尖角按钮初始空串,无空描述行(直出)
+
     def test_clear_session_callback(self, monkeypatch):
         removed, cleared = [], []
         entries = {"static": {"notepad.exe": "L2"}, "session": {"a.exe": "L2"}}

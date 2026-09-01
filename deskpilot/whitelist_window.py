@@ -376,6 +376,7 @@ def build_window(parent, entries: dict, on_remove: Callable[[str], None],
 
 
 def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
+    from .appnames import app_description
     row = tk.Frame(parent, bg=_BG)
     row.pack(fill="x", pady=(4, 0))
     left = tk.Frame(row, bg=_BG)
@@ -386,10 +387,20 @@ def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
     name_lbl.pack(fill="x")
     tk.Label(left, text=f"{proc} · {level}", bg=_BG, fg=_HINT_FG,
              font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
+    desc = app_description(proc)
+    if desc:                                    # 空描述省略第三行(TC-DESC-03)
+        tk.Label(left, text=_truncate(desc), bg=_BG, fg=_HINT_FG,
+                 font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
     btn = _IconButton(row, action="remove", tooltip="移出白名单",
                       command=lambda p=proc: on_remove(p))
     btn.pack(side="right", padx=(10, 0))
     tk.Frame(parent, bg=_SEP, height=1).pack(fill="x", pady=(4, 0))
+
+
+def _truncate(text: str, n: int = 40) -> str:
+    """描述截断：压缩空白后 ≤n 字，超出补省略号(TC-DESC-02)。"""
+    t = " ".join(str(text).split())
+    return t if len(t) <= n else t[:n] + "…"
 
 
 # ---------- E4 入白确认 toast ----------
