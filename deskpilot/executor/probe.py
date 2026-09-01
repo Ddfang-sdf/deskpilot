@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ctypes
+import time
 from ctypes import wintypes
 
 user32 = ctypes.windll.user32
@@ -97,19 +98,28 @@ class DesktopProbe:
         return user32.GetForegroundWindow() == hwnd
 
     def activate(self, hwnd: int) -> bool:
-        """把窗口提到前台（恢复最小化 + 前台附加线程技巧）。"""
+        """把窗口提到前台（恢复最小化 + 前台附加线程技巧 + 短退避重试）。
+
+        ISS-0017 A：前台锁瞬时失败按 ≤3 次短退避重试；最终失败返回 False
+        （fail-closed，调用方必须检查，绝不成功假象）。
+        """
         if not user32.IsWindow(hwnd):
             return False
-        user32.ShowWindow(hwnd, _SW_RESTORE)
-        foreground = user32.GetForegroundWindow()
-        cur_thread = kernel32.GetCurrentThreadId()
-        fg_thread = user32.GetWindowThreadProcessId(foreground, None)
-        if fg_thread != cur_thread:
-            user32.AttachThreadInput(cur_thread, fg_thread, True)
-        try:
-            user32.SetForegroundWindow(hwnd)
-            user32.BringWindowToTop(hwnd)
-        finally:
+        for attempt in range(3):
+            user32.ShowWindow(hwnd, _SW_RESTORE)
+            foreground = user32.GetForegroundWindow()
+            cur_thread = kernel32.GetCurrentThreadId()
+            fg_thread = user32.GetWindowThreadProcessId(foreground, None)
             if fg_thread != cur_thread:
-                user32.AttachThreadInput(cur_thread, fg_thread, False)
-        return user32.GetForegroundWindow() == hwnd
+                user32.AttachThreadInput(cur_thread, fg_thread, True)
+            try:
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+            finally:
+                if fg_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, fg_thread, False)
+            if user32.GetForegroundWindow() == hwnd:
+                return True
+            if attempt < 2:
+                time.sleep(0.08)
+        return False

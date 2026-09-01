@@ -15,8 +15,8 @@ from .approval import ApprovalManager, compute_fingerprint
 from .audit import AuditLogger
 from .binding import BindingManager
 from .errors import (APPROVAL_DENIED, APPROVAL_TIMEOUT, AUDIT_FAILURE,
-                     EMERGENCY_STOP, INVALID_PARAMS, KEY_DENIED,
-                     KEY_UNKNOWN, NO_BINDING, NOT_WHITELISTED,
+                     ELEVATION_REQUIRED, EMERGENCY_STOP, INVALID_PARAMS,
+                     KEY_DENIED, KEY_UNKNOWN, NO_BINDING, NOT_WHITELISTED,
                      POLICY_VIOLATION, AuditFailure, ExecutorError)
 from .estop import EstopMonitor
 from .executor import Executor
@@ -28,6 +28,51 @@ from .whitelist_admin import NEVER_ENROLL, WhitelistAdmin
 
 _LEVEL_ORDER = {L0: 0, L1: 1, L2: 2, L3: 3}
 _TEXT_TOOLS = {"type_text", "type_element", "set_clipboard"}
+
+
+# ---------- ISS-0017 B：提权级别解析（公开接缝，测试可替身） ----------
+
+def _elevation_of_process(pid: int) -> str:
+    """进程提权级别:"full"(管理员) / "limited"(标准) / "default"(随父)。
+    打开/查询失败抛 OSError——由调用方按 fail-closed 拒绝。"""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    adv = ctypes.windll.advapi32
+    h = k32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
+    if not h:
+        raise OSError(f"OpenProcess 失败 pid={pid}")
+    try:
+        token = wintypes.HANDLE()
+        if not adv.OpenProcessToken(h, 0x0008, ctypes.byref(token)):
+            raise OSError(f"OpenProcessToken 失败 pid={pid}")
+        try:
+            etype = wintypes.DWORD()
+            out_len = wintypes.DWORD()
+            if not adv.GetTokenInformation(token, 18, ctypes.byref(etype),
+                                           ctypes.sizeof(etype),
+                                           ctypes.byref(out_len)):
+                raise OSError(f"GetTokenInformation 失败 pid={pid}")
+            return {1: "default", 2: "full", 3: "limited"}.get(
+                etype.value, "default")
+        finally:
+            k32.CloseHandle(token)
+    finally:
+        k32.CloseHandle(h)
+
+
+def _self_elevation() -> str:
+    """本进程提权级别（同上语义）。"""
+    import ctypes
+    return _elevation_of_process(ctypes.windll.kernel32.GetCurrentProcessId())
+
+
+def _pid_of_hwnd(hwnd: int) -> int | None:
+    import ctypes
+    from ctypes import wintypes
+    pid = wintypes.DWORD()
+    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value or None
 
 
 class Enforcement:
@@ -118,6 +163,23 @@ class Enforcement:
         if _LEVEL_ORDER[eff] > _LEVEL_ORDER[cap]:
             return self._deny(request, eff, POLICY_VIOLATION,
                               f"操作级别 {eff} 超出该进程白名单条目上限 {cap}", t0)
+
+        # ISS-0017 B：写前提权边界（fail-closed）——目标提权高于自身显式拒绝
+        if binding is not None:
+            pid = _pid_of_hwnd(binding.hwnd)
+            if pid:
+                try:
+                    target_lvl = _elevation_of_process(pid)
+                except OSError:
+                    return self._deny(
+                        request, eff, ELEVATION_REQUIRED,
+                        f"目标进程 {target_proc} 提权级别不可检测"
+                        f"（fail-closed 拒绝）", t0)
+                if target_lvl == "full" and _self_elevation() != "full":
+                    return self._deny(
+                        request, eff, ELEVATION_REQUIRED,
+                        f"目标进程 {target_proc} 以管理员身份运行，"
+                        f"请以管理员身份重启 daemon 后再操作", t0)
 
         # 闸三 按键许可表（仅 key 类触发；含输入场景判定）
         if tool == "key":

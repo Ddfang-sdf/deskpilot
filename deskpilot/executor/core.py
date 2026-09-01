@@ -25,13 +25,17 @@ if _com_initialize is None:
     import comtypes
     _com_initialize = comtypes.CoInitialize
 
+# ISS-0017 C：遮挡判定的 user32 接缝（默认真实 user32；测试可替身）
+_occlusion_user32 = None
+
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
 from ..errors import (ELEMENT_AMBIGUOUS, ELEMENT_DISABLED, ELEMENT_NOT_FOUND,
                       ELEMENT_UNSUPPORTED, EMERGENCY_STOP, INTERNAL_ERROR,
-                      OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE, ExecutorError)
+                      OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE, WINDOW_OCCLUDED,
+                      ExecutorError)
 from ..policy import normalize_key
 from .probe import DesktopProbe
 
@@ -536,6 +540,7 @@ class Executor:
         self._check_point(hwnd, x, y)
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
+        self._check_occlusion(hwnd, x, y)     # ISS-0017 C：激活后再验遮挡
         try:
             pyautogui.click(x, y)
         except pyautogui.FailSafeException as e:
@@ -547,6 +552,7 @@ class Executor:
         self._check_point(hwnd, *end)
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
+        self._check_occlusion(hwnd, *start)   # ISS-0017 C：激活后再验遮挡
         try:
             pyautogui.moveTo(*start)
             pyautogui.mouseDown()
@@ -639,6 +645,18 @@ class Executor:
         rect = self._probe.rect_of(hwnd)   # 执行时刻矩形
         if not (rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]):
             raise ExecutorError(OUT_OF_BOUNDS, "落点在绑定窗口矩形外")
+
+    def _check_occlusion(self, hwnd: int, x: int, y: int) -> None:
+        """ISS-0017 C：遮挡判定（激活后调用）——落点处顶层窗口非目标/
+        非其子窗口则拒绝（fail-closed,绝不盲打）。"""
+        u32 = _occlusion_user32
+        if u32 is None:
+            import ctypes
+            u32 = ctypes.windll.user32
+        pt_hwnd = u32.WindowFromPoint((x, y))
+        if pt_hwnd != hwnd and not u32.IsChild(hwnd, pt_hwnd):
+            raise ExecutorError(
+                WINDOW_OCCLUDED, "落点被其他窗口遮挡，请先前置目标窗口")
 
     def _resolve_window(self, window) -> int:
         if isinstance(window, int):
