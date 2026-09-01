@@ -201,22 +201,36 @@ class Enforcement:
 
         # 闸四 L3 同步审批（ISS-0003：同步等待人类裁决，AI 自发起后退出环路）
         if eff == L3:
-            fp = compute_fingerprint(tool, self._fingerprint_params(request))
-            desc = self._describe(request, binding)
-            image_path = self._capture_target(binding)
-            # ISS-0007 B：审批弹窗按目标窗口所在屏落位
-            target_rect = binding.window_rect if binding else None
-            decision = self._approvals.request_approval(
-                desc, fp, image_path=image_path, target_rect=target_rect)
-            if decision != "approve":
-                code = APPROVAL_TIMEOUT if decision == "timeout" \
-                    else APPROVAL_DENIED
-                guidance = ("审批超时：人类未在时限内裁决，请留意本地审批弹窗后"
-                            "重新发起" if decision == "timeout" else
-                            "受控操作未获人类批准")
-                return self._deny(request, eff, code,
-                                  f"{guidance}：{desc}", t0)
-            self._approvals.verify_and_consume(fp)    # 即验即销（服务内部闭环）
+            # ISS-0019：批量授权——同窗口同工具会话内后续同类免批
+            # （终端类与 key 类永不适用）
+            excluded = (tool == "key") or (
+                binding is not None
+                and binding.process_name in self._policy.terminal_apps)
+            if (binding is not None and not excluded
+                    and self._approvals.session_scope_of(tool, binding.token)
+                    == "window_session"):
+                pass                              # 批量命中：不弹窗直接放行
+            else:
+                fp = compute_fingerprint(tool, self._fingerprint_params(request))
+                desc = self._describe(request, binding)
+                image_path = self._capture_target(binding)
+                # ISS-0007 B：审批弹窗按目标窗口所在屏落位
+                target_rect = binding.window_rect if binding else None
+                decision = self._approvals.request_approval(
+                    desc, fp, image_path=image_path,
+                    target_rect=target_rect,
+                    tool=tool,
+                    binding_token=binding.token if binding else None,
+                    allow_scope=not excluded)
+                if decision not in ("approve", "approve_session"):
+                    code = APPROVAL_TIMEOUT if decision == "timeout" \
+                        else APPROVAL_DENIED
+                    guidance = ("审批超时：人类未在时限内裁决，请留意本地审批弹窗后"
+                                "重新发起" if decision == "timeout" else
+                                "受控操作未获人类批准")
+                    return self._deny(request, eff, code,
+                                      f"{guidance}：{desc}", t0)
+                self._approvals.verify_and_consume(fp)  # 即验即销（服务内部闭环）
             # 执行前复核（ISS-0003 整改项 E + 冻结双检查 §9.7）：
             # 同步等待裁决期间可能已触发急停、目标窗口可能已失效
             if self._estop.is_frozen():

@@ -93,6 +93,11 @@ class ApprovalToken:
     issued_at: float
     expires_at: float
     consumed: bool = False
+    # ISS-0019：授权范围——"once" 单操作(默认) / "window_session"
+    # 同一绑定窗口+同一工具的会话内后续同类(终端类与 key 类不适用)
+    scope: str = "once"
+    tool: str = ""
+    binding_token: str = ""
 
 
 @dataclass(frozen=True)

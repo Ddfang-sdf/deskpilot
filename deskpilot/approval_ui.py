@@ -72,7 +72,7 @@ class TkApprovalChannel:
                     decision = result_path.read_text(encoding="utf-8").strip()
                     result_path.unlink(missing_ok=True)
                     if decision in ("approve", "approve_always",
-                                    "deny", "timeout"):
+                                    "approve_session", "deny", "timeout"):
                         return decision
                     return "deny"      # 非法内容按拒绝（fail-closed）
             except OSError:

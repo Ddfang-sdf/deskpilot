@@ -178,6 +178,16 @@ def build_window(parent, description: str, result_path, timeout_s: float,
                             command=lambda: decide("approve"))
         approve.pack(side="right")
         _hover(approve, _APPROVE_BG, _APPROVE_HOVER)
+        # ISS-0019：批量授权——此后同类操作都允许（本窗口，本次会话）
+        batch = tk.Button(bar, text="此后同类允许", width=_BTN_WIDTH,
+                          relief="flat",
+                          bg=_DENY_BG, fg=_TITLE_FG,
+                          activebackground=_DENY_HOVER,
+                          activeforeground=_TITLE_FG,
+                          font=("Microsoft YaHei", 10), cursor="hand2",
+                          command=lambda: decide("approve_session"))
+        batch.pack(side="right", padx=(0, _BTN_GAP))
+        _hover(batch, _DENY_BG, _DENY_HOVER)
         deny_text = "拒绝"
     deny = tk.Button(bar, text=deny_text, width=_BTN_WIDTH, relief="flat",
                      bg=_DENY_BG, fg=_TITLE_FG,

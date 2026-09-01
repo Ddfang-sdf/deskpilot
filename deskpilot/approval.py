@@ -80,18 +80,43 @@ class ApprovalManager:
 
     def request_approval(self, description: str, fingerprint: str,
                          image_path: str | None = None,
-                         target_rect: tuple | None = None) -> str:
+                         target_rect: tuple | None = None, *,
+                         tool: str = "",
+                         binding_token: str | None = None,
+                         allow_scope: bool = True) -> str:
         """经审批通道同步请求人类裁决；批准则在服务内部签发授权记录（不经 AI）。
 
-        返回 "approve" / "deny" / "timeout"（ISS-0003 同步阻塞模型）。
+        返回 "approve" / "approve_session"（ISS-0019 批量）/ "deny" / "timeout"。
+        approve_session：同签发 once 令牌(当前操作消费)与 window_session 令牌
+        （同窗口同工具后续同类免批）；allow_scope=False（终端类/key 类）时
+        批量裁决按 once 处理。
         target_rect（ISS-0007）：绑定窗口矩形，弹窗按其所在屏落位。
         """
         decision = self._channel.request(description, fingerprint,
                                          image_path=image_path,
                                          target_rect=target_rect)
+        if decision == "approve_session" and not allow_scope:
+            decision = "approve"
         if decision == "approve":
             self.issue_token(fingerprint)
+        elif decision == "approve_session":
+            self.issue_token(fingerprint)
+            self.issue_token(fingerprint, scope="window_session", tool=tool,
+                             binding_token=binding_token or "")
         return decision
+
+    def session_scope_of(self, tool: str, binding_token: str) -> str | None:
+        """ISS-0019：查询是否存在有效 window_session 令牌(同工具同绑定)。
+
+        命中返回 "window_session"，否则 None（闸四批量判定接缝）。
+        """
+        now = self._clock()
+        for t in self._tokens.values():
+            if (t.scope == "window_session" and t.tool == tool
+                    and t.binding_token == binding_token
+                    and not t.consumed and t.expires_at > now):
+                return "window_session"
+        return None
 
     def request_enroll(self, process: str, description: str, fingerprint: str,
                        image_path: str | None = None,
@@ -113,10 +138,12 @@ class ApprovalManager:
         """替换审批通道（main 装配 M3 弹窗通道用）。"""
         self._channel = channel
 
-    def issue_token(self, fingerprint: str) -> ApprovalToken:
+    def issue_token(self, fingerprint: str, scope: str = "once",
+                    tool: str = "", binding_token: str = "") -> ApprovalToken:
         """签发审批令牌（M3 异步弹窗通道的人类批准回调路径）。
 
         令牌不经 AI：签发权只经本地审批通道触达本方法。
+        scope（ISS-0019）:"once" 单操作 / "window_session" 会话批量。
         """
         now = self._clock()
         token = ApprovalToken(
@@ -124,6 +151,7 @@ class ApprovalManager:
             fingerprint=fingerprint,
             issued_at=now,
             expires_at=now + self._ttl,
+            scope=scope, tool=tool, binding_token=binding_token,
         )
         self._tokens[token.token_id] = token
         return token
