@@ -376,7 +376,6 @@ def build_window(parent, entries: dict, on_remove: Callable[[str], None],
 
 
 def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
-    from .appnames import app_description
     row = tk.Frame(parent, bg=_BG)
     row.pack(fill="x", pady=(4, 0))
     left = tk.Frame(row, bg=_BG)
@@ -391,34 +390,68 @@ def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
                       command=lambda p=proc: on_remove(p))
     btn.pack(side="right", padx=(10, 0))
     tk.Frame(parent, bg=_SEP, height=1).pack(fill="x", pady=(4, 0))
-    # 悬浮描述（OS/厂商数据源；500ms 悬停浮出）
-    _Tooltip(name_lbl, app_description(proc))
 
 
 # ---------- E4 入白确认 toast ----------
 
-def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
-    """ISS-0012 §6 E4：入白确认 toast「已加入白名单 [撤销]」。
+_DARK = "#2B2B2B"
+_ACTION_BLUE = "#8AB4F8"          # Material dark snackbar 动作色
+_CONFIRM_GREEN = "#81C995"
 
-    on_undo 由装配侧接到 WhitelistAdmin.remove（误点立撤）。
+
+def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
+    """ISS-0012 §6 E4 v2（Gmail/Material 模式，TC-UNDO-01~06）。
+
+    深色卡片；8s 自动消失；× 立即关闭；「撤销」为亮蓝文字动作按钮；
+    点撤销 → 执行 on_undo + 切绿色确认态「✓ 已撤销」1.5s 后自动消失。
     """
     win = tk.Toplevel(parent)
     win.title("DeskPilot")
     win.overrideredirect(True)
     win.attributes("-topmost", True)
-    win.configure(bg="#FFFFFF")
+    win.configure(bg=_DARK)
 
-    card = tk.Frame(win, bg="#FFFFFF", highlightthickness=1,
-                    highlightbackground="#DDDDDD")
+    card = tk.Frame(win, bg=_DARK)
     card.pack(fill="both", expand=True)
-    body = tk.Frame(card, bg="#FFFFFF")
-    body.pack(fill="both", expand=True, padx=16, pady=12)
-    tk.Label(body, text=f"已加入白名单：{process}", bg="#FFFFFF",
-             font=_TEXT_FONT, anchor="w").pack(side="left")
-    tk.Button(body, text="撤销", width=8, relief="flat", bg="#F0F0F0",
-              font=_TEXT_FONT, cursor="hand2",
-              command=on_undo).pack(side="right", padx=(12, 0))
+    body = tk.Frame(card, bg=_DARK)
+    body.pack(fill="both", expand=True, padx=14, pady=10)
+
+    msg = tk.Label(body, text=f"已加入白名单：{process}", bg=_DARK,
+                   fg="#FFFFFF", font=("Microsoft YaHei", 10), anchor="w")
+    msg.pack(side="left")
+
+    def _dismiss() -> None:
+        try:
+            win.destroy()
+        except Exception:
+            pass
+
+    def _confirm_then_dismiss() -> None:
+        msg.configure(text="✓ 已撤销，已移出白名单", fg=_CONFIRM_GREEN)
+        undo_btn.pack_forget()
+        win.after(1500, _dismiss)
+
+    def _undo() -> None:
+        try:
+            on_undo()
+        finally:
+            _confirm_then_dismiss()
+
+    close = tk.Button(body, text="×", relief="flat", bd=0, bg=_DARK,
+                      fg="#BDBDBD", activebackground=_DARK,
+                      activeforeground="#FFFFFF",
+                      font=("Microsoft YaHei", 10), cursor="hand2",
+                      command=_dismiss)
+    close.pack(side="right", padx=(8, 0))
+    undo_btn = tk.Button(body, text="撤销", relief="flat", bd=0, bg=_DARK,
+                         fg=_ACTION_BLUE, activebackground=_DARK,
+                         activeforeground="#A8C7FA",
+                         font=("Microsoft YaHei", 10, "bold"),
+                         cursor="hand2", command=_undo)
+    undo_btn.pack(side="right", padx=(12, 0))
+
     win.geometry(f"{_WIDTH}x48+{win.winfo_screenwidth() - _WIDTH - 16}+40")
+    win.after(8000, _dismiss)                    # 8s 自动消失（业界 4~10s 档）
     return win
 
 

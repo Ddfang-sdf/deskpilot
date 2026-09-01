@@ -549,6 +549,7 @@ class TestEnrollNotice:
         class W:
             def pack(self, *a, **k): pass
             def place(self, *a, **k): pass
+            def pack_forget(self): pass
             def bind(self, *a, **k): pass
             def config(self, *a, **k): pass
             def configure(self, *a, **k): pass
@@ -669,6 +670,99 @@ class TestEnrollLabel:
                 ).read_text(encoding="utf-8")
         assert "本次会话允许" in text
         assert "「**本次允许**」" not in text
+
+
+# ---------- E4 入白确认 toast v2（TC-UNDO-01~06,2026-08-31 评审通过） ----------
+
+class TestEnrollNoticeV2:
+    """TC-UNDO:Gmail/Material 模式——自动消失/×关闭/撤销确认态/文字动作按钮。
+    断言:after 调度/destroy 调用/Label 文本/按钮 bg·fg/回调记录(替身直出)。"""
+
+    def _make(self, monkeypatch):
+        import deskpilot.whitelist_window as ww
+        rec = {"afters": [], "destroyed": 0, "labels": [], "buttons": [],
+               "undone": []}
+
+        class W:
+            def __init__(self, *a, **k):
+                self.text = k.get("text", "")
+                self.command = k.get("command")
+                self.bg = k.get("bg")
+                self.fg = k.get("fg")
+
+            def pack(self, *a, **k): pass
+            def place(self, *a, **k): pass
+            def pack_forget(self): pass
+            def bind(self, *a, **k): pass
+            def config(self, *a, **k): pass
+            def configure(self, *a, **k):
+                if "text" in k:
+                    self.text = k["text"]
+                    rec["labels"].append(k["text"])
+                if "fg" in k:
+                    self.fg = k["fg"]
+            def title(self, *a): pass
+            def overrideredirect(self, *a): pass
+            def attributes(self, *a, **k): pass
+            def geometry(self, *a): pass
+            def after(self, ms, fn=None):
+                rec["afters"].append(ms)
+                return "a1"
+            def destroy(self): rec["destroyed"] += 1
+            def winfo_screenwidth(self): return 2560
+            def winfo_screenheight(self): return 1440
+
+        class Lbl(W):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                rec["labels"].append(self.text)
+
+        class Btn(W):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                rec["buttons"].append(self)
+
+        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: W())
+        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W(*a, **k))
+        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: Lbl(*a, **k))
+        monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: Btn(*a, **k))
+        ww.build_enroll_notice(object(), "计算器（Windows Calculator）",
+                               on_undo=lambda: rec["undone"].append(1))
+        return rec
+
+    def test_undo01_auto_dismiss(self, monkeypatch):
+        """TC-UNDO-01:≤10s 自动消失调度。"""
+        rec = self._make(monkeypatch)
+        assert any(ms <= 10000 for ms in rec["afters"])
+
+    def test_undo02_close_button(self, monkeypatch):
+        """TC-UNDO-02:× 关闭按钮点击即销毁。"""
+        rec = self._make(monkeypatch)
+        close = [b for b in rec["buttons"] if b.text == "×"][0]
+        close.command()
+        assert rec["destroyed"] >= 1
+
+    def test_undo03_confirm_feedback(self, monkeypatch):
+        """TC-UNDO-03:点撤销→回调执行+文本切「已撤销」。"""
+        rec = self._make(monkeypatch)
+        undo = [b for b in rec["buttons"] if b.text == "撤销"][0]
+        undo.command()
+        assert rec["undone"] == [1]
+        assert any("已撤销" in s for s in rec["labels"])
+
+    def test_undo04_dismiss_after_confirm(self, monkeypatch):
+        """TC-UNDO-04:确认态后 ≤2s 调度销毁。"""
+        rec = self._make(monkeypatch)
+        undo = [b for b in rec["buttons"] if b.text == "撤销"][0]
+        undo.command()
+        assert any(ms <= 2000 for ms in rec["afters"])
+
+    def test_undo05_action_button_style(self, monkeypatch):
+        """TC-UNDO-05:撤销为文字动作按钮(bg=卡片底 #2B2B2B,亮蓝字)。"""
+        rec = self._make(monkeypatch)
+        undo = [b for b in rec["buttons"] if b.text == "撤销"][0]
+        assert undo.bg == "#2B2B2B"
+        assert undo.fg == "#8AB4F8"
 
 
 # ---------- E2 移出禁止图标（TC-ICON-01~04,2026-08-31 评审通过） ----------
