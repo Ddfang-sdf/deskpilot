@@ -425,6 +425,7 @@ class TestManagerWindow:
             def geometry(self, *a): pass
             def minsize(self, *a): pass
             def protocol(self, *a, **k): pass
+            def attributes(self, *a, **k): pass
             def yview(self, *a, **k): pass
             def create_window(self, *a, **k): return 1
             def itemconfig(self, *a, **k): pass
@@ -538,7 +539,7 @@ class TestManagerWindow:
         more = ui._blocks["static"]["more"]
         assert more.direction == "down"                 # ▼ 收拢态(直出)
         assert more.label.text == "更多 2 项"
-        more._command()                                 # 展开
+        more.command()                                 # 展开
         assert more.direction == "up"                   # ▲ 展开态(直出)
         assert more.label.text == "收起"
         assert len(ui._filtered(entries["static"])) == 7
@@ -805,6 +806,7 @@ class _FakeCanvas:
         self.cancelled = []
 
     def pack(self, *a, **k): pass
+    def pack_forget(self): pass
     def delete(self, *a, **k): self.calls.append(("delete", a))
     def create_oval(self, *a, **k): self.calls.append(("create_oval", a, k))
     def create_line(self, *a, **k): self.calls.append(("create_line", a, k))
@@ -827,44 +829,70 @@ class _FakeFrame:
 
 
 class TestRemoveIcon:
-    """TC-ICON-01~04:移出禁止图标(红圆环+粗横杆,悬停动效)。
-    断言:Canvas 绘图调用/after 调度/颜色状态(替身记录直出)。"""
+    """TC-ICON(A 方案):移出图标=系统 ⛔ 字形;悬停字号脉冲动效。
+    断言:字形文本/字号状态/after 调度(替身记录直出)。"""
 
     def _make(self, monkeypatch):
         import deskpilot.whitelist_window as ww
         ww._IconButton.instances.clear()
+
+        class FakeGlyph:
+            def __init__(self, *a, **k):
+                self.text = k.get("text", "")
+                self.font = k.get("font")
+                self.size = self.font[1] if self.font else None
+                self.handlers = {}
+                self.afters = []
+                self.cancelled = []
+
+            def pack(self, *a, **k): pass
+            def bind(self, seq, h): self.handlers[seq] = h
+            def configure(self, *a, **k):
+                if "font" in k:
+                    self.font = k["font"]
+                    self.size = self.font[1]
+            def after(self, ms, fn=None):
+                self.afters.append(ms)
+                return f"a{len(self.afters)}"
+            def after_cancel(self, i): self.cancelled.append(i)
+
         cv = _FakeCanvas()
         frame = _FakeFrame()
+        glyphs = []
+
+        def _mk_glyph(*a, **k):
+            g = FakeGlyph(*a, **k)
+            glyphs.append(g)
+            return g
+
         monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: cv)
         monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: frame)
+        monkeypatch.setattr(ww.tk, "Label", _mk_glyph)
         monkeypatch.setattr(ww, "_Tooltip",
                             lambda w, text: setattr(w, "_tip_text", text))
         btn = ww._IconButton(frame, action="remove", tooltip="移出白名单",
                              command=lambda: None)
-        return ww, btn, cv, frame
+        glyph = [g for g in glyphs if g.text][0]
+        return ww, btn, cv, frame, glyph
 
-    def test_icon01_prohibit_glyph(self, monkeypatch):
-        """TC-ICON-01:图标由圆环(create_oval)+横杆(create_line)构成。"""
-        _, btn, cv, _ = self._make(monkeypatch)
-        kinds = [c[0] for c in cv.calls]
-        assert "create_oval" in kinds                 # 圆环(直出)
-        assert "create_line" in kinds                 # 横杆(直出)
+    def test_icon01_glyph_is_prohibit(self, monkeypatch):
+        """TC-ICON-01(A):图标为系统 ⛔ 字形。"""
+        _, btn, cv, _, glyph = self._make(monkeypatch)
+        assert glyph.text == "⛔"                        # 字形(直出)
 
-    def test_icon02_hover_animation(self, monkeypatch):
-        """TC-ICON-02:Enter 调度动效(≤50ms)且颜色向红;Leave 停止并还原。"""
-        ww, btn, cv, _ = self._make(monkeypatch)
-        cv.handlers["<Enter>"](None)
-        assert cv.afters and min(cv.afters) <= 50     # 动效已调度(直出)
-        # 动效帧颜色相对基色向红变化
-        assert btn._current_color() != btn._base_color
-        afters_before = len(cv.afters)
-        cv.handlers["<Leave>"](None)
-        assert btn._current_color() == btn._base_color  # 还原(直出)
-        assert len(cv.afters) <= afters_before + 1    # 不再持续调度
+    def test_icon02_hover_pulse(self, monkeypatch):
+        """TC-ICON-02(A):Enter 字号脉冲(≤50ms 调度)且 size>基值;Leave 还原。"""
+        ww, btn, cv, _, glyph = self._make(monkeypatch)
+        glyph.handlers["<Enter>"](None)
+        assert glyph.afters and min(glyph.afters) <= 50   # 脉冲调度(直出)
+        assert btn._current_size() > btn._base_size       # 已变大(直出)
+        glyph.handlers["<Leave>"](None)
+        assert btn._current_size() == btn._base_size      # 还原(直出)
+        assert glyph.cancelled                            # 动效已取消(直出)
 
     def test_icon03_command_unchanged(self, monkeypatch):
         """TC-ICON-03:点击行为与回调进程名不变。"""
-        ww, btn, cv, _ = self._make(monkeypatch)
+        ww, btn, cv, _, glyph = self._make(monkeypatch)
         removed = []
         btn.command = lambda p="excel.exe": removed.append(p)
         btn.command()
@@ -872,9 +900,8 @@ class TestRemoveIcon:
 
     def test_icon04_tooltip_kept(self, monkeypatch):
         """TC-ICON-04:「移出白名单」悬浮提示绑定保留。"""
-        _, btn, cv, frame = self._make(monkeypatch)
-        assert getattr(frame, "_tip_text", None) == "移出白名单" or \
-            getattr(cv, "_tip_text", None) == "移出白名单"
+        _, btn, cv, frame, glyph = self._make(monkeypatch)
+        assert getattr(frame, "_tip_text", None) == "移出白名单"
 
 class TestRequestRemoveTool:
     """场景:AI 请求撤回,人类裁决后才执行。

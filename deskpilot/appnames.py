@@ -15,7 +15,9 @@ ctypes GetFileVersionInfoW / SHLoadIndirectString，零第三方依赖。
 from __future__ import annotations
 
 import ctypes
+import json
 import shutil
+import subprocess
 import winreg
 import xml.etree.ElementTree as ET
 from ctypes import wintypes
@@ -39,6 +41,7 @@ def app_display_name(process: str, window_title: str = "") -> str:
     path = _resolve_exe(proc)
     eng = _file_string(path, "FileDescription") if path else None
     local = (_mui_description(path) if path else None) \
+        or _name_from_startapps(proc, eng) \
         or _appx_display_name(proc, eng)
     if local and eng and local.lower() != eng.lower():
         return f"{local}（{eng}）"
@@ -46,18 +49,182 @@ def app_display_name(process: str, window_title: str = "") -> str:
 
 
 def app_description(process: str) -> str:
-    """ISS-0012 E2：进程 → 用户可读描述（悬浮提示用；全部来自 OS/厂商数据）。
+    """ISS-0012 E2：进程 → 用户可读描述（悬浮/行内提示用）。
 
-    解析序：① UWP 清单 Description（ms-resource 本地化，与名称同源，
-    含 stub 的 FileDescription↔包短名恒等匹配）；② 版本信息
-    FileDescription + CompanyName 组合；③ 回退进程名本身。
+    源注册表按序命中：AppX Description → Uninstall DisplayName →
+    版本信息组合 → 进程名（诚实回退，不编造）；全部来自 OS/厂商数据。
     """
     proc = str(process).strip()
     if not proc:
         return str(process)
-    key = proc.lower()
+    for src in _DESC_SOURCES:
+        r = src(proc.lower())
+        if r:
+            return r
+    return proc
+
+
+def _resolve_exe(proc: str) -> str | None:
+    """进程名 → exe 全路径：源注册表首命中（扩展=往 _SOURCES 注册一行）。"""
+    return _first_hit(_SOURCES, str(proc).strip().lower())
+
+
+def _first_hit(sources, proc):
+    """按序调用各源，返回首个非空结果；后续源不再调用（短路）。"""
+    for s in sources:
+        r = s(proc)
+        if r:
+            return r
+    return None
+
+
+# ---------- exe 路径源（统一契约:(proc) -> path | None） ----------
+
+def _from_running_process(proc: str) -> str | None:
+    """运行进程枚举：基名匹配 → 全路径（应用要操作时多半在跑）。"""
+    return _running_procs().get(proc)
+
+
+def _running_procs() -> dict:
+    """运行进程基名(小写)→全路径（psapi EnumProcesses，进程级缓存一次）。"""
+    if not hasattr(_running_procs, "_cache"):
+        import ctypes
+        from ctypes import wintypes
+        out = {}
+        psapi = ctypes.windll.psapi
+        k32 = ctypes.windll.kernel32
+        pids = (wintypes.DWORD * 1024)()
+        needed = wintypes.DWORD()
+        if psapi.EnumProcesses(pids, ctypes.sizeof(pids),
+                               ctypes.byref(needed)):
+            n = min(needed.value // 4, 1024)
+            for i in range(n):
+                h = k32.OpenProcess(0x1000, False, pids[i])
+                if not h:
+                    continue
+                try:
+                    buf = ctypes.create_unicode_buffer(1024)
+                    size = wintypes.DWORD(1024)
+                    if k32.QueryFullProcessImageNameW(h, 0, buf,
+                                                      ctypes.byref(size)):
+                        p = buf.value
+                        out[Path(p).name.lower()] = p
+                finally:
+                    k32.CloseHandle(h)
+        _running_procs._cache = out
+    return _running_procs._cache
+
+
+def _from_path_env(proc: str) -> str | None:
+    """PATH 环境变量解析。"""
+    return shutil.which(proc)
+
+
+def _from_app_paths(proc: str) -> str | None:
+    """App Paths 注册表解析。"""
+    try:
+        with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{proc}") as k:
+            v, _ = winreg.QueryValueEx(k, "")
+            if v:
+                return str(v)
+    except OSError:
+        pass
+    return None
+
+
+def _from_start_menu_lnk(proc: str) -> str | None:
+    """开始菜单快捷方式：目标基名匹配 → 目标路径（进程级缓存映射）。"""
+    return _start_menu_map().get(proc)
+
+
+def _start_menu_map() -> dict:
+    """开始菜单 .lnk 目标基名(小写)→目标路径（一次扫描缓存）。"""
+    if not hasattr(_start_menu_map, "_cache"):
+        import os
+        m = {}
+        try:
+            from comtypes.client import CreateObject
+            ws = CreateObject("WScript.Shell")
+            dirs = [Path(os.environ.get("ProgramData", r"C:\ProgramData"))
+                    / r"Microsoft\Windows\Start Menu\Programs",
+                    Path(os.environ.get("APPDATA", ""))
+                    / r"Microsoft\Windows\Start Menu\Programs"]
+            for d in dirs:
+                if not d.is_dir():
+                    continue
+                for lnk in d.rglob("*.lnk"):
+                    try:
+                        t = ws.CreateShortcut(str(lnk)).TargetPath
+                        if t:
+                            m.setdefault(Path(t).name.lower(), t)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        _start_menu_map._cache = m
+    return _start_menu_map._cache
+
+
+def _from_uninstall_icon(proc: str) -> str | None:
+    """Uninstall 注册表 DisplayIcon 解析（基名匹配）。"""
+    return _uninstall_map().get(proc, (None, None))[0]
+
+
+def _uninstall_map() -> dict:
+    """Uninstall 三 hive：exe 基名(小写)→(DisplayIcon 路径, DisplayName)。"""
+    if not hasattr(_uninstall_map, "_cache"):
+        import re
+        m = {}
+        hives = (
+            (winreg.HKEY_LOCAL_MACHINE,
+             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (winreg.HKEY_LOCAL_MACHINE,
+             r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (winreg.HKEY_CURRENT_USER,
+             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        )
+        for hive, sub in hives:
+            try:
+                with winreg.OpenKey(hive, sub) as k:
+                    n = winreg.QueryInfoKey(k)[0]
+                    for i in range(n):
+                        try:
+                            with winreg.OpenKey(k, winreg.EnumKey(k, i)) as app:
+                                icon = _reg_str(app, "DisplayIcon")
+                                name = _reg_str(app, "DisplayName")
+                                if icon and ".exe" in icon.lower():
+                                    p = icon.strip('"').split(",")[0]
+                                    m.setdefault(Path(p).name.lower(),
+                                                 (p, name or None))
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+        _uninstall_map._cache = m
+    return _uninstall_map._cache
+
+
+def _reg_str(key, name: str) -> str:
+    try:
+        v, _ = winreg.QueryValueEx(key, name)
+        return str(v) if v else ""
+    except OSError:
+        return ""
+
+
+# 源注册表（扩展点：新数据源=注册一行小纯函数；勿写 if 链）
+_SOURCES = [_from_running_process, _from_path_env, _from_app_paths,
+            _from_start_menu_lnk, _from_uninstall_icon]
+
+
+# ---------- 描述源（统一契约:(proc) -> 描述 | None） ----------
+
+def _desc_from_appx(proc: str) -> str | None:
+    """AppX 清单 Description（含 stub 的 FD↔包短名恒等匹配）。"""
     for full, _short, exes, _disp, desc in _package_index():
-        if key in exes and desc:
+        if proc in exes and desc:
             r = _resolve_ms_resource(desc, full) or desc
             if r:
                 return r
@@ -73,26 +240,28 @@ def app_description(process: str) -> str:
                 r = _resolve_ms_resource(desc, full) or desc
                 if r:
                     return r
-        company = _file_string(path, "CompanyName")
-        return f"{eng} · {company}" if company else eng
-    return proc
-
-
-def _resolve_exe(proc: str) -> str | None:
-    """进程名 → exe 全路径（PATH 优先，App Paths 注册表兜底）。"""
-    p = shutil.which(proc)
-    if p:
-        return p
-    try:
-        with winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{proc}") as k:
-            v, _ = winreg.QueryValueEx(k, "")
-            if v:
-                return str(v)
-    except OSError:
-        pass
     return None
+
+
+def _desc_from_uninstall_name(proc: str) -> str | None:
+    """Uninstall DisplayName。"""
+    return _uninstall_map().get(proc, (None, None))[1]
+
+
+def _desc_from_version(proc: str) -> str | None:
+    """版本信息组合：FileDescription · CompanyName。"""
+    path = _resolve_exe(proc)
+    if not path:
+        return None
+    eng = _file_string(path, "FileDescription")
+    if not eng:
+        return None
+    company = _file_string(path, "CompanyName")
+    return f"{eng} · {company}" if company else eng
+
+
+_DESC_SOURCES = [_desc_from_appx, _desc_from_uninstall_name,
+                 _desc_from_version]
 
 
 # ---------- MUI（经典 Win32 本地化机制） ----------
@@ -141,6 +310,68 @@ _PACKAGE_KEYS = (
      r"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx"
      r"\PackageRepository\Packages"),
 )
+
+
+# ---------- shell 注册源（S1：UWP 本地化名称,中文优先） ----------
+
+def _startapps_map() -> dict:
+    """开始菜单注册应用快照：包族(名_哈希) → 本地化名（进程级一次性缓存）。
+
+    数据来自 shell 注册源（Get-StartApps，与开始菜单同源，含本地化名称）；
+    失败/超时（3s）返回空表，调用链自然降级（TC-SA-02/05）。
+    """
+    if not hasattr(_startapps_map, "_cache"):
+        m: dict[str, str] = {}
+        try:
+            out = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command",
+                 "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+                 "Get-StartApps | ConvertTo-Json -Compress"],
+                capture_output=True, timeout=3)
+            if out.returncode == 0 and out.stdout.strip():
+                data = json.loads(out.stdout.decode("utf-8", errors="replace"))
+                if isinstance(data, dict):
+                    data = [data]
+                for item in data:
+                    appid = str(item.get("AppID", ""))
+                    name = str(item.get("Name", "")).strip()
+                    fam = appid.split("!")[0]
+                    if fam and name:
+                        m.setdefault(fam, name)
+        except Exception:
+            pass
+        _startapps_map._cache = m
+    return _startapps_map._cache
+
+
+def _name_from_startapps(proc: str, eng: str | None) -> str | None:
+    """proc → 包族（清单 exe 匹配；stub 走 FD 恒等）→ 本地化名。"""
+    fam = _package_family_of(proc, eng)
+    return _startapps_map().get(fam) if fam else None
+
+
+def _package_family_of(proc: str, eng: str | None) -> str | None:
+    """proc → 包族名（Name_PublisherHash 形，与 AppID 族对齐）。"""
+    for full, _short, exes, _d, _desc in _package_index():
+        if proc in exes:
+            return _family_of(full)
+    if eng:
+        fd = _norm(eng)
+        for full, short, _e, _d, _desc in _package_index():
+            cands = {_norm(short)}
+            if "." in short:
+                cands.add(_norm(short.split(".", 1)[1]))
+            if fd in cands:
+                return _family_of(full)
+    return None
+
+
+def _family_of(full_name: str) -> str:
+    """包全名(Microsoft.X_1.2.3.4_x64__hash)→族名(Microsoft.X_hash)。"""
+    parts = full_name.split("_")
+    if len(parts) >= 2:
+        return f"{parts[0]}_{parts[-1]}"
+    return full_name
 
 
 def _appx_display_name(proc: str, eng_desc: str | None) -> str | None:

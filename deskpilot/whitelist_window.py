@@ -65,33 +65,21 @@ def _draw_chevron(canvas, direction: str, color: str) -> None:
                        capstyle="round", joinstyle="round", tags="chev")
 
 
-class _ChevronButton:
-    """尖角图标按钮（▼ 更多 / ▲ 收起）：无底色、悬停变色、点击整行。"""
+class _GraphicButton:
+    """图形按钮统一基类（通用性原则：尖角/禁止/…都是绘制回调的入参，
+    不再新增 bespoke 按钮类）。子类实现 _draw(color) 与可选的悬停行为。"""
 
-    def __init__(self, parent, command):
-        self._command = command
-        self.direction = "down"
+    def __init__(self, parent, command, tooltip: str = "",
+                 width: int = 22, height: int = 22):
+        self.command = command
         self.frame = tk.Frame(parent, bg=_BG, cursor="hand2")
-        self.chevron = tk.Canvas(self.frame, width=12, height=8, bg=_BG,
-                                 highlightthickness=0, cursor="hand2")
-        self.chevron.pack(side="left", pady=(3, 0))
-        self.label = tk.Label(self.frame, text="", bg=_BG, fg="#666666",
-                              font=("Microsoft YaHei", 9), cursor="hand2")
-        self.label.pack(side="left", padx=(4, 0))
-        _draw_chevron(self.chevron, "down", "#666666")
-        for w in (self.frame, self.chevron, self.label):
-            w.bind("<Button-1>", lambda e: self._command())
-            w.bind("<Enter>", lambda e: self._set_color("#202020"))
-            w.bind("<Leave>", lambda e: self._set_color("#666666"))
-
-    def _set_color(self, color: str) -> None:
-        self.label.configure(fg=color)
-        _draw_chevron(self.chevron, self.direction, color)
-
-    def set_state(self, text: str, direction: str) -> None:
-        self.direction = direction
-        self.label.configure(text=text)
-        _draw_chevron(self.chevron, direction, "#666666")
+        self.cv = tk.Canvas(self.frame, width=width, height=height, bg=_BG,
+                            highlightthickness=0, cursor="hand2")
+        self.cv.pack()
+        for w in (self.frame, self.cv):
+            w.bind("<Button-1>", lambda e: self.command())
+        if tooltip:
+            _Tooltip(self.frame, tooltip)
 
     def pack(self, *a, **k):
         self.frame.pack(*a, **k)
@@ -100,63 +88,109 @@ class _ChevronButton:
         self.frame.pack_forget()
 
 
-class _IconButton:
-    """行内图标按钮（禁止样式 ⛔：圆环+粗横杆；悬停动效：灰→红+横杆划入）。
+def fade_in(win, total_ms: int = 120, step_ms: int = 20):
+    """窗口淡入（通用助手）：alpha 0→1 按 step_ms 步进。
 
-    业界语义：禁止/移出关联（UX.SE/NNg 共识）；icon-only 配悬浮提示（SSW）。
+    返回帧生成器（测试观测口：消费即逐帧应用并产出 alpha 值）；
+    有 after 能力的窗口同时按步进调度驱动。
+    """
+    steps = max(1, total_ms // step_ms)
+
+    def frames():
+        for i in range(steps + 1):
+            yield round(i / steps, 3)
+
+    def apply(a: float) -> None:
+        win.attributes("-alpha", a)
+
+    apply(0.0)
+    after = getattr(win, "after", None)
+    if callable(after):
+        def drive(i: int) -> None:
+            apply(round(i / steps, 3))
+            if i < steps:
+                after(step_ms, lambda: drive(i + 1))
+        drive(1)
+    return (a for a in frames() if not apply(a))
+
+
+def focus_existing_or_exit(title: str) -> bool:
+    """单例语义（通用助手）：已存在同名顶层窗口则聚焦并返回 True。"""
+    import ctypes
+    hwnd = ctypes.windll.user32.FindWindowW(None, title)
+    if hwnd:
+        ctypes.windll.user32.ShowWindow(hwnd, 9)           # SW_RESTORE
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+        return True
+    return False
+
+
+class _ChevronButton(_GraphicButton):
+    """尖角图标按钮（▼ 更多 / ▲ 收起）：_GraphicButton 的尖角绘制变体。"""
+
+    def __init__(self, parent, command):
+        super().__init__(parent, command, tooltip="", width=12, height=8)
+        self.direction = "down"
+        self.label = tk.Label(self.frame, text="", bg=_BG, fg="#666666",
+                              font=("Microsoft YaHei", 9), cursor="hand2")
+        self.label.pack(side="left", padx=(4, 0))
+        _draw_chevron(self.cv, "down", "#666666")
+        for w in (self.frame, self.cv, self.label):
+            w.bind("<Button-1>", lambda e: self.command())
+            w.bind("<Enter>", lambda e: self._set_color("#202020"))
+            w.bind("<Leave>", lambda e: self._set_color("#666666"))
+
+    def _set_color(self, color: str) -> None:
+        self.label.configure(fg=color)
+        _draw_chevron(self.cv, self.direction, color)
+
+    def set_state(self, text: str, direction: str) -> None:
+        self.direction = direction
+        self.label.configure(text=text)
+        _draw_chevron(self.cv, direction, "#666666")
+
+
+class _IconButton(_GraphicButton):
+    """行内图标按钮（系统 ⛔ 字形；悬停字号脉冲动效）。
+
     instances：类级注册表（测试观测口）。
-    _base_color / _current_color()：动效状态观测口（TC-ICON-02 断言点）。
+    _base_size / _current_size()：动效状态观测口（TC-ICON-02 断言点）。
     """
 
     instances: list = []
 
-    _BASE = "#999999"
-    _HOVER = "#C8391F"
-    _STEPS = 6
     _STEP_MS = 40
 
     def __init__(self, parent, action: str, tooltip: str, command):
+        super().__init__(parent, command, tooltip=tooltip)
         self.action = action
-        self.command = command
-        self._base_color = self._BASE
-        self._color = self._BASE
+        # A 方案:系统 ⛔ 字形(Segoe UI Emoji),弃手绘像素图;悬停=字号脉冲
+        self.cv.pack_forget()
+        self._base_size = 12
+        self._size = self._base_size
         self._step = 0
         self._anim_id = None
-        self.frame = tk.Frame(parent, bg=_BG, cursor="hand2")
-        self.cv = tk.Canvas(self.frame, width=22, height=22, bg=_BG,
-                            highlightthickness=0, cursor="hand2")
-        self.cv.pack()
-        self._draw_static(self._BASE)
-        for w in (self.frame, self.cv):
-            w.bind("<Button-1>", lambda e: self.command())
-        self.cv.bind("<Enter>", self._on_enter)
-        self.cv.bind("<Leave>", self._on_leave)
-        _Tooltip(self.frame, tooltip)          # 提示绑 frame,避免与动效抢绑定
+        self.glyph = tk.Label(self.frame, text="⛔", bg=_BG,
+                              font=("Segoe UI Emoji", self._base_size),
+                              cursor="hand2")
+        self.glyph.pack()
+        self.glyph.bind("<Button-1>", lambda e: self.command())
+        self.glyph.bind("<Enter>", self._on_enter)
+        self.glyph.bind("<Leave>", self._on_leave)
         _IconButton.instances.append(self)
 
     # ---- 观测口 ----
 
-    def _current_color(self) -> str:
-        return self._color
+    def _current_size(self) -> int:
+        return self._size
 
-    # ---- 绘制 ----
+    # ---- 动效（字号脉冲 12→15,40ms 步进） ----
 
-    def _draw_static(self, color: str) -> None:
-        self._color = color
-        self.cv.delete("x")
-        self.cv.create_oval(3, 3, 19, 19, outline=color, width=1.8, tags="x")
-        self.cv.create_line(6.5, 11, 15.5, 11, fill=color, width=2.5,
-                            capstyle="round", tags="x")
+    _PULSE = (13, 14, 15)
 
-    def _draw_frame(self, color: str, frac: float) -> None:
-        self._color = color
-        self.cv.delete("x")
-        self.cv.create_oval(3, 3, 19, 19, outline=color, width=1.8, tags="x")
-        # 横杆自左向右划入
-        self.cv.create_line(6.5, 11, 6.5 + 9.0 * frac, 11, fill=color,
-                            width=2.5, capstyle="round", tags="x")
-
-    # ---- 动效 ----
+    def _set_size(self, size: int) -> None:
+        self._size = size
+        self.glyph.configure(font=("Segoe UI Emoji", size))
 
     def _on_enter(self, _e=None) -> None:
         self._cancel_anim()
@@ -164,34 +198,27 @@ class _IconButton:
         self._animate_in()
 
     def _animate_in(self) -> None:
-        self._step += 1
-        frac = self._step / self._STEPS
-        self._draw_frame(_mix_hex(self._BASE, self._HOVER, frac), frac)
-        if self._step < self._STEPS:
-            self._anim_id = self.cv.after(self._STEP_MS, self._animate_in)
+        if self._step < len(self._PULSE):
+            self._set_size(self._PULSE[self._step])
+            self._step += 1
+            self._anim_id = self.glyph.after(self._STEP_MS, self._animate_in)
 
     def _on_leave(self, _e=None) -> None:
         self._cancel_anim()
-        self._draw_static(self._BASE)
+        self._set_size(self._base_size)
 
     def _cancel_anim(self) -> None:
         if self._anim_id is not None:
             try:
-                self.cv.after_cancel(self._anim_id)
+                self.glyph.after_cancel(self._anim_id)
             except Exception:
                 pass
             self._anim_id = None
 
-    def pack(self, *a, **k):
-        self.frame.pack(*a, **k)
+    # ---- 观测口 ----
 
-
-def _mix_hex(c1: str, c2: str, frac: float) -> str:
-    """两个 #RRGGBB 颜色按 frac 线性插值。"""
-    a = tuple(int(c1[i:i + 2], 16) for i in (1, 3, 5))
-    b = tuple(int(c2[i:i + 2], 16) for i in (1, 3, 5))
-    m = tuple(round(a[i] + (b[i] - a[i]) * frac) for i in range(3))
-    return f"#{m[0]:02x}{m[1]:02x}{m[2]:02x}"
+    def _current_size(self) -> int:
+        return self._size
 
 
 class _Tooltip:
@@ -339,7 +366,7 @@ class _ManagerUI:
         rest = len(rows) - _VISIBLE_N
         more = blk["more"]
         if not self._query and rest > 0:
-            more._command = (lambda k=key: self._toggle(k))
+            more.command = (lambda k=key: self._toggle(k))
             if self._expanded[key]:
                 more.set_state("收起", "up")
             else:
@@ -372,6 +399,7 @@ def build_window(parent, entries: dict, on_remove: Callable[[str], None],
     win.minsize(460, 420)
     win.configure(bg=_BG)
     win._manager = _ManagerUI(win, entries, on_remove, on_clear_session)
+    fade_in(win)                                   # TC-ANIM:淡入动效
     return win
 
 
@@ -593,7 +621,12 @@ def _http_json(url: str, payload: dict | None = None) -> dict:
 
 
 def main() -> None:
-    """--whitelist-manager <base_url>：管理窗口进程（经本机 HTTP 操作）。"""
+    """--whitelist-manager <base_url>：管理窗口进程（经本机 HTTP 操作）。
+
+    单例语义（TC-SINGLE）：已存在管理窗口则聚焦并退出，不再开新窗。
+    """
+    if focus_existing_or_exit("DeskPilot 白名单管理"):
+        return
     base = sys.argv[1].rstrip("/")
     root = tk.Tk()
     root.withdraw()
