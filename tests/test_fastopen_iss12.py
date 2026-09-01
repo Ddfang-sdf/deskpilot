@@ -36,6 +36,15 @@ class TestEndpointDisplayFields:
                           executor=executor, audit=audit_log)
         d = HttpDaemon(ctx, port=0, whitelist_admin=a)
         d.start()
+        # 就绪等待:serve 线程绑定监听后再放行用例(与 whitelist 端点同规)
+        import urllib.error
+        for _ in range(50):
+            try:
+                with urllib.request.urlopen(
+                        f"http://127.0.0.1:{d.port}/health", timeout=0.5):
+                    break
+            except (urllib.error.URLError, OSError):
+                time.sleep(0.1)
         yield d
         d.stop()
 
