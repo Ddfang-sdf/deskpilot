@@ -18,6 +18,13 @@ import pyautogui
 import pyperclip
 import uiautomation
 
+# ISS-0016 A：线程级 COM 惰性初始化（daemon 线程池上 UIA 可用的前提）。
+# 真实初始化函数；测试中可替身计数（幂等性断言点）。
+_com_initialize = None
+if _com_initialize is None:
+    import comtypes
+    _com_initialize = comtypes.CoInitialize
+
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
@@ -318,14 +325,35 @@ class Executor:
     # ---------- M2 元素级驱动（详细设计 §9.2 uia 子模块 / §14.7） ----------
 
     def _element_root(self, hwnd: int):
-        """绑定窗口的 UIA 根控件；窗口消失 → WINDOW_GONE。"""
-        if self._element_source is not None:
-            root = self._element_source(hwnd)
-        else:
-            root = uiautomation.ControlFromHandle(hwnd)
+        """绑定窗口的 UIA 根控件；窗口消失 → WINDOW_GONE。
+
+        ISS-0016 A：先线程级 COM 惰性初始化（幂等）；
+        ISS-0016 B：COM 通道异常（未初始化/RPC 失败）→ INTERNAL_ERROR
+        "UIA 通道异常"（真因不被 WINDOW_GONE 吞掉）。
+        """
+        self._ensure_com()
+        try:
+            if self._element_source is not None:
+                root = self._element_source(hwnd)
+            else:
+                root = uiautomation.ControlFromHandle(hwnd)
+        except Exception as e:
+            raise ExecutorError(INTERNAL_ERROR,
+                                f"UIA 通道异常: {e}") from e
         if root is None:
             raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
         return root
+
+    def _ensure_com(self) -> None:
+        """ISS-0016 A：当前线程的 COM 惰性初始化（threading.local 幂等）。"""
+        local = getattr(self, "_com_local", None)
+        if local is None:
+            import threading
+            local = self._com_local = threading.local()
+        if getattr(local, "inited", False):
+            return
+        _com_initialize()
+        local.inited = True
 
     def _find_elements(self, root, *, name=None, automation_id=None) -> list:
         """按名称/自动化标识在绑定窗口树内查找（§14.7 定位条件）。

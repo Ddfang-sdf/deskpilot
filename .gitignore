@@ -24,3 +24,6 @@ mcp_call_daemon.*
 /deskpilot-*-windows-x64.zip
 /deskpilot-*-windows-x64.zip.sha256
 /release-body.md
+
+# 其他 Agent 会话的运行时产物
+@AutomationLog.txt

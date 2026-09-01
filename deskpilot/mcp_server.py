@@ -42,145 +42,112 @@ async def call_with_progress(work: Awaitable, report: Callable[[], None],
 TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     # ---- L0 感知类（详细设计 §12.4）----
     "screenshot": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】截取真实屏幕图像。"
-        "需要看桌面或某个应用长什么样时用。scope:fullscreen=整个虚拟桌面"
-        "(多屏含负坐标)、window=绑定窗口、region=rect 矩形。"
-        "返回图像路径+宽高+coord_space+monitors 屏列表。",
+        "description": "拍 Windows 真实桌面/应用窗口的图像,返回可供多模态模型直接查看的图像内容;浏览器页面请用浏览器工具(它的网页视口截图不是桌面)。scope:fullscreen=整个虚拟桌面(多屏含负坐标)、window=绑定窗口、region=rect 矩形。另返回图像路径+宽高+coord_space+monitors 屏列表。",
         "required": {"scope": ("enum", ["fullscreen", "region", "window"])},
         "optional": {"rect": ("rect",), "window": ("any",)},
         "conditional": {"region": ["rect"], "window": ["window"]},
     },
     "ocr": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】识别图像中的文字"
-        "(OCR)。纯文本模型「看」窗口内容、或要定位某段文字坐标时用。"
-        "source=图像路径或 screen。返回 [{text, position}],可直接配 attach 使用。",
+        "description": "识别 Windows 桌面/窗口图像中的文字(OCR):要精确文字清单或文字定位时用我;布局理解请直接查看 screenshot 返回的图像(多模态可见)。浏览器网页文字请用浏览器工具读 DOM。source=图像路径或 screen,返回 [{text, position}],可直接配 attach 使用。",
         "required": {"source": ("any",)}, "optional": {}},
     "find_window": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】按标题或进程名查找"
-        "桌面上的应用窗口,返回 hwnd/标题/进程/矩形。要操作任何应用前先调用"
-        "它定位目标;找到后用 attach 绑定,再读 get_ui_tree 看内容。",
+        "description": "查找 Windows 桌面上的应用窗口(按标题/进程名),返回 hwnd/标题/进程/矩形;网页定位请用浏览器工具。操作任何应用前先调用它定位,再 attach 绑定、get_ui_tree 看内容。不要为此写临时脚本(uiautomation/mss)——窗口枚举已封装。",
         "required": {},
         "optional": {"title": ("str",), "process": ("str",)},
         "at_least_one": ["title", "process"],
     },
     "get_ui_tree": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】读取绑定窗口的界面"
-        "元素树(UIA):每个可交互控件的名称/类型/矩形。attach 绑定之后用它"
-        "「看懂」窗口里有哪些按钮、输入框、列表。返回 elements+coord_space。",
+        "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用浏览器工具。attach 绑定之后用它「看懂」窗口里有哪些按钮、输入框、列表。返回 elements+coord_space。",
         "required": {"window": ("any",)}, "optional": {}},
     "get_clickable_map": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】SoM 标注截图:把绑定"
-        "窗口里可点击的元素编号画在图上。需要「指第 N 号元素」点击时用;编号"
-        "传入 click_element 的 som_id 即可点中。",
+        "description": "给绑定的 Windows 窗口做 SoM 标注截图:把可点击元素编号画在图上。需要「指第 N 号元素」点击时用,编号传入 click_element 的 som_id 即可点中。",
         "required": {"window": ("any",)}, "optional": {}},
     "template_match": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】模板图匹配:在屏幕或"
-        "窗口里找一张小图的位置。UIA 读不出的自绘界面(游戏/老软件/画布)时用。"
-        "template=模板图路径,scope=搜索范围,返回命中坐标。",
+        "description": "在 Windows 屏幕或窗口里按模板小图找位置(图像匹配);UIA 读不出的自绘界面(游戏/老软件/画布)时用。template=模板图路径,scope=搜索范围,返回命中坐标。",
         "required": {"template": ("str",), "scope": ("rect",)},
         "optional": {"threshold": ("num",)},
     },
     "get_cursor": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】返回鼠标当前坐标"
-        "(虚拟桌面坐标系,可含负值)。无参数,返回 {x, y}。",
+        "description": "返回 Windows 桌面鼠标当前坐标(虚拟桌面坐标系,可含负值)。无参数,返回 {x, y}。",
         "required": {}, "optional": {}},
     "get_clipboard": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】读取当前剪贴板文本。"
-        "无参数,返回 {text}。写入剪贴板用 set_clipboard(需 attach 绑定)。",
+        "description": "读取 Windows 桌面当前剪贴板文本。无参数,返回 {text}。"
+        "写入剪贴板用 set_clipboard(需 attach 绑定)。",
         "required": {}, "optional": {}},
     # ---- L1 控制类（详细设计 §13.4）----
     "wait_for_window": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】等待某窗口出现或消失。"
-        "launch_app 启动应用后等它就位再用。target=标题/进程,timeout 秒,"
-        "返回命中信息。",
+        "description": "等待某个 Windows 窗口出现或消失;launch_app 启动应用后等它就位再用。target=标题/进程,timeout 秒,返回命中信息。",
         "required": {"target": ("str",)},
         "optional": {"timeout": ("num",)},
     },
     "wait_for_element": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】等待绑定窗口内某个"
-        "元素出现(轮询)。attach 绑定后,界面加载慢时先等它再 click_element。"
-        "token+name/automation_id+timeout。",
+        "description": "等待绑定的 Windows 窗口内某个元素出现(轮询)。attach 绑定后,界面加载慢时先等它再 click_element。token+name/automation_id+timeout。",
         "required": {"token": ("str",)},
         "optional": {"name": ("str",), "automation_id": ("str",), "timeout": ("num",)},
         "at_least_one": ["name", "automation_id"],
     },
     "move": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】移动鼠标到指定坐标"
-        "(不点击,虚拟桌面坐标系)。x,y 整数。",
+        "description": "移动 Windows 桌面鼠标到指定坐标(不点击,虚拟桌面坐标系)。x,y 整数。",
         "required": {"x": ("int",), "y": ("int",)}, "optional": {}},
     "scroll": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】在绑定窗口滚动鼠标"
-        "滚轮。attach 绑定后使用。direction(up/down)+amount(格数)。",
+        "description": "在绑定的 Windows 窗口滚动鼠标滚轮。attach 绑定后使用。direction(up/down)+amount(格数)。",
         "required": {"token": ("str",), "direction": ("enum", ["up", "down"]),
                      "amount": ("int",)},
         "optional": {},
     },
     "attach": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】绑定一个应用窗口——"
-        "一切写操作(点击/输入/按键)的前提,返回操作令牌 token。"
-        "按 title/hwnd/process 定位(先 find_window 找到 hwnd 最稳)。"
-        "绑定后链路:get_ui_tree 看内容→click_element/type_element 操作→detach 解绑。",
+        "description": "绑定一个 Windows 原生应用窗口——一切写操作(点击/输入/按键)的前提,返回操作令牌 token;浏览器页面交互请用浏览器工具。按 title/hwnd/process 定位(先 find_window 找到 hwnd 最稳)。绑定后链路:get_ui_tree 看内容→click_element/type_element 操作→detach 解绑。",
         "required": {},
         "optional": {"title": ("str",), "hwnd": ("int",), "process": ("str",)},
         "at_least_one": ["title", "hwnd", "process"],
     },
     "detach": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】解绑窗口,操作令牌"
-        "token 立即失效。操作完一个应用后调用。token=attach 返回值。",
+        "description": "解绑 Windows 窗口,操作令牌 token 立即失效。操作完一个应用后调用。token=attach 返回值。",
         "required": {"token": ("str",)}, "optional": {}},
     # ISS-0012 §6 E3：AI 请求撤回白名单（人类弹窗裁决后才执行）
     "request_remove_from_whitelist": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】申请把某进程移出"
-        "白名单:弹本地确认窗,人类点[移出]才执行(特权收缩,安全向)。"
-        "用户说「以后别操作 XX 了」时调用。process=进程名,返回 {removed}。",
+        "description": "申请把某进程移出桌面应用白名单:弹本地确认窗,"
+        "人类点[移出]才执行(特权收缩,安全向)。用户说「以后别操作 XX 了」"
+        "时调用。process=进程名,返回 {removed}。",
         "required": {"process": ("str",)}, "optional": {},
     },
     # ---- L2 写入类（详细设计 §14.4）----
     "launch_app": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】启动一个应用。"
-        "白名单内直接启动;非白名单会弹本地入白审批(人类三选)。"
-        "app=进程名或完整路径。启动后用 wait_for_window 等位再 attach。",
+        "description": "启动一个 Windows 桌面应用(白名单内直接启动;非白名单"
+        "弹本地入白审批,人类三选)。app=进程名或完整路径。"
+        "启动后用 wait_for_window 等位再 attach。",
         "required": {"app": ("str",)}, "optional": {}},
     "activate_window": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】把绑定窗口置前台"
-        "(多数写操作要求窗口在前台)。token=attach 返回令牌。",
+        "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台)。token=attach 返回令牌。",
         "required": {"token": ("str",)}, "optional": {}},
     "click_element": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】按名称/AutomationId/"
-        "SoM 编号点击窗口内控件(UIA 优先,比像素坐标稳)。attach 绑定后,"
-        "先 get_ui_tree 找控件名,再点它。token+name/automation_id/som_id。",
+        "description": "按名称/AutomationId/SoM 编号点击绑定的 Windows 窗口内控件(UIA 优先,比像素坐标稳);网页元素点击请用浏览器工具。attach 绑定后,先 get_ui_tree 找控件名,再点它。token+name/automation_id/som_id。",
         "required": {"token": ("str",)},
         "optional": {"name": ("str",), "automation_id": ("str",), "som_id": ("int",)},
         "at_least_one": ["name", "automation_id", "som_id"],
     },
     "type_element": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】向窗口内控件"
-        "(输入框等)输入文本。attach 绑定后使用。token+name/automation_id+text。",
+        "description": "向绑定的 Windows 窗口内控件(输入框等)输入文本;网页表单请用浏览器工具。attach 绑定后使用。token+name/automation_id+text。",
         "required": {"token": ("str",), "text": ("text",)},
         "optional": {"name": ("str",), "automation_id": ("str",)},
         "at_least_one": ["name", "automation_id"],
     },
     "click": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】按虚拟桌面坐标像素"
-        "点击(元素不可用时的兜底;能用 click_element 就别用它)。token+x+y。",
+        "description": "按 Windows 虚拟桌面坐标像素点击(元素不可用时的兜底;能用 click_element 就别用它)。token+x+y。",
         "required": {"token": ("str",), "x": ("int",), "y": ("int",)},
               "optional": {}},
     "type_text": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】经剪贴板向当前焦点"
-        "输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。",
+        "description": "经剪贴板向 Windows 窗口当前焦点输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "key": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】发送按键/组合键"
-        "(受按键许可表管控;delete/alt+f4 等危险键弹本地审批)。"
-        "token+key,如 enter、ctrl+s、alt+f4。",
+        "description": "向绑定的 Windows 窗口发送按键/组合键(受按键许可表管控;delete/alt+f4 等危险键弹本地审批)。token+key,如 enter、ctrl+s、alt+f4。",
         "required": {"token": ("str",), "key": ("str",)}, "optional": {}},
     "set_clipboard": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】改写剪贴板内容。"
-        "attach 绑定后使用。token+text。读取用 get_clipboard(无需绑定)。",
+        "description": "改写 Windows 桌面剪贴板内容。attach 绑定后使用。"
+        "token+text。读取用 get_clipboard(无需绑定)。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "drag": {
-        "description": "【Windows 桌面/应用窗口,非浏览器】鼠标拖拽(起点→终点,"
-        "虚拟桌面坐标系)。token+start/end(各 [x,y])。",
+        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y])。",
         "required": {"token": ("str",), "start": ("coord",), "end": ("coord",)},
              "optional": {}},
 }
@@ -291,7 +258,10 @@ def build_server(ctx, backend: str = "local", daemon_url: str = ""):
     from .httpd import remote_call
     from .models import TOOL_LEVELS
 
-    server = Server("deskpilot")
+    server = Server("deskpilot", instructions=(
+        "本服务操作 Windows 桌面与原生应用窗口(截图/元素树/键鼠);"
+        "浏览器标签页、网页、DOM 元素的任务请使用浏览器专用工具,"
+        "勿用本服务(本服务截不到网页,只能截真实桌面)。"))
 
     @server.list_tools()
     async def _list():

@@ -11,7 +11,7 @@ import inspect
 from deskpilot import mcp_server
 from deskpilot.models import TOOL_LEVELS
 
-DOMAIN_HINTS = ("Windows 桌面", "非浏览器")
+DOMAIN_HINTS = ("Windows", "桌面", "窗口", "浏览器")
 COMBO_TOOLS = {"find_window": ("attach", "绑定"),
                "attach": ("token", "令牌"),
                "get_ui_tree": ("attach", "绑定"),
