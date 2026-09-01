@@ -116,6 +116,7 @@ fail-closed 语义不变：无人类点头，非白名单依旧一律拒绝。
 | v0.8 | 2026-08-31 | E1 实盘缺陷修复：tray Win32 调用全量签名声明（缺省 32 位截断致窗口过程 OverflowError、菜单渲染空白，stderr 实证）；左键同弹菜单；托盘图标换用设计图标（assets/deskpilot.ico 多尺寸，spec 挂 exe 图标）；拒绝按钮链路实盘验证通过（APPROVAL_DENIED）；approval_ttl 定 90s 且倒计时接线 policy 驱动；新增 5 用例，全量 339 全绿 |
 | v0.9 | 2026-08-31 | 验收期迭代（均先测试设计评审后开发）：管理窗口 v2~v4（显示名/两区分立滚动/更多搜索/悬浮描述/滚动条移除/移出禁止图标带悬停动效）；托盘菜单撤半成品运行状态、管理入口 NameError 修复（main 补 import os）；按钮文案「本次会话允许」消歧（TC-LABEL）；测试卫生两例（真开记事本/真点屏幕改为只记录）；全量 353 全绿 |
 | v0.10 | 2026-09-01 | 西柚 seeyou.exe 现场批准入白永久（"以后翻墙自己重连"）；toast v2（自动消失/×关闭/撤销确认态/亮蓝动作按钮）；行内第三行描述（TC-DESC）；待办：管理窗口淡入动效、单例化、exe 解析链扩展（运行进程/快捷方式/Uninstall） |
+| v0.11 | 2026-09-01 | 扩展性批次（TC-RESOLVE/WIDGET/ANIM/SINGLE/SA 均先设计评审后开发）：解析源注册表（运行进程/PATH/AppPaths/快捷方式/Uninstall，新源=注册一行）；_GraphicButton 统一；fade_in/focus_existing_or_exit 通用助手；管理窗口淡入+单例；S1 Get-StartApps 中文资源源（calc 中文名经 shell 实达）；移出图标改系统 ⛔ 字形+字号脉冲；全量 377 全绿（1 环境守卫） |
 
 ## 6. 接口定义（SDD 公开入口；测试只允许调用以下入口）
 
