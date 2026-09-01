@@ -161,7 +161,7 @@ audit_dir: ./audit          # 审计与截图受管目录（相对 exe 目录）
 
 1. 按 ① 下载新版 zip 并校验；
 2. 停 daemon：`Stop-Process -Name deskpilot -Force`（没开 daemon 跳过）；
-3. 解压覆盖 `deskpilot.exe`；**`policy.yml` 会被覆盖——如有自定义先备份**，合并后再放回；
+3. 解压覆盖 `deskpilot.exe`；**`policy.yml` 会被覆盖——它是构建同步产物（repo 真源 → 构建同步），如有自定义先备份**，合并后再放回；
 4. 重新启动 daemon（④）。客户端注册不用动（路径没变）。
 
 ## ⑧ 常见问题（FAQ）

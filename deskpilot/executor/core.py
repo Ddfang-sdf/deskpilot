@@ -670,7 +670,8 @@ class Executor:
 
     def _save_shot(self, region: dict, tag: str, fmt: str = "PNG") -> Path:
         day = time.strftime("%Y%m%d")
-        out_dir = self._shots_dir / day
+        # ISS-0018 A：返回绝对路径——客户端无需猜测基准目录
+        out_dir = (self._shots_dir / day).resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
         if fmt == "JPEG":                         # ISS-0008 P3：证据图 JPEG 质量 80
             path = out_dir / f"{time.strftime('%H%M%S')}_{tag}_{int(time.time()*1000)%100000}.jpg"
