@@ -194,10 +194,18 @@ class HttpDaemon:
                     self._send(200, {"version": deskpilot.__version__})
                 elif self.path == "/whitelist" and \
                         daemon._whitelist_admin is not None:
-                    # ISS-0012 E2：白名单管理窗口数据源（仅 127.0.0.1）
+                    # ISS-0012 E2：白名单管理窗口数据源（仅 127.0.0.1）；
+                    # 附带 display/desc（daemon 内缓存解析，管理窗口零解析提速）
+                    from .appnames import app_description, app_display_name
+                    data = {}
+                    for group, items in daemon._whitelist_admin.entries().items():
+                        data[group] = [
+                            {"process": p, "level": lv,
+                             "display": app_display_name(p),
+                             "desc": app_description(p)}
+                            for p, lv in items.items()]
                     self._send(200, {"ok": True, "error_code": "",
-                                     "message": "ok",
-                                     "data": daemon._whitelist_admin.entries()})
+                                     "message": "ok", "data": data})
                 else:
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",
                                      "message": "端点不存在"})

@@ -276,6 +276,10 @@ def main() -> int:
     from .whitelist_admin import WhitelistAdmin
     whitelist_admin = WhitelistAdmin(str(policy_path), policy.whitelist,
                                      audit=audit)
+    # ISS-0012 TC-FAST-04：并行暖名称/描述解析缓存（管理窗口/审批弹窗提速）
+    from .appnames import warm_caches
+    threading.Thread(target=warm_caches, kwargs={"parallel": True},
+                     daemon=True, name="deskpilot-warm-caches").start()
 
     from .dialog_service import get_dialog_service
     dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻

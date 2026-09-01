@@ -372,8 +372,12 @@ class TestWhitelistEndpoints:
                                     timeout=5) as resp:
             body = json.loads(resp.read().decode("utf-8"))
         assert body["ok"] is True
-        assert body["data"]["static"] == {"notepad.exe": "L2"}
-        assert body["data"]["session"] == {"excel.exe": "L2"}
+        # TC-FAST-01 新结构:每条 {process, level, display, desc}
+        static = {i["process"]: i["level"] for i in body["data"]["static"]}
+        session = {i["process"]: i["level"] for i in body["data"]["session"]}
+        assert static == {"notepad.exe": "L2"}
+        assert session == {"excel.exe": "L2"}
+        assert body["data"]["static"][0]["display"]
 
     def test_post_remove(self, daemon, tmp_path):
         d, a = daemon
@@ -840,6 +844,7 @@ class TestRemoveIcon:
             def __init__(self, *a, **k):
                 self.text = k.get("text", "")
                 self.font = k.get("font")
+                self.fg = k.get("fg")
                 self.size = self.font[1] if self.font else None
                 self.handlers = {}
                 self.afters = []
@@ -851,6 +856,8 @@ class TestRemoveIcon:
                 if "font" in k:
                     self.font = k["font"]
                     self.size = self.font[1]
+                if "fg" in k:
+                    self.fg = k["fg"]
             def after(self, ms, fn=None):
                 self.afters.append(ms)
                 return f"a{len(self.afters)}"
@@ -902,6 +909,19 @@ class TestRemoveIcon:
         """TC-ICON-04:「移出白名单」悬浮提示绑定保留。"""
         _, btn, cv, frame, glyph = self._make(monkeypatch)
         assert getattr(frame, "_tip_text", None) == "移出白名单"
+
+    def test_color01_idle_black(self, monkeypatch):
+        """TC-COLOR-01:常态图标为黑色系。"""
+        _, btn, cv, _, glyph = self._make(monkeypatch)
+        assert glyph.fg in ("#202020", "#000000", "black")   # 常态黑(直出)
+
+    def test_color02_hover_red_leave_black(self, monkeypatch):
+        """TC-COLOR-02:悬停变红,移开回黑(脉冲放大语义不变)。"""
+        _, btn, cv, _, glyph = self._make(monkeypatch)
+        glyph.handlers["<Enter>"](None)
+        assert glyph.fg == "#C8391F"                          # 悬停红(直出)
+        glyph.handlers["<Leave>"](None)
+        assert glyph.fg in ("#202020", "#000000", "black")    # 回黑(直出)
 
 class TestRequestRemoveTool:
     """场景:AI 请求撤回,人类裁决后才执行。

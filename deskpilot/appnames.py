@@ -264,6 +264,25 @@ _DESC_SOURCES = [_desc_from_appx, _desc_from_uninstall_name,
                  _desc_from_version]
 
 
+def warm_caches(parallel: bool = True) -> None:
+    """进程启动时暖解析缓存（TC-FAST-04）。
+
+    四源相互独立，并行后 wall = max 而非 sum；daemon 启动调用一次，
+    后续 app_display_name/app_description 全部命中缓存。
+    """
+    jobs = [_package_index, _startapps_map, _start_menu_map, _uninstall_map]
+    if parallel:
+        import threading
+        ts = [threading.Thread(target=j, daemon=True) for j in jobs]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+    else:
+        for j in jobs:
+            j()
+
+
 # ---------- MUI（经典 Win32 本地化机制） ----------
 
 def _mui_description(path: str) -> str | None:

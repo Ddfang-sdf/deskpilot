@@ -170,7 +170,7 @@ class _IconButton(_GraphicButton):
         self._size = self._base_size
         self._step = 0
         self._anim_id = None
-        self.glyph = tk.Label(self.frame, text="⛔", bg=_BG,
+        self.glyph = tk.Label(self.frame, text="⛔", bg=_BG, fg="#202020",
                               font=("Segoe UI Emoji", self._base_size),
                               cursor="hand2")
         self.glyph.pack()
@@ -193,6 +193,7 @@ class _IconButton(_GraphicButton):
         self.glyph.configure(font=("Segoe UI Emoji", size))
 
     def _on_enter(self, _e=None) -> None:
+        self.glyph.configure(fg="#C8391F")         # 悬停红(TC-COLOR-02)
         self._cancel_anim()
         self._step = 0
         self._animate_in()
@@ -205,6 +206,7 @@ class _IconButton(_GraphicButton):
 
     def _on_leave(self, _e=None) -> None:
         self._cancel_anim()
+        self.glyph.configure(fg="#202020")         # 回常态黑(TC-COLOR-02)
         self._set_size(self._base_size)
 
     def _cancel_anim(self) -> None:
@@ -271,9 +273,11 @@ class _ManagerUI:
     _SECTIONS = (("static", "已永久加入（写入白名单文件）"),
                  ("session", "本次会话临时允许（重启失效）"))
 
-    def __init__(self, win, entries: dict, on_remove, on_clear_session):
+    def __init__(self, win, entries: dict, on_remove, on_clear_session,
+                 display_map: dict | None = None):
         self._entries = entries
         self._on_remove = on_remove
+        self._dmap = display_map or {}          # {proc: (display, desc)} 端点直供
         self._query = ""
         self._expanded = {"static": False, "session": False}
         self._blocks: dict[str, dict] = {}
@@ -332,16 +336,18 @@ class _ManagerUI:
 
     # ---- 渲染 ----
 
-    def _filtered(self, items: dict) -> list[tuple[str, str, str]]:
-        """[(proc, level, display)]；搜索串同时匹配显示名与进程名。"""
-        from .appnames import app_display_name
+    def _filtered(self, items: dict) -> list[tuple[str, str, str, str]]:
+        """[(proc, level, display, desc)]；display_map 直供时零解析(TC-FAST-02)。"""
         out = []
         for proc, level in items.items():
-            display = app_display_name(proc)
+            display, desc = self._dmap.get(proc, (None, None))
+            if display is None:
+                from .appnames import app_display_name
+                display = app_display_name(proc)
             q = self._query
             if q and q not in display.lower() and q not in proc.lower():
                 continue
-            out.append((proc, level, display))
+            out.append((proc, level, display, desc))
         return out
 
     def render(self) -> None:
@@ -360,8 +366,8 @@ class _ManagerUI:
             tk.Label(body, text="（空）" if not self._query else "（无匹配）",
                      bg=_BG, fg=_HINT_FG, font=_HINT_FONT,
                      anchor="w").pack(fill="x", pady=2)
-        for proc, level, display in visible:
-            _row(body, proc, level, display, self._on_remove)
+        for proc, level, display, desc in visible:
+            _row(body, proc, level, display, self._on_remove, desc)
 
         rest = len(rows) - _VISIBLE_N
         more = blk["more"]
@@ -385,26 +391,30 @@ class _ManagerUI:
 
 
 def build_window(parent, entries: dict, on_remove: Callable[[str], None],
-                 on_clear_session: Callable[[], None]):
+                 on_clear_session: Callable[[], None],
+                 display_map: dict | None = None):
     """ISS-0012 §6 E2：白名单管理窗口（v2：两区分立滚动+默认5条更多+搜索）。
 
     entries = {"static": {proc: level}, "session": {proc: level}}；
-    行主名显示应用显示名（与审批弹窗同源），次行进程名·级别；
-    顶部搜索实时过滤（匹配显示名/进程名）；每区默认 5 条，
-    [更多 N 项] 展开全部、[收起] 还原；控制器挂 win._manager（测试观测口）。
+    display_map = {proc: (display, desc)}（/whitelist 端点直供时零解析提速,
+    TC-FAST-02/03）；缺省回退 appnames 本地解析。
+    行主名显示应用显示名，次行进程名·级别，三行描述；
+    顶部搜索实时过滤；每区默认 5 条，[更多 N 项]/[收起]；
+    控制器挂 win._manager（测试观测口）。
     """
     win = tk.Toplevel(parent)
     win.title("DeskPilot 白名单管理")
     win.geometry("560x560")
     win.minsize(460, 420)
     win.configure(bg=_BG)
-    win._manager = _ManagerUI(win, entries, on_remove, on_clear_session)
+    win._manager = _ManagerUI(win, entries, on_remove, on_clear_session,
+                              display_map=display_map)
     fade_in(win)                                   # TC-ANIM:淡入动效
     return win
 
 
-def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
-    from .appnames import app_description
+def _row(parent, proc: str, level: str, display: str, on_remove,
+         desc: str | None = None) -> None:
     row = tk.Frame(parent, bg=_BG)
     row.pack(fill="x", pady=(4, 0))
     left = tk.Frame(row, bg=_BG)
@@ -415,7 +425,9 @@ def _row(parent, proc: str, level: str, display: str, on_remove) -> None:
     name_lbl.pack(fill="x")
     tk.Label(left, text=f"{proc} · {level}", bg=_BG, fg=_HINT_FG,
              font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
-    desc = app_description(proc)
+    if desc is None:
+        from .appnames import app_description
+        desc = app_description(proc)
     if desc:                                    # 空描述省略第三行(TC-DESC-03)
         tk.Label(left, text=_truncate(desc), bg=_BG, fg=_HINT_FG,
                  font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
@@ -635,15 +647,24 @@ def main() -> None:
 
     def refresh() -> None:
         try:
-            entries = _http_json(f"{base}/whitelist")["data"]
+            data = _http_json(f"{base}/whitelist")["data"]
+            entries: dict = {}
+            dmap: dict = {}
+            for group, items in data.items():
+                entries[group] = {}
+                for it in items:
+                    entries[group][it["process"]] = it["level"]
+                    dmap[it["process"]] = (it.get("display") or None,
+                                           it.get("desc") or None)
         except Exception:
-            entries = {"static": {}, "session": {}}
+            entries, dmap = {"static": {}, "session": {}}, {}
         if state["win"] is not None:
             try:
                 state["win"].destroy()
             except Exception:
                 pass
-        state["win"] = build_window(root, entries, on_remove, on_clear)
+        state["win"] = build_window(root, entries, on_remove, on_clear,
+                                    display_map=dmap)
         state["win"].protocol("WM_DELETE_WINDOW", root.quit)
 
     def on_remove(proc: str) -> None:
