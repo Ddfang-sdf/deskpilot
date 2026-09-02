@@ -470,6 +470,15 @@ class Enforcement:
         """
         from .appnames import app_display_name
         title = self._live_title(binding) if binding is not None else ""
+        if not title and request is not None:
+            # ISS-0020 补:入白无绑定时,用反查窗口的标题做显示名
+            # (西柚「西柚加速器」标题就在眼前却曾显示 seeyou.exe)
+            proc0 = str(request.params.get("process", ""))
+            if proc0:
+                cands = self._executor.find_windows(process=proc0,
+                                                    include_hidden=True)
+                if cands and cands[0].get("title"):
+                    title = cands[0]["title"]
         display = app_display_name(proc, title)
         if title:
             src = "窗口标题"
