@@ -75,6 +75,14 @@ def _pid_of_hwnd(hwnd: int) -> int | None:
     return pid.value or None
 
 
+def _truncate_show(text: str, limit: int) -> str:
+    """展示截断:压缩空白,≤limit 字;超出以 … 结尾并标注总长。"""
+    t = " ".join(str(text).split())
+    if len(t) <= limit:
+        return t
+    return f"{t[:limit]}…(共 {len(t)} 字)"
+
+
 class Enforcement:
     """四道闸裁决器。"""
 
@@ -213,7 +221,7 @@ class Enforcement:
             else:
                 fp = compute_fingerprint(tool, self._fingerprint_params(request))
                 desc = self._describe(request, binding)
-                image_path = self._capture_target(binding)
+                image_path = self._capture_target(binding, request)
                 # ISS-0007 B：审批弹窗按目标窗口所在屏落位
                 target_rect = binding.window_rect if binding else None
                 decision = self._approvals.request_approval(
@@ -315,18 +323,45 @@ class Enforcement:
                 return w["title"]
         return binding.window_title
 
-    def _capture_target(self, binding: BindingRecord | None) -> str | None:
-        """闸四配套：实拍目标窗口供审批弹窗展示；任何失败不阻断审批流。"""
-        if binding is None:
-            return None
+    def _capture_target(self, binding: BindingRecord | None,
+                        request: OperationRequest | None = None) -> str | None:
+        """闸四配套：实拍目标窗口供审批弹窗展示。
+
+        ISS-0020 C：无绑定时按请求目标进程反查窗口实拍;反查不到退化全屏
+        （底注标注来源）。ISS-0020 D：取图失败写审计事件"审批取图失败"
+        （不再静默）；失败不阻断审批流。
+        """
+        self._capture_note = ""
         try:
-            return self._executor.capture_approval_shot(binding.window_rect)
-        except Exception:
+            if binding is not None:
+                return self._executor.capture_approval_shot(binding.window_rect)
+            # 无绑定:按请求目标进程反查窗口
+            proc = str(request.params.get("process", "")) if request else ""
+            if proc:
+                cands = self._executor.find_windows(process=proc)
+                if cands:
+                    self._capture_note = f"（实拍来源：目标进程 {proc}）"
+                    return self._executor.capture_approval_shot(
+                        tuple(cands[0]["rect"]))
+            # 反查不到:退化全屏上下文
+            from .monitors import enum_monitors
+            l, t, r, b = enum_monitors()[0]["rect"]
+            self._capture_note = "（实拍来源：全屏上下文，无目标窗口）"
+            return self._executor.capture_approval_shot((l, t, r, b))
+        except Exception as e:
+            try:
+                self._audit.record_event("审批取图失败", str(e))
+            except Exception:
+                pass
             return None
 
     def _describe(self, request: OperationRequest,
                   binding: BindingRecord | None) -> str:
-        """两段式描述:人话标题行 + 「---」分隔 + 技术底注(进程/句柄保留)。"""
+        """两段式描述:人话标题行 + 「---」分隔 + 技术底注(进程/句柄保留)。
+
+        ISS-0020 A：内容型操作主标题直接带内容(截断展示,不改操作语义);
+        B：底注参数上限 500 字并标注总长;C：附实拍来源说明。
+        """
         tech_target = ""
         if binding is not None:
             title = self._live_title(binding)
@@ -350,11 +385,27 @@ class Enforcement:
         elif request.tool == "launch_app":
             headline = f"启动应用 {plain_target}"
             tech = f"launch_app 作用于{tech_target}"
+        elif request.tool in ("type_text", "type_element", "set_clipboard"):
+            # ISS-0020 A：内容进主标题（≤60 字截断+总长标注）
+            action = self._TOOL_ACTIONS.get(request.tool,
+                                            f"执行 {request.tool}")
+            text = str(request.params.get("text", ""))
+            headline = f"{action}「{_truncate_show(text, 60)}」{plain_target}"
+            tech = f"{request.tool}（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+        elif request.tool == "click":
+            x, y = request.params.get("x"), request.params.get("y")
+            headline = f"鼠标点击 ({x}, {y}){plain_target}"
+            tech = f"click（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+        elif request.tool == "drag":
+            s, e = request.params.get("start"), request.params.get("end")
+            headline = f"鼠标拖拽 ({s[0]}, {s[1]})→({e[0]}, {e[1]}){plain_target}"
+            tech = f"drag（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
         else:
             action = self._TOOL_ACTIONS.get(request.tool, f"执行 {request.tool}")
             headline = f"{action}{plain_target}"
-            tech = f"{request.tool}（参数 {self._digest(request)}）作用于{tech_target}"
-        return f"{headline}\n---\n{tech}"
+            tech = f"{request.tool}（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+        note = getattr(self, "_capture_note", "")
+        return f"{headline}\n---\n{tech}{note}"
 
     def _describe_enroll(self, request: OperationRequest,
                          binding: BindingRecord | None, proc: str) -> str:
