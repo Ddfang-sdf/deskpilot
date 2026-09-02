@@ -220,8 +220,10 @@ class Enforcement:
                 pass                              # 批量命中：不弹窗直接放行
             else:
                 fp = compute_fingerprint(tool, self._fingerprint_params(request))
-                desc = self._describe(request, binding)
+                # ISS-0020 顺序修正:先取图(产生/清空来源标注)再生成描述,
+                # 否则描述读到的是上一次审批的残留标注
                 image_path = self._capture_target(binding, request)
+                desc = self._describe(request, binding)
                 # ISS-0007 B：审批弹窗按目标窗口所在屏落位
                 target_rect = binding.window_rect if binding else None
                 decision = self._approvals.request_approval(
