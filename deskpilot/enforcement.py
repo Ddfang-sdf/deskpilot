@@ -491,7 +491,8 @@ class Enforcement:
                 f"（请求动作 {request.tool}）。"
                 f"本次会话允许 = 重启前有效（会话级，不落盘）；"
                 f"永久加入 = 写入白名单长期有效，可随时在白名单管理中移出")
-        return f"{headline}\n---\n{tech}"
+        note = getattr(self, "_capture_note", "")
+        return f"{headline}\n---\n{tech}{note}"
 
     def _digest(self, request: OperationRequest) -> str:
         return ", ".join(f"{k}={v}" for k, v in request.params.items())
