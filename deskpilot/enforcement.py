@@ -335,10 +335,14 @@ class Enforcement:
         try:
             if binding is not None:
                 return self._executor.capture_approval_shot(binding.window_rect)
-            # 无绑定:按请求目标进程反查窗口
+            # 无绑定:按请求目标进程反查窗口(取可见且矩形在屏上的候选)
             proc = str(request.params.get("process", "")) if request else ""
             if proc:
-                cands = self._executor.find_windows(process=proc)
+                cands = [w for w in self._executor.find_windows(process=proc)
+                         if w.get("visible", True)
+                         and (w["rect"][2] - w["rect"][0]) > 50
+                         and (w["rect"][3] - w["rect"][1]) > 50
+                         and w["rect"][2] > 0 and w["rect"][3] > 0]
                 if cands:
                     self._capture_note = f"（实拍来源：目标进程 {proc}）"
                     return self._executor.capture_approval_shot(
@@ -382,6 +386,17 @@ class Enforcement:
             action = self._KEY_ACTIONS.get(key, f"按下 {key}")
             headline = f"{action}{plain_target}" if binding else f"{action}"
             tech = f"按键 {key} 作用于{tech_target}"
+        elif request.tool == "attach":
+            # ISS-0020 补:attach 主标题带目标窗口(不再"执行 attach"空泛)
+            from .appnames import app_display_name
+            att_title = str(request.params.get("title", "") or "")
+            att_proc = str(request.params.get("process", "") or "")
+            att_target = (f"「{att_title}」" if att_title
+                          else app_display_name(att_proc) if att_proc
+                          else f"句柄 {request.params.get('hwnd')}")
+            headline = f"绑定窗口 {att_target}"
+            tech = (f"attach（参数 {_truncate_show(self._digest(request), 500)}）"
+                    f"作用于{tech_target or '目标窗口'}")
         elif request.tool == "launch_app":
             headline = f"启动应用 {plain_target}"
             tech = f"launch_app 作用于{tech_target}"
