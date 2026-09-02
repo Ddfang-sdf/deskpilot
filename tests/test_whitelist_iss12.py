@@ -290,6 +290,19 @@ class TestEnrollDialog:
         assert "永久加入" in clicks
         assert "拒绝" in clicks
 
+    def test_image_reference_kept_on_window(self, monkeypatch, tmp_path):
+        """ISS-0020 空白图修复:实拍图的 PhotoImage 引用须挂在窗口对象上,
+        防止 build_window 返回后被 GC 回收导致弹窗图像空白。"""
+        import deskpilot.approval_dialog as ad
+        from PIL import Image
+        img = tmp_path / "shot.png"
+        Image.new("RGB", (32, 32), (10, 20, 30)).save(img)
+        clicks = []
+        self._fake_tk(monkeypatch, ad, clicks)
+        win = ad.build_window(object(), "常规审批", str(tmp_path / "r.txt"),
+                              5, image_path=str(img))
+        assert getattr(win, "_approval_photo", None) is not None
+
 
 class TestChannelPassthrough:
     """场景:结果文件 approve_always 合法透传;enroll 载荷送弹窗服务。

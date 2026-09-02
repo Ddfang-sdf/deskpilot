@@ -119,6 +119,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     if photo_im is not None:
         from PIL import ImageTk
         photo = ImageTk.PhotoImage(photo_im)
+        # ISS-0020 空白图修复:引用挂窗口对象,防 build_window 返回后被 GC
+        win._approval_photo = photo
         tk.Label(body, image=photo, bg=_BG, bd=1, relief="solid").pack(
             fill="x", pady=(8, 0))
 
