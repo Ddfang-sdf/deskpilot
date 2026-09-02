@@ -30,13 +30,17 @@ def _process_name_of(pid: int) -> str:
         kernel32.CloseHandle(handle)
 
 
-def enum_windows() -> list[dict]:
-    """枚举可见顶层窗口：hwnd / title / process / rect / visible。"""
+def enum_windows(include_hidden: bool = False) -> list[dict]:
+    """枚举顶层窗口：hwnd / title / process / rect / visible。
+
+    include_hidden=True 时含隐藏(托盘/最小化)窗口——审批反查实拍专用
+    (ISS-0020 补:西柚隐藏托盘被误拍全屏的根因)。
+    """
     results: list[dict] = []
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def _cb(hwnd, lparam):
-        if not user32.IsWindowVisible(hwnd):
+        if not include_hidden and not user32.IsWindowVisible(hwnd):
             return True
         length = user32.GetWindowTextLengthW(hwnd)
         if length == 0:
@@ -81,10 +85,12 @@ class DesktopProbe:
         return (rect.left, rect.top, rect.right, rect.bottom)
 
     def find_windows(self, title: str | None = None, process: str | None = None,
-                     hwnd: int | None = None) -> list[dict]:
-        """按标题（子串，忽略大小写）/进程名/句柄过滤窗口。"""
+                     hwnd: int | None = None,
+                     include_hidden: bool = False) -> list[dict]:
+        """按标题（子串，忽略大小写）/进程名/句柄过滤窗口；
+        include_hidden=True 含隐藏窗（ISS-0020 审批反查用）。"""
         out = []
-        for w in enum_windows():
+        for w in enum_windows(include_hidden=include_hidden):
             if hwnd is not None and w["hwnd"] != hwnd:
                 continue
             if title is not None and title.lower() not in w["title"].lower():

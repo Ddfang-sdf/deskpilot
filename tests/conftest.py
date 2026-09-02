@@ -116,7 +116,8 @@ class FakeExecutor:
     def focused_control_type(self) -> str | None:
         return self.focus_type
 
-    def find_windows(self, title=None, process=None, hwnd=None) -> list[dict]:
+    def find_windows(self, title=None, process=None, hwnd=None,
+                     include_hidden=False) -> list[dict]:
         if hwnd is None:
             return list(self.live_windows)
         return [w for w in self.live_windows if w.get("hwnd") == hwnd]

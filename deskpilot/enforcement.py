@@ -338,10 +338,12 @@ class Enforcement:
         try:
             if binding is not None:
                 return self._executor.capture_approval_shot(binding.window_rect)
-            # 无绑定:按请求目标进程反查窗口(取可见且矩形在屏上的候选)
+            # 无绑定:按请求目标进程反查窗口(含隐藏窗;可见在屏优先,
+            # 否则还原隐藏窗;拍后中心点一致性校验)
             proc = str(request.params.get("process", "")) if request else ""
             if proc:
-                all_cands = self._executor.find_windows(process=proc)
+                all_cands = self._executor.find_windows(
+                    process=proc, include_hidden=True)
                 onscreen = [w for w in all_cands
                             if w.get("visible", True)
                             and (w["rect"][2] - w["rect"][0]) > 50
@@ -349,15 +351,13 @@ class Enforcement:
                             and w["rect"][2] > 0 and w["rect"][3] > 0]
                 if onscreen:
                     self._capture_note = f"（实拍来源：目标进程 {proc}）"
-                    return self._executor.capture_approval_shot(
-                        tuple(onscreen[0]["rect"]))
+                    return self._shot_verified(onscreen[0])
                 if all_cands:
                     # ISS-0020 补:目标隐藏到托盘/最小化时先还原再拍,
                     # 否则反查落空退化全屏(用户实盘目击"截的是整个桌面")
                     ctypes.windll.user32.ShowWindow(all_cands[0]["hwnd"], 9)
                     self._capture_note = f"（实拍来源：目标进程 {proc}，已还原窗口）"
-                    return self._executor.capture_approval_shot(
-                        tuple(all_cands[0]["rect"]))
+                    return self._shot_verified(all_cands[0])
             # 反查不到:退化全屏上下文
             from .monitors import enum_monitors
             l, t, r, b = enum_monitors()[0]["rect"]
@@ -369,6 +369,34 @@ class Enforcement:
             except Exception:
                 pass
             return None
+
+    def _shot_verified(self, cand: dict) -> str | None:
+        """ISS-0020 拍后一致性校验:拍候选矩形后,用 WindowFromPoint 查图像
+        中心点顶层窗口==目标或其子窗口;不一致还原重拍一次;再不一致
+        底注标"实拍存疑"(不静默)。"""
+        rect = tuple(cand["rect"])
+        path = self._executor.capture_approval_shot(rect)
+        if self._center_belongs(rect, cand["hwnd"]):
+            return path
+        # 不一致:前置目标窗口(还原+设前台+置顶)后重拍——
+        # 仅 SW_RESTORE 不能让被遮挡的目标到顶层(西柚被终端遮挡实证)
+        activate = getattr(self._executor, "_activate_if_needed", None)
+        if callable(activate):
+            activate(cand["hwnd"])
+        else:
+            ctypes.windll.user32.ShowWindow(cand["hwnd"], 9)
+        path = self._executor.capture_approval_shot(rect)
+        if self._center_belongs(rect, cand["hwnd"]):
+            return path
+        self._capture_note += "（实拍存疑：目标可能被遮挡）"
+        return path
+
+    def _center_belongs(self, rect: tuple, hwnd: int) -> bool:
+        from ctypes import wintypes
+        pt = wintypes.POINT((rect[0] + rect[2]) // 2,
+                            (rect[1] + rect[3]) // 2)
+        top = ctypes.windll.user32.WindowFromPoint(pt)
+        return top == hwnd or bool(ctypes.windll.user32.IsChild(hwnd, top))
 
     def _describe(self, request: OperationRequest,
                   binding: BindingRecord | None) -> str:

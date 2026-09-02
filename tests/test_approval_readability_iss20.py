@@ -81,9 +81,30 @@ class TestCaptureReverseLookup:
                                   "visible": False}]
         p = enforcement._capture_target(
             None, OperationRequest("attach", {"process": "x.exe"}, None))
-        assert calls == [(424242, 9)]                     # 还原被调用(直出)
+        assert calls == [(424242, 9), (424242, 9)]        # 还原+校验后重拍还原(直出)
         assert p == executor.approval_shot_path           # 拍到目标而非全屏
         assert "已还原窗口" in enforcement._capture_note
+
+    def test_read06c_center_mismatch_retry_and_flag(self, enforcement,
+                                                    executor, monkeypatch):
+        """TC-READ-06c:拍后中心点不一致 → 还原重拍;仍不一致 → 标注存疑。"""
+        import deskpilot.enforcement as enf_mod
+        executor.live_windows = [{"hwnd": 424242, "title": "目标",
+                                  "process": "x.exe",
+                                  "rect": (10, 10, 210, 210),
+                                  "visible": True}]
+        shows = []
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "ShowWindow",
+                            lambda h, s: shows.append((h, s)))
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
+                            lambda pt: 999999)            # 恒为他人
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "IsChild",
+                            lambda h, t: False)
+        p = enforcement._capture_target(
+            None, OperationRequest("attach", {"process": "x.exe"}, None))
+        assert shows == [(424242, 9)]                     # 重拍前还原(直出)
+        assert p == executor.approval_shot_path
+        assert "存疑" in enforcement._capture_note        # 不静默(直出)
 
     def test_read07_capture_failure_audited(self, enforcement, executor,
                                             audit_log, tmp_path):

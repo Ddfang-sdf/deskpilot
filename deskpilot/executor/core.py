@@ -653,7 +653,8 @@ class Executor:
         if u32 is None:
             import ctypes
             u32 = ctypes.windll.user32
-        pt_hwnd = u32.WindowFromPoint((x, y))
+        from ctypes import wintypes
+        pt_hwnd = u32.WindowFromPoint(wintypes.POINT(x, y))
         if pt_hwnd != hwnd and not u32.IsChild(hwnd, pt_hwnd):
             raise ExecutorError(
                 WINDOW_OCCLUDED, "落点被其他窗口遮挡，请先前置目标窗口")
