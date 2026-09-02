@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Ddfang-sdf/deskpilot" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="Platform">
   <img src="https://img.shields.io/badge/MCP-stdio-6E56CF" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-323%20passed-2DA44E" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-434%20passed-2DA44E" alt="Tests">
 </p>
 
 <p align="center">
@@ -117,7 +117,7 @@ pip install -e .
 python -m deskpilot
 ```
 
-要求 Windows 10/11 + Python ≥ 3.12。运行测试：`python -m pytest tests/ -q`（209 条用例）。自行打包：`pip install pyinstaller && pyinstaller deskpilot.spec`。
+要求 Windows 10/11 + Python ≥ 3.12。运行测试：`python -m pytest tests/ -q`（434 条用例）。自行打包：`pip install pyinstaller && pyinstaller deskpilot.spec`。
 
 ## 路线图
 
