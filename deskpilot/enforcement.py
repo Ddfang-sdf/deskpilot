@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import time
 from datetime import datetime
 from typing import Any
@@ -340,15 +341,23 @@ class Enforcement:
             # 无绑定:按请求目标进程反查窗口(取可见且矩形在屏上的候选)
             proc = str(request.params.get("process", "")) if request else ""
             if proc:
-                cands = [w for w in self._executor.find_windows(process=proc)
-                         if w.get("visible", True)
-                         and (w["rect"][2] - w["rect"][0]) > 50
-                         and (w["rect"][3] - w["rect"][1]) > 50
-                         and w["rect"][2] > 0 and w["rect"][3] > 0]
-                if cands:
+                all_cands = self._executor.find_windows(process=proc)
+                onscreen = [w for w in all_cands
+                            if w.get("visible", True)
+                            and (w["rect"][2] - w["rect"][0]) > 50
+                            and (w["rect"][3] - w["rect"][1]) > 50
+                            and w["rect"][2] > 0 and w["rect"][3] > 0]
+                if onscreen:
                     self._capture_note = f"（实拍来源：目标进程 {proc}）"
                     return self._executor.capture_approval_shot(
-                        tuple(cands[0]["rect"]))
+                        tuple(onscreen[0]["rect"]))
+                if all_cands:
+                    # ISS-0020 补:目标隐藏到托盘/最小化时先还原再拍,
+                    # 否则反查落空退化全屏(用户实盘目击"截的是整个桌面")
+                    ctypes.windll.user32.ShowWindow(all_cands[0]["hwnd"], 9)
+                    self._capture_note = f"（实拍来源：目标进程 {proc}，已还原窗口）"
+                    return self._executor.capture_approval_shot(
+                        tuple(all_cands[0]["rect"]))
             # 反查不到:退化全屏上下文
             from .monitors import enum_monitors
             l, t, r, b = enum_monitors()[0]["rect"]

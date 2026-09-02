@@ -68,6 +68,23 @@ class TestCaptureReverseLookup:
             None, OperationRequest("attach", {"process": "x.exe"}, None))
         assert p == executor.approval_shot_path
 
+    def test_read06b_hidden_window_restored_then_shot(self, enforcement,
+                                                      executor, monkeypatch):
+        """TC-READ-06b:候选隐藏时先 SW_RESTORE 还原再拍(不退化全屏)。"""
+        import deskpilot.enforcement as enf_mod
+        calls = []
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "ShowWindow",
+                            lambda h, s: calls.append((h, s)))
+        executor.live_windows = [{"hwnd": 424242, "title": "目标",
+                                  "process": "x.exe",
+                                  "rect": (10, 10, 200, 200),
+                                  "visible": False}]
+        p = enforcement._capture_target(
+            None, OperationRequest("attach", {"process": "x.exe"}, None))
+        assert calls == [(424242, 9)]                     # 还原被调用(直出)
+        assert p == executor.approval_shot_path           # 拍到目标而非全屏
+        assert "已还原窗口" in enforcement._capture_note
+
     def test_read07_capture_failure_audited(self, enforcement, executor,
                                             audit_log, tmp_path):
         """TC-READ-07:取图异常 → 返回 None,且审计含「审批取图失败」事件。"""
