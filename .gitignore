@@ -17,6 +17,7 @@ l3_demo_batch.json
 release/*
 !release/RELEASE_NOTES.md
 !release/CHANGES.md
+!release/DEMO_SHOOT.md
 mcp_call_daemon.*
 
 # ISS-0011 发布流水线干跑产物（本地/CI 工作区同规格）
