@@ -130,8 +130,11 @@ class Executor:
             out["monitors"] = enum_monitors()
         return out
 
-    def find_windows(self, title=None, process=None, hwnd=None) -> list[dict]:
-        return self._probe.find_windows(title=title, process=process, hwnd=hwnd)
+    def find_windows(self, title=None, process=None, hwnd=None,
+                     include_hidden: bool = False) -> list[dict]:
+        return self._probe.find_windows(title=title, process=process,
+                                        hwnd=hwnd,
+                                        include_hidden=include_hidden)
 
     def get_ui_tree(self, window) -> dict:
         hwnd = self._resolve_window(window)
