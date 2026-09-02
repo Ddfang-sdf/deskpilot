@@ -106,6 +106,7 @@ class FakeExecutor:
         self.approval_shot_path = "shots/approval_fake.png"
         self.approval_shot_rects: list[tuple] = []   # 审批截图收到的窗口矩形
         self.approval_shot_error = False
+        self.activate_calls: list[int] = []          # _activate_if_needed 收到的 hwnd
 
     def execute(self, instruction: dict) -> dict:
         if self.error is not None:
@@ -121,6 +122,10 @@ class FakeExecutor:
         if hwnd is None:
             return list(self.live_windows)
         return [w for w in self.live_windows if w.get("hwnd") == hwnd]
+
+    def _activate_if_needed(self, hwnd: int) -> bool:
+        self.activate_calls.append(hwnd)
+        return True
 
     def capture_approval_shot(self, rect) -> str:
         if self.approval_shot_error:

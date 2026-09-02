@@ -57,54 +57,81 @@ class TestContentHeadline:
 
 class TestCaptureReverseLookup:
     """TC-READ-06/07:无绑定按进程反查实拍;取图失败留痕。
-    断言:返回路径/审计事件(直出)。"""
+    断言:返回路径/调用记录/审计事件(直出)。
 
-    def test_read06_reverse_lookup_returns_shot(self, enforcement, executor):
-        """TC-READ-06:无绑定按进程反查命中 → 返回该窗口实拍路径。"""
+    实拍契约(用户钦定四步):找到窗口→前置→验证无遮挡→才截图;
+    任一步失败不给错图,底注明示(fail-closed)。"""
+
+    def test_read06_reverse_lookup_returns_shot(self, enforcement, executor,
+                                                monkeypatch):
+        """TC-READ-06:反查命中可见窗 → 先前置后截图(顺序直出),返回实拍路径。"""
+        import deskpilot.enforcement as enf_mod
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "x.exe", "rect": (0, 0, 100, 100),
                                   "visible": True}]
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
+                            lambda pt: 424242)            # 中心点顶层=目标
+        orig_shot = executor.capture_approval_shot
+
+        def shot(rect):
+            # 截图被调时前置必须已发生(顺序断言,直出 fake 记录)
+            assert executor.activate_calls == [424242]
+            return orig_shot(rect)
+        monkeypatch.setattr(executor, "capture_approval_shot", shot)
         p = enforcement._capture_target(
             None, OperationRequest("attach", {"process": "x.exe"}, None))
         assert p == executor.approval_shot_path
+        assert executor.approval_shot_rects == [(0, 0, 100, 100)]
+        assert "已前置实拍" in enforcement._capture_note
 
     def test_read06b_hidden_window_restored_then_shot(self, enforcement,
                                                       executor, monkeypatch):
-        """TC-READ-06b:候选隐藏时先 SW_RESTORE 还原再拍(不退化全屏)。"""
+        """TC-READ-06b:候选隐藏时先 SW_RESTORE 还原,再前置+校验+拍。"""
         import deskpilot.enforcement as enf_mod
         calls = []
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "ShowWindow",
                             lambda h, s: calls.append((h, s)))
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
+                            lambda pt: 424242)
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "x.exe",
                                   "rect": (10, 10, 200, 200),
                                   "visible": False}]
         p = enforcement._capture_target(
             None, OperationRequest("attach", {"process": "x.exe"}, None))
-        assert calls == [(424242, 9), (424242, 9)]        # 还原+校验后重拍还原(直出)
+        assert calls == [(424242, 9)]                     # 还原(直出)
+        assert executor.activate_calls == [424242]        # 前置(直出)
         assert p == executor.approval_shot_path           # 拍到目标而非全屏
         assert "已还原窗口" in enforcement._capture_note
+        assert "已前置实拍" in enforcement._capture_note
 
-    def test_read06c_center_mismatch_retry_and_flag(self, enforcement,
-                                                    executor, monkeypatch):
-        """TC-READ-06c:拍后中心点不一致 → 还原重拍;仍不一致 → 标注存疑。"""
+    def test_read06c_never_foreground_no_image(self, enforcement,
+                                               executor, monkeypatch):
+        """TC-READ-06c:两次前置后中心点仍为他人 → 不截图,返回 None+存疑。"""
         import deskpilot.enforcement as enf_mod
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "x.exe",
                                   "rect": (10, 10, 210, 210),
                                   "visible": True}]
-        shows = []
-        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "ShowWindow",
-                            lambda h, s: shows.append((h, s)))
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
                             lambda pt: 999999)            # 恒为他人
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "IsChild",
                             lambda h, t: False)
         p = enforcement._capture_target(
             None, OperationRequest("attach", {"process": "x.exe"}, None))
-        assert shows == [(424242, 9)]                     # 重拍前还原(直出)
-        assert p == executor.approval_shot_path
+        assert executor.activate_calls == [424242, 424242]  # 重试一次(直出)
+        assert executor.approval_shot_rects == []         # 从未截图(直出)
+        assert p is None                                  # 不给错图(直出)
         assert "存疑" in enforcement._capture_note        # 不静默(直出)
+
+    def test_read06d_no_candidate_no_fullscreen(self, enforcement, executor):
+        """TC-READ-06d:反查不到窗口 → None+明示,禁止全屏退化误导。"""
+        executor.live_windows = []                        # 进程无窗口
+        p = enforcement._capture_target(
+            None, OperationRequest("attach", {"process": "x.exe"}, None))
+        assert p is None
+        assert executor.approval_shot_rects == []         # 无全屏退化(直出)
+        assert "未找到目标窗口" in enforcement._capture_note
 
     def test_read07_capture_failure_audited(self, enforcement, executor,
                                             audit_log, tmp_path):

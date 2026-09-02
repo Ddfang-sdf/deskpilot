@@ -143,11 +143,11 @@ class TestApprovalTargetShot:
         assert approver.requests[0]["image_path"] is None
 
     def test_no_binding_no_capture(self, enforcement, approver, executor):
-        """launch_app 无绑定审批（ISS-0020 语义更新）：退化全屏上下文实拍。"""
+        """launch_app 无绑定无目标窗口：不给错图,image_path None(fail-closed)。"""
         d = enforcement.submit(_req("launch_app", {"app": "evil.exe"}))
         assert d.reason_code == errors.APPROVAL_DENIED
-        assert len(executor.approval_shot_rects) == 1      # 全屏矩形(直出)
-        assert approver.requests[0]["image_path"] is not None
+        assert executor.approval_shot_rects == []        # 无全屏退化(直出)
+        assert approver.requests[0]["image_path"] is None
 
     @pytest.mark.parametrize("danger", [
         "delete", "escape", "ctrl+w", "ctrl+shift+escape", "alt+f4",

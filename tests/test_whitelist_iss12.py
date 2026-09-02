@@ -161,6 +161,28 @@ class TestEnrollAtGate2:
         assert d.allowed is False
         assert "policy.yml" not in d.message            # B:文案去教学
 
+    def test_enroll_dialog_carries_target_shot(self, policy, bindings, approvals,
+                                               estop, executor, audit_log,
+                                               approver, tmp_path, monkeypatch):
+        """入白审批无绑定时必须带目标窗口实拍(用户实盘:弹框无图根因=
+        闸二未把 request 传给 _capture_target,反查整链被跳过)。"""
+        import deskpilot.enforcement as enf_mod
+        a = _admin(tmp_path)
+        enf = _enforcement_with_admin(policy, bindings, approvals, estop,
+                                      executor, audit_log, a)
+        executor.live_windows = [{"hwnd": 424242, "title": "目标",
+                                  "process": "excel.exe",
+                                  "rect": (0, 0, 100, 100), "visible": True}]
+        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
+                            lambda pt: 424242)            # 中心点顶层=目标
+        approver.decision = "approve"
+        d = enf.submit(OperationRequest("attach", {"process": "excel.exe"}, None))
+        assert d.allowed is True
+        # 实拍图送达审批通道(直出),且前置先于截图发生(直出)
+        assert approver.requests[0]["image_path"] == executor.approval_shot_path
+        assert executor.activate_calls == [424242]
+        assert executor.approval_shot_rects == [(0, 0, 100, 100)]
+
     def test_attach_unknown_timeout(self, policy, bindings, approvals, estop,
                                     executor, audit_log, approver, tmp_path):
         a = _admin(tmp_path)

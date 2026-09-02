@@ -151,7 +151,7 @@ class Enforcement:
             fp = compute_fingerprint(tool, self._fingerprint_params(request))
             desc = self._describe_enroll(request, binding, proc)
             decision = self._approvals.request_enroll(
-                proc, desc, fp, image_path=self._capture_target(binding),
+                proc, desc, fp, image_path=self._capture_target(binding, request),
                 target_rect=binding.window_rect if binding else None)
             if decision == "approve_always":
                 self._admin.add_permanent(proc, L2)
@@ -330,16 +330,17 @@ class Enforcement:
                         request: OperationRequest | None = None) -> str | None:
         """闸四配套：实拍目标窗口供审批弹窗展示。
 
-        ISS-0020 C：无绑定时按请求目标进程反查窗口实拍;反查不到退化全屏
-        （底注标注来源）。ISS-0020 D：取图失败写审计事件"审批取图失败"
-        （不再静默）；失败不阻断审批流。
+        ISS-0020 C：无绑定时按请求目标进程反查窗口实拍;反查不到不给图
+        （底注明示,fail-closed——全屏退化会截到无关窗口,实盘误判）。
+        ISS-0020 D：取图失败写审计事件"审批取图失败"（不再静默）；
+        失败不阻断审批流。
         """
         self._capture_note = ""
         try:
             if binding is not None:
                 return self._executor.capture_approval_shot(binding.window_rect)
             # 无绑定:按请求目标进程反查窗口(含隐藏窗;可见在屏优先,
-            # 否则还原隐藏窗;拍后中心点一致性校验)
+            # 否则还原隐藏窗;前置+无遮挡校验通过才拍)
             proc = str(request.params.get("process", "")) if request else ""
             if proc:
                 all_cands = self._executor.find_windows(
@@ -353,16 +354,13 @@ class Enforcement:
                     self._capture_note = f"（实拍来源：目标进程 {proc}）"
                     return self._shot_verified(onscreen[0])
                 if all_cands:
-                    # ISS-0020 补:目标隐藏到托盘/最小化时先还原再拍,
-                    # 否则反查落空退化全屏(用户实盘目击"截的是整个桌面")
+                    # ISS-0020 补:目标隐藏到托盘/最小化时先还原再拍
                     ctypes.windll.user32.ShowWindow(all_cands[0]["hwnd"], 9)
                     self._capture_note = f"（实拍来源：目标进程 {proc}，已还原窗口）"
                     return self._shot_verified(all_cands[0])
-            # 反查不到:退化全屏上下文
-            from .monitors import enum_monitors
-            l, t, r, b = enum_monitors()[0]["rect"]
-            self._capture_note = "（实拍来源：全屏上下文，无目标窗口）"
-            return self._executor.capture_approval_shot((l, t, r, b))
+            # 反查不到:不给错图,明示(禁止全屏退化静默误导)
+            self._capture_note = "（未找到目标窗口，未截图）"
+            return None
         except Exception as e:
             try:
                 self._audit.record_event("审批取图失败", str(e))
@@ -371,25 +369,25 @@ class Enforcement:
             return None
 
     def _shot_verified(self, cand: dict) -> str | None:
-        """ISS-0020 拍后一致性校验:拍候选矩形后,用 WindowFromPoint 查图像
-        中心点顶层窗口==目标或其子窗口;不一致还原重拍一次;再不一致
-        底注标"实拍存疑"(不静默)。"""
+        """审批实拍（用户钦定四步）:前置→验证最前→验证无遮挡→才截图。
+
+        任何一步失败:返回 None 并在底注明示(不给错图,fail-closed)。
+        """
+        hwnd = cand["hwnd"]
         rect = tuple(cand["rect"])
-        path = self._executor.capture_approval_shot(rect)
-        if self._center_belongs(rect, cand["hwnd"]):
-            return path
-        # 不一致:前置目标窗口(还原+设前台+置顶)后重拍——
-        # 仅 SW_RESTORE 不能让被遮挡的目标到顶层(西柚被终端遮挡实证)
-        activate = getattr(self._executor, "_activate_if_needed", None)
-        if callable(activate):
-            activate(cand["hwnd"])
-        else:
-            ctypes.windll.user32.ShowWindow(cand["hwnd"], 9)
-        path = self._executor.capture_approval_shot(rect)
-        if self._center_belongs(rect, cand["hwnd"]):
-            return path
-        self._capture_note += "（实拍存疑：目标可能被遮挡）"
-        return path
+        for _attempt in range(2):
+            activate = getattr(self._executor, "_activate_if_needed", None)
+            if callable(activate):
+                activate(hwnd)
+            else:
+                ctypes.windll.user32.ShowWindow(hwnd, 9)
+            # 验证无遮挡:中心点顶层==目标或其子窗口
+            if self._center_belongs(rect, hwnd):
+                self._capture_note += "（已前置实拍）"
+                return self._executor.capture_approval_shot(rect)
+        # 两次仍无法到顶层:不给错图,明示
+        self._capture_note += "（实拍存疑：目标无法前置，未截图）"
+        return None
 
     def _center_belongs(self, rect: tuple, hwnd: int) -> bool:
         from ctypes import wintypes
