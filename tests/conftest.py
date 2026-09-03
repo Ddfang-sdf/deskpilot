@@ -145,7 +145,11 @@ def make_policy(audit_dir: str = "", **overrides) -> models.Policy:
              "up", "down", "left", "right", "ctrl+c", "ctrl+v", "ctrl+x", "ctrl+z",
              "ctrl+y", "ctrl+s", "ctrl+home", "ctrl+end"}
             | {f"f{i}" for i in range(1, 13)}),
-        l3_keys=frozenset({"delete", "escape", "alt+f4", "ctrl+w", "ctrl+shift+escape"}),
+        l3_keys=frozenset({"delete", "escape", "alt+f4", "ctrl+w",
+                           "ctrl+shift+escape",
+                           # ISS-0022 C：浏览器组合全收 L3(与 policy.yml 同步)
+                           "ctrl+t", "ctrl+n", "ctrl+l",
+                           "ctrl+tab", "ctrl+shift+tab", "ctrl+r"}),
         input_scenario_keys=frozenset({"backspace"}),
         input_control_types=frozenset({"Edit", "Document"}),
         binding_ttl=600.0, approval_ttl=60.0, wait_poll_interval=0.5,

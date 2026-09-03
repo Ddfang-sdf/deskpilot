@@ -18,11 +18,26 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from . import errors
-from .models import TOOL_TIME_BUDGETS
+from .models import RETRY_AFTER_MS, RETRY_MAX, TOOL_TIME_BUDGETS
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9420
 VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
+
+
+def tool_timeout_payload(level: str) -> dict:
+    """TOOL_TIMEOUT 响应体（ISS-0023）：临期"处理中"附带重试指引。
+
+    level 为工具静态级别（TOOL_LEVELS 值）;L3（审批挂起语义）给长间隔，
+    其余预算级走 default 档。error_code 与 message 前缀"处理中"不变
+    （向后兼容），仅追加指引。
+    """
+    wait = RETRY_AFTER_MS.get(level, RETRY_AFTER_MS["default"])
+    return {"ok": False,
+            "error_code": errors.TOOL_TIMEOUT,
+            "message": (f"处理中，请稍后重试"
+                        f"（建议 {wait}ms 后，最多 {RETRY_MAX} 次）"),
+            "data": {"retry_after_ms": wait, "retry_max": RETRY_MAX}}
 
 
 def check_daemon_version(host: str, port: int, expected: str,
@@ -277,10 +292,10 @@ class HttpDaemon:
                     return
                 if result is daemon._BUDGET_EXCEEDED:
                     # ISS-0009 §6 B：临期返回结构化"处理中"而非悬挂
-                    self._send(200, {"ok": False,
-                                     "error_code": errors.TOOL_TIMEOUT,
-                                     "message": "处理中，请稍后重试",
-                                     "data": None})
+                    # ISS-0023：附重试指引（按工具静态级别定档）
+                    from .models import TOOL_LEVELS
+                    self._send(200, tool_timeout_payload(
+                        TOOL_LEVELS.get(tool, "L2")))
                     return
                 daemon._touch()
                 self._send(200, {"ok": result.ok,

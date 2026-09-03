@@ -34,10 +34,12 @@ from PIL import Image, ImageDraw
 
 from ..errors import (ELEMENT_AMBIGUOUS, ELEMENT_DISABLED, ELEMENT_NOT_FOUND,
                       ELEMENT_UNSUPPORTED, EMERGENCY_STOP, INTERNAL_ERROR,
+                      INVALID_PARAMS, OCR_AMBIGUOUS, OCR_TEXT_NOT_FOUND,
                       OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE, WINDOW_OCCLUDED,
                       ExecutorError)
 from ..policy import normalize_key
 from .probe import DesktopProbe
+from .textclick import resolve_click
 
 _NOT_WIRED = {
     "get_clickable_map", "ocr", "template_match",
@@ -123,6 +125,13 @@ class Executor:
         path = self._save_shot(region, "sense")
         out = {"path": str(path), "width": region["width"],
                "height": region["height"]}
+        # ISS-0021 C：坐标系元数据——像素→虚拟桌面坐标换算全要素
+        # （截图为区域原样抓取,scale 恒 1.0;virtual_rect 给出偏移基准）
+        out["virtual_rect"] = [region["left"], region["top"],
+                               region["left"] + region["width"],
+                               region["top"] + region["height"]]
+        out["scale_x"] = 1.0
+        out["scale_y"] = 1.0
         if scope == "fullscreen":
             # ISS-0007 C：坐标系声明 + 每屏边界列表
             from ..monitors import enum_monitors
@@ -163,6 +172,8 @@ class Executor:
 
         ISS-0008 P2 懒加载：引擎首次使用时经 ocr_factory 恰好初始化一次
         （线程安全）；初始化失败记忆化，后续调用直接显式报错（INV-7）。
+        ISS-0021：source 接受区域 dict（left/top/width/height）直通——
+        调用方已持区域时无需再转元组（click_text 实拍链路复用）。
         """
         if self._ocr_engine is None:
             self._ensure_ocr_engine()
@@ -171,6 +182,8 @@ class Executor:
                 img = Image.open(source)
             except OSError as e:
                 raise ExecutorError(INTERNAL_ERROR, f"OCR 源图像不可读: {e}") from e
+        elif isinstance(source, dict):
+            img = self._capture(source)
         else:
             img = self._capture(self._region_dict(source))
         items = self._ocr_engine(img)
@@ -296,6 +309,8 @@ class Executor:
             raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
         if tool == "click":
             return self._click(params["x"], params["y"], hwnd)
+        if tool == "click_text":
+            return self._click_text(params, hwnd)
         if tool == "type_text":
             return self._type_text(params["text"], hwnd)
         if tool == "key":
@@ -549,6 +564,49 @@ class Executor:
         except pyautogui.FailSafeException as e:
             raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
         return {"status": "ok"}
+
+    def _click_text(self, params: dict, hwnd: int) -> dict:
+        """ISS-0021 A：按文字点击——前置实拍→OCR→换算→与 click 同安全链。
+
+        失败分类 fail-closed（未命中/多命中/越窗/参数非法）一律零点击；
+        落点复用 _check_point/_check_occlusion 防误射管线。
+        """
+        button = params.get("button", "left")
+        if button not in ("left", "right"):
+            raise ExecutorError(INVALID_PARAMS, f"button 非法: {button}")
+        if not self._activate_if_needed(hwnd):
+            raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
+        rect = self._binding_rect(hwnd)
+        if rect is None:
+            raise ExecutorError(WINDOW_GONE, "绑定窗口矩形不可得（可能已消失）")
+        region = self._resolve_region("window", None, hwnd)
+        ocr = self.ocr(region)                      # 实拍+识别（懒加载）
+        status, payload = resolve_click(
+            ocr["items"], str(params.get("text", "")),
+            params.get("match", "contains"), params.get("index"),
+            region["width"], region["height"], rect)
+        if status == "invalid":
+            raise ExecutorError(INVALID_PARAMS, payload)
+        if status == "not_found":
+            raise ExecutorError(
+                OCR_TEXT_NOT_FOUND,
+                f"未找到文字: {params.get('text')}。OCR 可见: {payload}")
+        if status == "ambiguous":
+            raise ExecutorError(
+                OCR_AMBIGUOUS,
+                f"文字命中 {len(payload)} 处,请用 index 指定: {payload}")
+        if status == "out_of_window":
+            raise ExecutorError(INTERNAL_ERROR,
+                                f"OCR 命中框越窗（数据异常）: {payload}")
+        x, y = payload["point"]
+        self._check_point(hwnd, x, y)
+        self._check_occlusion(hwnd, x, y)     # 与 click 同遮挡校验
+        try:
+            pyautogui.click(x, y, button=button)
+        except pyautogui.FailSafeException as e:
+            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+        return {"status": "ok", "target": [x, y],
+                "matched": payload["matched"]}
 
     def _drag(self, start, end, hwnd: int) -> dict:
         self._check_point(hwnd, *start)

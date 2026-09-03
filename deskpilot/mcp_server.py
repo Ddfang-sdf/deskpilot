@@ -136,11 +136,16 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "按 Windows 虚拟桌面坐标像素点击(元素不可用时的兜底;能用 click_element 就别用它)。token+x+y。",
         "required": {"token": ("str",), "x": ("int",), "y": ("int",)},
               "optional": {}},
+    "click_text": {
+        "description": "在绑定的 Windows 窗口内按文字点击(OCR 定位;能用文字定位就不要手算坐标,优先于裸坐标 click)。token+text;match=contains/exact;多命中默认不放行,用 index 指定第几个(从 0);button=left/right。",
+        "required": {"token": ("str",), "text": ("str",)},
+        "optional": {"match": ("str",), "index": ("int",),
+                     "button": ("str",)}},
     "type_text": {
         "description": "经剪贴板向 Windows 窗口当前焦点输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "key": {
-        "description": "向绑定的 Windows 窗口发送按键/组合键(受按键许可表管控;delete/alt+f4 等危险键弹本地审批)。token+key,如 enter、ctrl+s、alt+f4。",
+        "description": "向绑定的 Windows 窗口发送按键/组合键(受按键许可表管控;delete/alt+f4 等危险键弹本地审批)。token+key,如 enter、ctrl+s、alt+f4。未收录键返回 KEY_UNKNOWN 并列出现行可用键;拒绝时不发送任何按键。",
         "required": {"token": ("str",), "key": ("str",)}, "optional": {}},
     "set_clipboard": {
         "description": "改写 Windows 桌面剪贴板内容。attach 绑定后使用。"

@@ -24,6 +24,7 @@ TOOL_LEVELS: Mapping[str, str] = {
     "launch_app": L2, "activate_window": L2, "click_element": L2,
     "type_element": L2, "click": L2, "type_text": L2, "key": L2,
     "set_clipboard": L2, "drag": L2,
+    "click_text": L2,                # ISS-0021：按文字点击(OCR 定位)
     # ISS-0012 §6 E3：AI 请求撤回白名单（人类弹窗裁决后才执行，L1 请求类）
     "request_remove_from_whitelist": L1,
 }
@@ -33,7 +34,7 @@ TOOL_LEVELS: Mapping[str, str] = {
 BINDING_REQUIRED_TOOLS = frozenset({
     "wait_for_element", "scroll", "detach",
     "activate_window", "click_element", "type_element", "click",
-    "type_text", "key", "set_clipboard", "drag",
+    "type_text", "key", "set_clipboard", "drag", "click_text",
 })
 
 # ISS-0009 §6：各级别调用的内部时限预算（秒）；临期返回 TOOL_TIMEOUT
@@ -43,6 +44,11 @@ TOOL_TIME_BUDGETS: Mapping[str, float] = {
     "L1": 15.0,
     "L2": 30.0,
 }
+
+# ISS-0023：TOOL_TIMEOUT 重试指引（单源常量，httpd 响应构造消费）。
+# L3（审批挂起语义）密集重试无意义给 2000ms；其余预算级 500ms。
+RETRY_AFTER_MS: Mapping[str, int] = {"L3": 2000, "default": 500}
+RETRY_MAX: int = 3
 
 
 @dataclass(frozen=True)

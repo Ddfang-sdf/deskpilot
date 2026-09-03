@@ -195,8 +195,13 @@ class Enforcement:
             norm = normalize_key(str(request.params.get("key", "")))
             cls = self._classify_key(norm)
             if cls == "unknown":
+                # ISS-0022 A：错误带可用键清单（policy 单源直出）与未执行明示
+                l2 = ", ".join(sorted(self._policy.l2_keys))
+                l3 = ", ".join(sorted(self._policy.l3_keys))
                 return self._deny(request, eff, KEY_UNKNOWN,
-                                  f"按键未收录（fail-closed）: {norm}", t0)
+                                  f"按键未收录（fail-closed，"
+                                  f"本次未发送任何按键）: {norm}。"
+                                  f"当前可用 L2=[{l2}] L3=[{l3}]", t0)
             if cls == "scenario_l2":
                 focus = self._executor.focused_control_type()
                 if focus is None or focus not in self._policy.input_control_types:

@@ -216,6 +216,17 @@ def click(ctx: ToolContext, *, token: str, x: int, y: int) -> ToolResult:
     return call_tool(ctx, "click", {"token": token, "x": x, "y": y})
 
 
+def click_text(ctx: ToolContext, *, token: str, text: str,
+               match: str = "contains", index: int | None = None,
+               button: str = "left") -> ToolResult:
+    """ISS-0021：按文字点击(OCR 定位);index=None=未指定(多命中不放行)。"""
+    params: dict = {"token": token, "text": text,
+                    "match": match, "button": button}
+    if index is not None:
+        params["index"] = index
+    return call_tool(ctx, "click_text", params)
+
+
 def set_clipboard(ctx: ToolContext, *, token: str, text: str) -> ToolResult:
     return call_tool(ctx, "set_clipboard", {"token": token, "text": text})
 

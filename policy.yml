@@ -62,6 +62,12 @@ keys:
     - alt+f4
     - ctrl+w
     - ctrl+shift+escape
+    - ctrl+t            # ISS-0022 C：浏览器新标签(生命周期族,sdfang 批准)
+    - ctrl+n            # 新窗口
+    - ctrl+l            # 地址栏(导航闸门)
+    - ctrl+tab          # 切标签
+    - ctrl+shift+tab    # 反向切标签
+    - ctrl+r            # 刷新(丢表单风险)
   input_scenario_keys:
     - backspace
   input_control_types:
