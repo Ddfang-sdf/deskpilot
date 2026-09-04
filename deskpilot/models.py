@@ -71,8 +71,9 @@ class Policy:
     freeze_remind_interval: float     # 冻结弹窗稍后提醒重提醒间隔秒（ISS-0004）
     audit_dir: str
     idle_timeout_minutes: float = 0.0  # daemon idle 自停分钟数，0=禁用（ISS-0008）
-    shots_max_age_days: float = 14.0       # 截图留存天数（ISS-0010）
-    shots_max_bytes: int = 2147483648      # 截图空间上限字节（ISS-0010）
+    logs_max_age_days: float = 90.0        # 审计日志留存天数（ISS-0031,仅年龄档）
+    shots_max_age_days: float = 90.0       # 截图留存天数（ISS-0031:14→90）
+    shots_max_bytes: int = 471859200       # 截图空间上限字节 450MB（ISS-0031:2GB→450MB）
     cleanup_grace_seconds: float = 600.0   # 清理在场保护窗秒（ISS-0010）
     cleanup_interval_seconds: float = 3600.0  # 清理定时周期秒，0=仅启动时（ISS-0010）
 

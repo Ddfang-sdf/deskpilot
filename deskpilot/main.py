@@ -240,6 +240,7 @@ def _start_janitor(policy, audit: AuditLogger) -> None:
     def once():
         try:
             run_janitor(policy.audit_dir, time.time(),
+                        policy.logs_max_age_days * 86400,
                         policy.shots_max_age_days * 86400,
                         policy.shots_max_bytes,
                         policy.cleanup_grace_seconds, audit_log=audit)

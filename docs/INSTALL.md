@@ -142,6 +142,11 @@ estop:
   corner_hold_ms: 1000      # 甩角（主屏左上角）停留多少毫秒触发急停
   l0_during_freeze: true    # 冻结期是否允许只读感知工具
 
+cleanup:                    # 审计数据保留：日志 90 天；截图 90 天 + 450MB
+  logs_max_age_days: 90     #   （容量为硬顶，先于时长触发；合计 ≤500MB）
+  shots_max_age_days: 90
+  shots_max_bytes: 471859200
+
 audit_dir: ./audit          # 审计与截图受管目录（相对 exe 目录）
 ```
 

@@ -1,8 +1,8 @@
-"""截图与临时文件清理者（ISS-0010 §6，方案 C）。
+"""审计数据与临时文件清理者（ISS-0010 §6 + ISS-0031 分档保留）。
 
 plan_deletions：纯函数核心——超龄必删、超量按龄删、grace 在场保护。
-run_janitor：对受管目录执行一轮（shots/ 含 client 子目录 + approval/ 超龄
-临时文件），写审计事件；单文件失败不中断；审计 JSONL 不在清理范围。
+run_janitor：对受管目录执行一轮（logs/ 仅年龄档 + shots/ 含 client 子目录
+双阈值 + approval/ 超龄临时文件），写审计事件；单文件失败不中断。
 """
 
 from __future__ import annotations
@@ -56,17 +56,33 @@ def _collect(root: Path) -> list[tuple[Path, float, int]]:
     return files
 
 
-def run_janitor(audit_dir: str, now: float, max_age_s: float,
-                max_bytes: int, grace_s: float,
+def run_janitor(audit_dir: str, now: float, logs_max_age_s: float,
+                shots_max_age_s: float, shots_max_bytes: int, grace_s: float,
                 audit_log=None) -> dict:
-    """ISS-0010 §6：执行一轮清理，返回统计并写审计事件。
+    """执行一轮清理，返回统计并写审计事件。
 
-    清理范围：shots/（含 client 子目录）与 approval/ 超龄临时文件；
-    审计 JSONL 日志不在清理范围。单文件删除失败不中断。
+    ISS-0031 分档：logs/ 仅按年龄(体积微小不设容量档,90 天内的日志
+    绝不被截图挤兑);shots/(含 client 子目录)双阈值;approval/ 超龄
+    临时文件并入截图档。审计根目录状态文件(estop-state 等)永不入清理面。
+    单文件删除失败不中断。
     """
     ap = AuditPaths(audit_dir)
+    # 日志档:仅年龄
+    log_files = _collect(ap.logs)
+    doomed_logs = [p for p, m, _ in log_files if m < now - logs_max_age_s]
+    logs_deleted = 0
+    logs_freed = 0
+    for p in doomed_logs:
+        try:
+            logs_freed += p.stat().st_size
+            p.unlink()
+            logs_deleted += 1
+        except OSError:
+            continue
+    # 截图档:双阈值(原 ISS-0010 语义)
     files = _collect(ap.shots) + _collect(ap.approval)
-    doomed = plan_deletions(files, now, max_age_s, max_bytes, grace_s)
+    doomed = plan_deletions(files, now, shots_max_age_s, shots_max_bytes,
+                            grace_s)
     deleted = 0
     freed = 0
     sizes = {p: b for p, _, b in files}
@@ -78,8 +94,9 @@ def run_janitor(audit_dir: str, now: float, max_age_s: float,
         except OSError:
             continue                                  # 单文件失败不中断
     current = sum(b for _, _, b in _collect(ap.shots))
-    stats = {"deleted": deleted, "freed_bytes": freed,
-             "current_bytes": current}
+    stats = {"deleted": deleted + logs_deleted, "freed_bytes": freed + logs_freed,
+             "current_bytes": current,
+             "logs_deleted": logs_deleted, "shots_deleted": deleted}
     if audit_log is not None:
         try:
             audit_log.record_event(
@@ -87,4 +104,11 @@ def run_janitor(audit_dir: str, now: float, max_age_s: float,
                 f"删除 {deleted} 个文件,释放 {freed} 字节,当前占用 {current} 字节")
         except Exception:
             pass
+        if logs_deleted:
+            try:
+                audit_log.record_event(
+                    "审计日志清理",
+                    f"删除 {logs_deleted} 个文件,释放 {logs_freed} 字节")
+            except Exception:
+                pass
     return stats

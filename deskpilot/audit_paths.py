@@ -37,6 +37,11 @@ class AuditPaths:
         return self._root
 
     @property
+    def logs(self) -> Path:
+        d = self._root / "logs"
+        return d
+
+    @property
     def shots(self) -> Path:
         d = self._root / "shots"
         d.mkdir(parents=True, exist_ok=True)

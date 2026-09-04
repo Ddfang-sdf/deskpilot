@@ -86,8 +86,11 @@ class TestRunJanitor:
         self._touch(d / "shots" / "20260101" / "new.png", 60)
         from deskpilot.audit import AuditLogger
         audit_log = AuditLogger(str(d))
-        stats = run_janitor(str(d), time.time(), max_age_s=14 * 86400,
-                            max_bytes=10**9, grace_s=600, audit_log=audit_log)
+        # ISS-0031 签名重指:logs 年龄档/截图双阈值分档
+        stats = run_janitor(str(d), time.time(), logs_max_age_s=90 * 86400,
+                            shots_max_age_s=14 * 86400,
+                            shots_max_bytes=10**9, grace_s=600,
+                            audit_log=audit_log)
         assert stats["deleted"] == 3
         assert not (d / "shots" / "20260101" / "old.png").exists()
         assert not (d / "shots" / "client" / "old2.png").exists()
@@ -168,8 +171,10 @@ audit_dir: ./audit
 
     def test_defaults_when_absent(self, tmp_path):
         p = load_policy(str(self._write(tmp_path)))
-        assert p.shots_max_age_days == 14.0
-        assert p.shots_max_bytes == 2147483648
+        # ISS-0031:默认值按 sdfang 裁定校准(日志 90 天/截图 90 天+450MB)
+        assert p.logs_max_age_days == 90.0
+        assert p.shots_max_age_days == 90.0
+        assert p.shots_max_bytes == 471859200
         assert p.cleanup_grace_seconds == 600.0
         assert p.cleanup_interval_seconds == 3600.0
 

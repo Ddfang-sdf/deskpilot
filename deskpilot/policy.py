@@ -240,12 +240,19 @@ def load_policy(path: str, local_path: str | None = None) -> Policy:
     cleanup_cfg = data.get("cleanup", {})
     if not isinstance(cleanup_cfg, dict):
         raise _fail("cleanup 必须为映射")
-    shots_max_age_days = cleanup_cfg.get("shots_max_age_days", 14.0)
+    # ISS-0031：审计数据分档保留(日志仅年龄 90 天;截图 90 天+450MB,
+    # 合计 ≤500MB 口径,sdfang 裁定;容量为硬顶先于时长)
+    logs_max_age_days = cleanup_cfg.get("logs_max_age_days", 90.0)
+    if (isinstance(logs_max_age_days, bool)
+            or not isinstance(logs_max_age_days, (int, float))
+            or logs_max_age_days <= 0):
+        raise _fail("cleanup.logs_max_age_days 必须为正数")
+    shots_max_age_days = cleanup_cfg.get("shots_max_age_days", 90.0)
     if (isinstance(shots_max_age_days, bool)
             or not isinstance(shots_max_age_days, (int, float))
             or shots_max_age_days <= 0):
         raise _fail("cleanup.shots_max_age_days 必须为正数")
-    shots_max_bytes = cleanup_cfg.get("shots_max_bytes", 2147483648)
+    shots_max_bytes = cleanup_cfg.get("shots_max_bytes", 471859200)
     if (isinstance(shots_max_bytes, bool)
             or not isinstance(shots_max_bytes, int) or shots_max_bytes <= 0):
         raise _fail("cleanup.shots_max_bytes 必须为正整数")
@@ -282,6 +289,7 @@ def load_policy(path: str, local_path: str | None = None) -> Policy:
         freeze_remind_interval=float(freeze_remind_interval),
         audit_dir=audit_dir,
         idle_timeout_minutes=float(idle_timeout_minutes),
+        logs_max_age_days=float(logs_max_age_days),
         shots_max_age_days=float(shots_max_age_days),
         shots_max_bytes=int(shots_max_bytes),
         cleanup_grace_seconds=float(cleanup_grace_seconds),

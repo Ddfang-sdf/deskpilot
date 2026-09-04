@@ -173,6 +173,8 @@ def make_policy(audit_dir: str = "", **overrides) -> models.Policy:
         wait_timeout_max=300.0, input_max_chars=65536,
         l0_during_freeze=True, corner_hold_ms=1000, freeze_remind_interval=180.0,
         audit_dir=audit_dir,
+        logs_max_age_days=90.0, shots_max_age_days=90.0,
+        shots_max_bytes=471859200,
     )
     base.update(overrides)
     return models.Policy(**base)

@@ -87,4 +87,11 @@ estop:
   l0_during_freeze: true
   corner_hold_ms: 1000     # ISS-0028：200→1000（sdfang 裁定,防误触）
 
+# ISS-0031 审计数据保留(sdfang 裁定):日志仅年龄 90 天;截图 90 天+450MB;
+# 合计 ≤500MB 口径;容量为硬顶,先于时长触发
+cleanup:
+  logs_max_age_days: 90
+  shots_max_age_days: 90
+  shots_max_bytes: 471859200
+
 audit_dir: ./audit
