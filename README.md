@@ -62,7 +62,7 @@
 
 **第一步：下载。** 下载 [最新 Release](https://github.com/Ddfang-sdf/deskpilot/releases/latest) 的 `deskpilot-vX.Y.Z-windows-x64.zip`（附 `.sha256` 校验值），解压到固定目录，例如 `C:\tools\deskpilot\`。
 
-> ⚠️ 解压后**保持 `policy.yml` 和 `deskpilot.exe` 在同一个文件夹**，不要分开。
+> ⚠️ 解压后**保持 `policy.yml` 和 `deskpilot.exe` 在同一个文件夹**，不要分开。（`policy.local.yml` 是首次运行自动生成的用户数据文件，里面保存你的永久入白记录，升级不会丢。）
 
 **第二步：接入你的 AI 客户端。**
 
@@ -88,7 +88,7 @@ AI 客户端 ──MCP(stdio)──▶ deskpilot ──四道闸硬校验──�
                               └─ 全程审计 → 截图 + JSONL 留痕
 ```
 
-24 个 MCP 工具（截图 / OCR / 元素树 / 点击 / 输入 / 窗口管理……）。安全模型、四道闸细节、协议设计的完整文档在 [docs/](docs/DESIGN.md)。
+25 个 MCP 工具（截图 / OCR / 按文字点击 / 元素树 / 点击 / 输入 / 窗口管理……）。安全模型、四道闸细节、协议设计的完整文档在 [docs/](docs/DESIGN.md)。
 
 ## 安全说明
 

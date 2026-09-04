@@ -26,10 +26,13 @@
 ```
 C:\tools\deskpilot\
 ├── deskpilot.exe
-└── policy.yml
+├── policy.yml             ← 出厂安全策略（升级时会被新版覆盖）
+└── policy.local.yml       ← 你的数据：永久入白记录（首次运行自动生成，升级保留）
 ```
 
 > ⚠️ **`policy.yml` 必须和 `deskpilot.exe` 在同一个文件夹。** exe 启动时从同目录加载安全策略；缺失时启动直接报错（fail-closed），不会静默用默认策略跑。
+>
+> `policy.local.yml` 是**用户数据文件**（ISS-0030 双文件分离）：你在审批窗点「永久加入」的软件写在这里，升级、重新安装都不会丢。
 
 ## ③ 注册到 AI 客户端
 
@@ -82,8 +85,7 @@ Invoke-RestMethod http://127.0.0.1:9420/health
 返回 JSON（含 `version` 字段）即在线。daemon 在线时，各 MCP 客户端的瘦代理会自动走 daemon，无需改配置。
 
 daemon 启动后**系统托盘会出现 DeskPilot 图标**——它在跑就有图标。右键菜单：
-- **白名单管理…**：打开管理窗口，查看/移出已加入的软件（永久与会话分组，逐行 [移出]，会话区 [全部清空]）；
-- **运行状态…**：确认 daemon 在线。
+- **白名单管理…**：打开管理窗口，查看/移出已加入的软件（永久与会话分组，逐行 [移出]，会话区 [全部清空]）。
 
 ### 开机自启（两种方式，选一）
 
@@ -111,10 +113,15 @@ Stop-Process -Name deskpilot -Force
 
 ## ⑤ policy.yml 定制
 
-exe 同目录的 `policy.yml` 是全部安全策略的出处，改完**重启 daemon / 客户端会话**生效。常用字段：
+安全策略分**两个文件**，改完**重启 daemon / 客户端会话**生效：
+
+- `policy.yml` —— **出厂策略**（键表/时限/急停/终端表等安全参数只能在这里）。升级时会被新版覆盖，手改前请留备份；
+- `policy.local.yml` —— **你的白名单数据**（只允许 `whitelist` 一节；写入安全参数会被拒绝，fail-closed）。升级、重装都不会动它。
+
+出厂策略常用字段：
 
 ```yaml
-whitelist:                  # 进程白名单：AI 只能操作列出的程序
+whitelist:                  # 出厂白名单：AI 只能操作列出的程序
   - { process: notepad.exe, max_level: L2 }   # L2 = 可点击可输入
   - { process: msedge.exe,  max_level: L2 }
   # max_level: L0 仅感知 / L1 仅窗口管理 / L2 键鼠 / L3 需审批（危险操作）
@@ -126,12 +133,13 @@ terminal_apps:              # 终端类程序（AI 输入在终端里有额外�
 keys:
   l2_allow: [enter, tab, space, backspace, ...]   # 自由可用键
   l3_controlled: [delete, alt+f4, ctrl+w, ...]    # 需本地审批的键
+  # 浏览器标签/窗口类组合键（ctrl+t / ctrl+n / ctrl+l / ctrl+tab / ctrl+r）也属 L3 审批
 
 timeouts:
   approval_ttl: 90          # 审批窗最长等待（秒），超时自动拒绝
 
 estop:
-  corner_hold_ms: 200       # 甩角（主屏左上角）停留多少毫秒触发急停
+  corner_hold_ms: 1000      # 甩角（主屏左上角）停留多少毫秒触发急停
   l0_during_freeze: true    # 冻结期是否允许只读感知工具
 
 audit_dir: ./audit          # 审计与截图受管目录（相对 exe 目录）
@@ -139,13 +147,21 @@ audit_dir: ./audit          # 审计与截图受管目录（相对 exe 目录）
 
 **加自家软件（推荐，零命令）**：直接让 AI 去操作它——AI 发起请求时本地会弹出**入白审批窗**（带进程名与三态按钮）：
 - 「**本次会话允许**」：重启前有效（会话级，不落盘），daemon 重启后需重新授权；
-- 「**永久加入**」：由系统写入 policy.yml 长期有效（AI 全程碰不到策略文件）；
+- 「**永久加入**」：由系统写入 `policy.local.yml` 长期有效（AI 全程碰不到任何策略文件）；
 - 「**拒绝**」：本次拒绝。
 
 误加入没关系：确认 toast 自带 [撤销]；以后想撤回，托盘图标右键 → 白名单管理 → 对应行 [移出]。
 也可以跟 AI 说"以后别操作 XX 了"，AI 会弹一个确认窗，你点 [移出] 即可。
 
-**加自家软件（管理员手动方式）**：在 `whitelist` 加一行 `{ process: 程序名.exe, max_level: L2 }`，重启 daemon 生效（手编文件运行期不生效；外部修改会被指纹守望写进审计留痕）。
+**加自家软件（管理员手动方式）**：编辑 `policy.local.yml`，只写 `whitelist` 一节：
+
+```yaml
+whitelist:
+  - { process: 自家软件.exe, max_level: L2 }     # 加入
+  - { process: notepad.exe, max_level: null }    # 撤回一条出厂白名单（墓碑）
+```
+
+重启 daemon 生效。**不要**把手动条目写进 `policy.yml`——升级覆盖时会丢（手动改动 `policy.yml` 会被指纹守望写进审计留痕）。
 
 ## ⑥ 验证清单（装完三连）
 
@@ -153,15 +169,26 @@ audit_dir: ./audit          # 审计与截图受管目录（相对 exe 目录）
 
 1. 「**用 deskpilot 截个屏**」→ 能看到当前屏幕截图回来；
 2. 「**用 deskpilot 取一下鼠标光标位置**」→ 返回坐标；
-3. 「**用 deskpilot 打开记事本，读一下它的界面元素**」→ 记事本被打开，返回元素清单。
+3. 「**用 deskpilot 打开记事本，读一下它的界面元素**」→ 记事本被打开，返回元素清单；
+4. 「**用 deskpilot 点击记事本里的「文件」两个字**」→ 不用坐标，按文字定位点击（v0.3.4 新能力）。
 
 三项全过 = 安装完成。再试一句「**用 deskpilot 关掉记事本窗口**」→ 应弹出本地审批窗（带实拍缩略图与倒计时），批准后才关闭——这验证安全审批通道也在工作。
 
 ## ⑦ 升级
 
+你的**永久入白记录升级后自动保留**（它们存在 `policy.local.yml`，与出厂文件分离）——不再需要手动备份合并。
+
 1. 按 ① 下载新版 zip 并校验；
 2. 停 daemon：`Stop-Process -Name deskpilot -Force`（没开 daemon 跳过）；
-3. 解压覆盖 `deskpilot.exe`；**`policy.yml` 会被覆盖——它是构建同步产物（repo 真源 → 构建同步），如有自定义先备份**，合并后再放回；
+3. **用 `install.ps1` 升级**：脚本会在覆盖 `policy.yml` 前自动执行 `--migrate-policy`，把旧出厂文件里你自己加入的条目迁进 `policy.local.yml`；
+   **手动解压覆盖**：先跑一步迁移，再覆盖：
+   ```powershell
+   & "C:\tools\deskpilot\deskpilot.exe" --migrate-policy `
+       "C:\tools\deskpilot\policy.yml" "C:\path\to\新版zip解压\policy.yml" `
+       "C:\tools\deskpilot\policy.local.yml"
+   # 输出「入白迁移: xxx.exe」即迁移成功；「无差异」也正常
+   ```
+   `policy.local.yml` 永远不覆盖；`policy.yml` 会被新版出厂文件替换；
 4. 重新启动 daemon（④）。客户端注册不用动（路径没变）。
 
 ## ⑧ 常见问题（FAQ）
@@ -172,7 +199,8 @@ audit_dir: ./audit          # 审计与截图受管目录（相对 exe 目录）
 | **9420 端口被占用** | 查占用：`netstat -ano \| findstr :9420`。若是旧 deskpilot 进程残留：`Stop-Process -Name deskpilot -Force`。确需换端口：给 daemon 与 MCP 客户端都设环境变量 `DESKPILOT_DAEMON_PORT=<新端口>`。 |
 | **启动报 policy 未找到** | `policy.yml` 不在 exe 同目录。放回同目录后重启。 |
 | **内网/离线机器怎么装** | 在有网机器下载 zip + sha256，经审批通道拷到目标机 → 按 ①③④ 照做（跳过下载）；或用 `install.ps1 -LocalZip <zip路径>`，全程无需外网。 |
-| **审批窗没弹、操作超时被拒** | ① 确认目标进程在 `whitelist`；② 多显示器用户看另一块屏（v0.3.1 起弹窗跟随目标窗口/鼠标所在屏）；③ 看 `audit\` 目录日志；④ 确认未处于急停冻结（冻结中写操作一律拒绝，`Ctrl+Shift+F11` 或 `deskpilot.exe --reset` 解冻）。 |
+| **审批窗没弹、操作超时被拒** | ① 确认目标进程在白名单（出厂 `policy.yml` 或你的 `policy.local.yml`）；② 多显示器用户看另一块屏（v0.3.1 起弹窗跟随目标窗口/鼠标所在屏）；③ 看 `audit\` 目录日志；④ 确认未处于急停冻结（冻结中写操作一律拒绝，`Ctrl+Shift+F11` 或 `deskpilot.exe --reset` 解冻）。 |
+| **审批窗挂着，AI 先报超时了** | v0.3.4 起已修复：审批 90 秒内调用一直在线，超时才自动拒绝。若客户端有自己的工具超时，把它放宽到 120s：`$env:MCP_TOOL_TIMEOUT = "120000"`。 |
 | **AI 说连不上 deskpilot** | 客户端配置路径含空格没加引号 / 改配置后没重启客户端 / daemon 端口被改但客户端环境变量没同步。 |
 
 ## ⑨ 一键安装脚本（install.ps1）
