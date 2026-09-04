@@ -26,18 +26,28 @@ VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
 
 
 def resolve_budget(level: str, policy) -> float:
-    """ISS-0024：调用时限预算决议（单源纯函数）。
+    """调用时限预算决议（单源纯函数,ISS-0024 + ISS-0033 A3 扩面）。
 
-    L2 写工具可被强制层动态升级 L3（终端绑定/危险键/启动终端,
-    enforcement 三处 eff=L3),升级路径含同步审批——其外层预算必须
-    覆盖 approval_ttl+5,否则审批挂起中必 TOOL_TIMEOUT("报错但动作
-    可能已执行",可靠性撒谎)。L3 同档。其余级别查静态表。
-    policy 缺失时 L2/L3 按 65s 兜底(fail-closed 方向:宁慢报不误杀)。
+    L1/L2 写工具均可被强制层动态升级 L3（终端绑定/危险键/启动终端/
+    入白审批,enforcement 三处 eff=L3 与闸二 request_enroll),升级路径
+    含同步审批——其外层预算必须覆盖 approval_ttl+5,否则审批挂起中必
+    TOOL_TIMEOUT("报错但动作可能已执行",可靠性撒谎)。L3 同档。
+    其余级别查静态表。policy 缺失时按 65s 兜底(fail-closed 方向:
+    宁慢报不误杀)。
     """
-    if level in ("L2", "L3"):
+    if level in ("L1", "L2", "L3"):
         ttl = policy.approval_ttl if policy is not None else 60.0
         return ttl + 5.0
     return TOOL_TIME_BUDGETS.get(level, TOOL_TIME_BUDGETS["L2"])
+
+
+def client_timeout(policy) -> float:
+    """ISS-0033 A2：stdio 客户端调用超时——必须大于审批链最坏耗时
+    (approval_ttl+5 的 daemon 预算),否则整 TTL 审批以连接失败回报且
+    临期批准在客户端报失败后仍执行。由策略推导,禁止魔法常量。
+    """
+    ttl = policy.approval_ttl if policy is not None else 60.0
+    return ttl + 15.0
 
 
 def tool_timeout_payload(level: str) -> dict:
@@ -330,11 +340,11 @@ def probe_daemon(host: str, port: int, timeout: float = 0.3) -> bool:
 
 
 def remote_call(tool: str, raw: dict[str, Any], base_url: str,
-                timeout: float = 90.0) -> dict:
+                timeout: float) -> dict:
     """向常驻服务发起一次工具调用，返回结构化结果字典。
     连接失败显式抛错（禁止静默成功）。
-    超时默认 90s：须大于 approval_ttl——L3 同步审批阻塞人类裁决
-    时长（ISS-0003 整改项 C）。"""
+    timeout 必传：由 client_timeout(policy) 推导（ISS-0033 A2——
+    须大于 approval_ttl+5 的 daemon 预算;缺参即调用点 bug）。"""
     payload = json.dumps({"tool": tool, "params": raw},
                          ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(

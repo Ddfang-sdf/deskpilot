@@ -28,9 +28,10 @@ class TestResolveBudgetUnit:
         """TC-BT-02:L0 → 静态预算 5s。"""
         assert resolve_budget("L0", policy) == 5.0
 
-    def test_bt03_l1_unchanged(self, policy):
-        """TC-BT-03:L1 → 静态预算 15s。"""
-        assert resolve_budget("L1", policy) == 15.0
+    def test_bt03_l1_escalation_tier(self, policy):
+        """TC-BT-03(ISS-0033 A3 重指):L1 可升级(attach 入白/终端绑定)
+        → 与 L2 同档 approval_ttl+5。"""
+        assert resolve_budget("L1", policy) == policy.approval_ttl + 5
 
 
 class SlowApproveChannel:
@@ -53,9 +54,13 @@ class SlowApproveChannel:
         return self.decision
 
 
-@pytest.mark.integration
-class TestBudgetIntegration:
-    """TC-BT-04/05:真 daemon 真审批链,断言在 HTTP 响应体(外表面)。"""
+class TestBudgetAssembly:
+    """TC-BT-04/05 装配(assembly)测试(ISS-0033 C2 重分类)。
+
+    真实部件:HttpDaemon / Enforcement / BindingManager / ApprovalManager /
+    审批链闸门;替身:SlowApproveChannel(审批通道 sleep 接缝)/FakeExecutor/
+    FakeProbe/FakeClock(共 4 处)。断层面:HTTP 响应体。按三层定义含替身
+    不授 integration 标签,降级 assembly 并如实列明。"""
 
     def _make_daemon(self, policy, audit_log, tmp_path, channel):
         from deskpilot.approval import ApprovalManager

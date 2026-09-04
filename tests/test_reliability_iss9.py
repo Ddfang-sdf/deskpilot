@@ -117,9 +117,12 @@ class TestToolTimeBudgets:
 
     def test_over_budget_returns_structured_timeout(self, slow_ctx, bound_record,
                                                     monkeypatch):
-        # ISS-0024 重指:L2 预算现由 resolve_budget 按审批时限决议,不再读
-        # TOOL_TIME_BUDGETS——收紧测试改用仍读静态表的 L1 档(scroll)
-        monkeypatch.setitem(TOOL_TIME_BUDGETS, "L1", 0.5)
+        # ISS-0033 重指:L1/L2 预算均改由 resolve_budget 按审批时限决议,
+        # 收紧测试直接替换预算决议接缝(与旧测试 monkeypatch 常量的
+        # 手法等价,目标仍是验证"临期回结构化 TOOL_TIMEOUT")
+        import deskpilot.httpd as httpd_mod
+        monkeypatch.setattr(httpd_mod, "resolve_budget",
+                            lambda level, policy: 0.5)
         d = HttpDaemon(slow_ctx, host="127.0.0.1", port=0)
         d.start()
         try:

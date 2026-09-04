@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable, Mapping
 
 from .enforcement import _truncate_show     # ISS-0027：参数回显截断复用
 from .errors import InvalidParamsError  # noqa: F401  （供调用方捕获）
+from .httpd import client_timeout           # ISS-0033 A2：客户端超时由策略推导
 from .models import Policy
 
 # 参数类型标签：str / int / num / coord / rect / text / any
@@ -309,8 +310,10 @@ def build_server(ctx, backend: str = "local", daemon_url: str = ""):
         if backend == "http":
             # ISS-0009 §6 A：长调用（L3 同步审批等）期间周期发进度通知，
             # 协议兼容客户端收到进度会重置执行超时
+            # ISS-0033 A2：超时由策略推导(禁魔法 90)
             result_dict = await call_with_progress(
-                asyncio.to_thread(remote_call, name, raw, daemon_url),
+                asyncio.to_thread(remote_call, name, raw, daemon_url,
+                                  client_timeout(ctx.policy)),
                 _progress_reporter, interval_s=5.0)
             payload = json.dumps(result_dict, ensure_ascii=False, default=str)
             contents: list = [types.TextContent(type="text", text=payload)]
