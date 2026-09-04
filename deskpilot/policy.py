@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 from types import MappingProxyType
 
@@ -72,9 +74,14 @@ def _merge_local_whitelist(data: dict, local_path: str) -> None:
         proc = str(entry.get("process", "")).strip().lower()
         if not proc:
             raise _fail("用户策略数据 whitelist 条目缺 process")
+        # ISS-0032 A5:缺 max_level 键显式报错——墓碑仅 max_level: null
+        # 显式表达;消灭"同形 YAML 三语义"的隐式陷阱
+        if "max_level" not in entry:
+            raise _fail(f"用户策略数据条目 {proc} 缺 max_level 键"
+                        "(加入写 L0/L1/L2,撤回写 null,禁止省略)")
         level = entry.get("max_level")
         if level is None:
-            merged.pop(proc, None)               # 墓碑：撤回出厂条目
+            merged.pop(proc, None)               # 墓碑：撤回
         elif level in ("L0", "L1", "L2"):
             merged[proc] = {"process": proc, "max_level": level}
         else:
@@ -84,40 +91,65 @@ def _merge_local_whitelist(data: dict, local_path: str) -> None:
 
 def migrate_whitelist(old_path: str, new_path: str, local_path: str,
                       audit=None) -> list[str]:
-    """ISS-0030 F：升级迁移——旧策略中不属于新出厂的白名单差额迁入 local。
+    """ISS-0030 F + ISS-0032：升级迁移——旧策略中不属于新出厂的白名单
+    差额迁入 local。**local 已有条目(墓碑或显式)一律跳过,人类裁决
+    永远优先于出厂差额**;坏输入收敛 PolicyError;落盘 .bak 原子保护;
+    级别 strip 归一(B5)。
 
     返回迁移进程名列表;零差异零落盘。audit 提供时记录「入白迁移」。
     """
     def _names(path: str) -> dict[str, str]:
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        try:
+            raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as e:
+            raise _fail(f"策略文件不可读/解析失败 {path}: {e}") from e
+        if not isinstance(raw, dict):
+            raise _fail(f"策略文件顶层非映射: {path}")
         return {str(i.get("process", "")).strip().lower():
-                str(i.get("max_level", "L2")).upper()
-                for i in (data.get("whitelist") or [])}
+                str(i.get("max_level", "L2")).strip().upper()
+                for i in (raw.get("whitelist") or [])}
 
     old_wl, new_wl = _names(old_path), _names(new_path)
     surplus = sorted(set(old_wl) - set(new_wl))
     if not surplus:
         return []
     lp = Path(local_path)
-    local = {}
+    local: dict = {}
     if lp.is_file():
         try:
-            local = yaml.safe_load(lp.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as e:
-            raise _fail(f"用户策略数据解析失败: {e}") from e
+            loaded = yaml.safe_load(lp.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as e:
+            raise _fail(f"用户策略数据不可读/解析失败: {e}") from e
+        if not isinstance(loaded, dict):
+            raise _fail("用户策略数据顶层必须为映射")
+        local = loaded
     entries = {str(i.get("process", "")).strip().lower(): i
                for i in (local.get("whitelist") or [])}
+    migrated: list[str] = []
     for proc in surplus:
+        if proc in entries:                      # A1:绝不覆写人类裁决
+            continue
         entries[proc] = {"process": proc, "max_level": old_wl[proc]}
+        migrated.append(proc)
+    if not migrated:
+        return []
     local["whitelist"] = list(entries.values())
-    lp.write_text(yaml.safe_dump(local, allow_unicode=True, sort_keys=False),
-                  encoding="utf-8")
+    # B2:原子落盘(.bak + tmp + os.replace)
+    if lp.is_file():
+        try:
+            shutil.copy2(lp, lp.with_suffix(lp.suffix + ".bak"))
+        except OSError as e:
+            raise _fail(f"用户策略数据备份失败: {e}") from e
+    tmp = lp.with_suffix(lp.suffix + ".tmp")
+    tmp.write_text(yaml.safe_dump(local, allow_unicode=True, sort_keys=False),
+                   encoding="utf-8")
+    os.replace(tmp, lp)
     if audit is not None:
         try:
-            audit.record_event("入白迁移", ", ".join(surplus))
+            audit.record_event("入白迁移", ", ".join(migrated))
         except Exception:
             pass
-    return surplus
+    return migrated
 
 
 def _load_whitelist(raw) -> MappingProxyType:
@@ -181,12 +213,14 @@ def load_policy(path: str, local_path: str | None = None) -> Policy:
     if not isinstance(data, dict):
         raise _fail("顶层必须为映射")
 
-    if local_path:
-        _merge_local_whitelist(data, local_path)
-
     for section in _REQUIRED_SECTIONS:
         if section not in data:
             raise _fail(f"缺少必填节: {section}")
+
+    # ISS-0032 B3:合并必须在 base 校验之后——坏 base 永远先炸,
+    # 不得被 local 合并"修复"成空表绕过 fail-closed
+    if local_path:
+        _merge_local_whitelist(data, local_path)
 
     whitelist = _load_whitelist(data["whitelist"])
     terminal_apps = _load_str_set(data["terminal_apps"], "terminal_apps")

@@ -294,7 +294,13 @@ def _run_migrate_policy(args: list[str]) -> int:
     audit = None
     try:
         from .audit import AuditLogger
-        audit = AuditLogger(load_policy(new).audit_dir)
+        from .audit_paths import resolve_audit_dir
+        new_policy = load_policy(new)
+        # ISS-0032 B4:相对 audit_dir 锚定到新策略所在目录,
+        # 不随安装器 CWD 流浪
+        anchored = resolve_audit_dir(new_policy.audit_dir,
+                                     policy_path=os.path.abspath(new))
+        audit = AuditLogger(str(anchored))
     except Exception:
         pass                    # 审计不可用时迁移照常(尽力留痕)
     try:
