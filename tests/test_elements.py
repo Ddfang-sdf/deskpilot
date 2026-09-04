@@ -154,9 +154,14 @@ def fake_probe():
 
 
 @pytest.fixture
-def real_executor(estop, tmp_path, clock, fake_probe):
-    return Executor(estop, str(tmp_path / "audit"), poll_interval=0.02,
-                    wait_timeout_max=5.0, clock=clock, probe=fake_probe)
+def real_executor(estop, tmp_path, clock, fake_probe, monkeypatch):
+    ex = Executor(estop, str(tmp_path / "audit"), poll_interval=0.02,
+                  wait_timeout_max=5.0, clock=clock, probe=fake_probe)
+    # 遮挡校验打桩:其落点判定打的是真实屏幕,桌面窗口状态会把单测变环境
+    # 依赖(随机序 CI 实证:被前台窗口遮挡即红)——本组用例的被测对象是
+    # 元素定位/调用,遮挡语义由 click 系专测覆盖
+    monkeypatch.setattr(ex, "_check_occlusion", lambda hwnd, x, y: None)
+    return ex
 
 
 def make_callable_source(elements: dict[int, FakeElement | None]):
@@ -386,25 +391,28 @@ class TestInvokeFallback:
         assert r["status"] == "ok"
         assert item.selected == 1
 
-    def test_pixel_fallback(self, estop, tmp_path, clock, fake_probe):
-        """既无 Invoke 也无选择模式 → 元素中心像素点击兜底。"""
+    def test_pixel_fallback(self, estop, tmp_path, clock, fake_probe, monkeypatch):
+        """既无 Invoke 也无选择模式 → 元素中心像素点击兜底。
+
+        ISS-0025 E 实证修复:原实现手工 `FakeElement.Invoke = fake_invoke`
+        后 `del FakeElement.Invoke`——del 删掉的是类字典里的原始方法本身,
+        该测试跑过即永久摧毁 Invoke,随机序下先跑会炸掉后序用例;
+        改用 monkeypatch 自动还原(顺序依赖治理)。
+        """
         item = FakeElement(name="形状项", invokable=False, rect=(110, 110, 160, 140))
         clicked = []
 
         def fake_invoke(self):
             raise RuntimeError("no invoke")
 
-        FakeElement.Invoke = fake_invoke
-        try:
-            ex = self._executor(estop, tmp_path, clock, fake_probe)
-            ex._element_source = lambda hwnd: FakeElement(children=[item])
-            ex._pixel_click = lambda x, y: clicked.append((x, y))
-            r = ex.execute({"tool": "click_element", "params": {"name": "形状项"},
-                            "binding_hwnd": FIXTURE_HWND})
-            assert r["status"] == "ok"
-            assert clicked == [(135, 125)]
-        finally:
-            del FakeElement.Invoke
+        monkeypatch.setattr(FakeElement, "Invoke", fake_invoke)
+        ex = self._executor(estop, tmp_path, clock, fake_probe)
+        ex._element_source = lambda hwnd: FakeElement(children=[item])
+        ex._pixel_click = lambda x, y: clicked.append((x, y))
+        r = ex.execute({"tool": "click_element", "params": {"name": "形状项"},
+                        "binding_hwnd": FIXTURE_HWND})
+        assert r["status"] == "ok"
+        assert clicked == [(135, 125)]
 
 
 class TestGhostDedup:

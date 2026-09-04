@@ -247,6 +247,10 @@ class TestEvidenceShots:
                             lambda *a, **k: clicks.append(a))
         monkeypatch.setattr("deskpilot.executor.core.pyautogui.moveTo",
                             lambda *a, **k: None)
+        # 遮挡校验打桩:其落点判定打真实屏幕,前台窗口状态会把单测变环境
+        # 依赖(随机序 CI 实证)——本用例被测对象是证据图格式与区域
+        monkeypatch.setattr(m3_executor, "_check_occlusion",
+                            lambda hwnd, x, y: None)
         r = m3_executor.execute(
             {"tool": "click", "params": {"x": 300, "y": 300},
              "binding_hwnd": FIXTURE_HWND})
