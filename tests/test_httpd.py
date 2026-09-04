@@ -135,7 +135,8 @@ class TestRemoteCall:
 
     def test_roundtrip(self, fake_server):
         base = f"http://127.0.0.1:{fake_server.server_port}"
-        result = remote_call("click", {"x": 1, "y": 2}, base)
+        # ISS-0033 A2:timeout 必传(客户端超时由策略推导)
+        result = remote_call("click", {"x": 1, "y": 2}, base, timeout=30.0)
         assert result["ok"] is True
         assert result["data"]["status"] == "ok"
         assert len(fake_server.received) == 1
@@ -151,7 +152,7 @@ class TestRemoteCall:
         s.close()
         with pytest.raises(Exception) as ei:
             remote_call("click", {"x": 1, "y": 2},
-                        f"http://127.0.0.1:{port}")
+                        f"http://127.0.0.1:{port}", timeout=5.0)
         assert "无法连接" in str(ei.value) or "Errno" in str(ei.value)
 
 
