@@ -19,6 +19,7 @@ release/*
 !release/CHANGES.md
 !release/DEMO_SHOOT.md
 mcp_call_daemon.*
+policy.local.yml            # ISS-0030:用户策略数据,运行期生成(白名单差异/墓碑)
 
 # ISS-0011 发布流水线干跑产物（本地/CI 工作区同规格）
 /staging/
