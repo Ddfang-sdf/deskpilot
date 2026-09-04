@@ -305,10 +305,8 @@ def main() -> int:
     except PolicyError as e:
         print(f"策略加载失败: {e}", file=sys.stderr)
         return 2
-    if not local_path.is_file():
-        local_path.write_text(
-            "# DeskPilot 用户策略数据(仅白名单差异:入白条目与撤回墓碑)\n"
-            "whitelist: []\n", encoding="utf-8")
+    # 惰性创建(ISS-0031 修正):local 文件在首次永久入白时才落盘,
+    # 纯加载不产生空文件(避免仓库/目录被空数据文件污染)
 
     audit = AuditLogger(policy.audit_dir)
     try:
@@ -320,9 +318,11 @@ def main() -> int:
     # ISS-0012 C：策略指纹入审计 + 运行期外部修改留痕
     fp = policy_sha256_audit(str(policy_path), audit)
     _start_policy_watch(str(policy_path), audit, fingerprint=fp)
-    # ISS-0030 E：用户数据第二轨指纹+守望
-    local_fp = local_policy_sha256_audit(str(local_path), audit)
-    _start_policy_watch(str(local_path), audit, fingerprint=local_fp)
+    # ISS-0030 E：用户数据第二轨指纹+守望(文件未创建则跳过,
+    # 首笔永久入白落盘后由下次启动纳入)
+    if local_path.is_file():
+        local_fp = local_policy_sha256_audit(str(local_path), audit)
+        _start_policy_watch(str(local_path), audit, fingerprint=local_fp)
     # ISS-0012 A/D：运行期白名单管理（静态∪会话；落盘由 daemon 原子完成）
     from .whitelist_admin import WhitelistAdmin
     whitelist_admin = WhitelistAdmin(str(policy_path), policy.whitelist,
