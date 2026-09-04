@@ -55,7 +55,17 @@
 R3 响应体形态断言(TC-FUZZ-03 锁死"建议无载荷");R4 无持久化路径变迁;
 R5 终效应=错误文本可发现性(TC-FUZZ-04 真链)。
 
-## 5. 变更记录
+## 5. 施工接缝与自检校准点(v0.2 评审稿)
+
+| 项 | 现场 | 改法 |
+|----|------|------|
+| 回显工具函数 | enforcement._truncate_show(text, limit) 已有 | 复用为回显截断;统一格式 `（收到: <截断>）` |
+| 清扫面 | enforcement._deny 各路径参数类错误、executor 参数错误(click_text 系/INVALID_PARAMS)、tools 层校验、httpd 请求体错误 | 逐处补回显;不动非参数类错误(急停/窗口消失等) |
+| 近邻建议(新纯函数) | deskpilot/executor/textclick.py `suggest_similar(items, query, limit=3, min_ratio=0.5)`(difflib) | TC-FUZZ-01/02 直出 |
+| 接线点 | executor._click_text not_found 分支 | message 附"相似文本: ...";data 保持 None(TC-FUZZ-03 锁死无载荷) |
+| **自检校准** | 建议不自动执行由架构保证:建议仅在错误文本,无消费路径 | TC-FUZZ-03 形态断言守护 |
+
+## 6. 变更记录
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
