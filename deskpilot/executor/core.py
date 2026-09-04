@@ -676,14 +676,25 @@ class Executor:
                 pyperclip.copy(text)
                 self._activate_if_needed(hwnd)
                 pyautogui.hotkey("ctrl", "v")
-                time.sleep(0.3)
-                current = self._read_edit_value(hwnd)
-                if current is None:
-                    # 读回校验不可用：只粘贴一次即停止，避免重复粘贴
-                    note = "读回校验不可用（目标无 UIA 值模式）"
+                # ISS-0035 C1:读回轮询确认——UIA 值刷新有滞后,单次立读
+                # 会把"成功但滞后"误判为失败而重贴(文档重复实证)。轮询
+                # 3 次×300ms 仍不含目标文本才判失败重贴;宁重复不丢字
+                # 原则保留(轮询耗尽仍重贴至上限)。
+                for _poll in range(3):
+                    time.sleep(0.3)
+                    current = self._read_edit_value(hwnd)
+                    if current is None:
+                        # 读回校验不可用：只粘贴一次即停止，避免重复粘贴
+                        note = "读回校验不可用（目标无 UIA 值模式）"
+                        break
+                    if text in current:
+                        note = "读回校验一致"
+                        break
+                else:
+                    current = None
+                if current is None and "不可用" in note:
                     break
-                if text in current:
-                    note = "读回校验一致"
+                if note == "读回校验一致":
                     break
                 attempts += 1
                 if attempts >= 2:

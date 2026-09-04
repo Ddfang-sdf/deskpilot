@@ -184,18 +184,16 @@ class TestClickTextIntegration:
                 assert a["ok"] is True, a.get("message")
                 token = a["data"]["token"]
                 # 会话恢复会带回历史运行键入的内容(Store 记事本特性),
-                # 魔法串逐次唯一;且 type_text 读回校验滞后重试可能双贴
-                # (既定设计:宁可重复不丢字),文档同串可现两份——
-                # 用 index=0 显式取首个命中(测试验的是真 OCR 命中+落点,
-                # 不是文档唯一性;设计修正 2026-09-04 入册)
+                # 魔法串逐次唯一;type_text 双贴缺陷已由 ISS-0035 修复
+                # (读回轮询确认)——同串必须唯一,多命中(AMBIGUOUS)即红:
+                # 本用例兼任双贴回归探测器
                 magic = f"dp测试串{int(time.time()) % 100000}"
                 t = self._call(d.port, "type_text",
                                {"token": token, "text": magic})
                 assert t["ok"] is True, t.get("message")
                 time.sleep(0.5)
                 c = self._call(d.port, "click_text",
-                               {"token": token, "text": magic,
-                                "index": 0}, timeout=120)
+                               {"token": token, "text": magic}, timeout=120)
                 assert c["ok"] is True, c.get("message")
                 tx, ty = c["data"]["target"]
                 rect = new[0]["rect"]
