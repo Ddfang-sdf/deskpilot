@@ -165,7 +165,9 @@ class TestClickTextIntegration:
                 d.stop()
         finally:
             proc.terminate()
-            _close_all_and_wait([w["hwnd"] for w in new])
+            closed = _close_all_and_wait([w["hwnd"] for w in new])
+        # 卫生断言(泄漏即红):打字类测试同样零残留
+        assert closed is True, "测试残留记事本窗口(未保存关窗失败)"
 
     def test_ct08_real_ocr_click(self, policy, audit_log, tmp_path):
         """TC-CT-08:真 OCR 点击独特字符串 → ok 且落点在窗口 rect 内。"""
@@ -186,10 +188,14 @@ class TestClickTextIntegration:
                 # 会话恢复会带回历史运行键入的内容(Store 记事本特性),
                 # 魔法串逐次唯一;type_text 双贴缺陷已由 ISS-0035 修复
                 # (读回轮询确认)——同串必须唯一,多命中(AMBIGUOUS)即红:
-                # 本用例兼任双贴回归探测器
+                # 本用例兼任双贴回归探测器。ctrl+end+\r\n 让魔法串独占
+                # 行(恢复文档可能把历次串拼成巨行,吞并 OCR 条目)
+                k = self._call(d.port, "key",
+                               {"token": token, "key": "ctrl+end"})
+                assert k["ok"] is True, k.get("message")
                 magic = f"dp测试串{int(time.time()) % 100000}"
                 t = self._call(d.port, "type_text",
-                               {"token": token, "text": magic})
+                               {"token": token, "text": "\r\n" + magic})
                 assert t["ok"] is True, t.get("message")
                 time.sleep(0.5)
                 c = self._call(d.port, "click_text",
@@ -203,4 +209,6 @@ class TestClickTextIntegration:
                 d.stop()
         finally:
             proc.terminate()
-            _close_all_and_wait([w["hwnd"] for w in new])
+            closed = _close_all_and_wait([w["hwnd"] for w in new])
+        # 卫生断言(泄漏即红):打字类测试同样零残留
+        assert closed is True, "测试残留记事本窗口(未保存关窗失败)"

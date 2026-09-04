@@ -121,22 +121,63 @@ class TestOcrDescription:
 
 # ---------- D 经 daemon 实调 UIA（集成,R1 守门） ----------
 
-def _close_all_and_wait(hwnds, timeout: float = 6.0) -> bool:
+def _close_all_and_wait(hwnds, timeout: float = 8.0) -> bool:
     """关窗卫生:对 hwnds 逐一发 WM_CLOSE,轮候全部消失。
 
     只用 WM_CLOSE(优雅关闭,会话状态干净);禁用 taskkill /F——
     Store 版记事本会话恢复机制会把强杀的窗口下次启动全部还原,
     越杀越多(2026-09-02 实盘实证)。关不掉就返回 False 让测试红,
     交人处置(fail-closed),不静默强杀。
+
+    2026-09-04 实盘修复(未保存文档关窗):
+    ① Store 版:等待自动保存生效(标题 * 前缀消失)再 WM_CLOSE——未保存
+      文档的 WM_CLOSE 会弹 XAML 内嵌保存提示,窗口滞留且模态阻塞同进程
+      后续窗口(全套件下后序记事本测试遮挡报错的根因);
+    ② 经典版(CI):修改文档的 WM_CLOSE 弹 #32770 保存对话框——
+      对同 PID 的可见 #32770 对话框发 WM_COMMAND IDNO 点「不保存」。
     """
     import ctypes
     u32 = ctypes.windll.user32
+    # ① Store 版:等自动保存(标题去 *)——最多 5s,等不到也照关
     for h in hwnds:
+        waited = 0.0
+        while waited < 5.0:
+            buf = ctypes.create_unicode_buffer(256)
+            u32.GetWindowTextW(h, buf, 256)
+            if not buf.value.startswith("*"):
+                break
+            time.sleep(0.3)
+            waited += 0.3
         u32.PostMessageW(h, 0x0010, 0, 0)                # WM_CLOSE
+    # ② 轮候期间对同 PID 的经典保存对话框点「不保存」
+    pids = set()
+    for h in hwnds:
+        pid = ctypes.wintypes.DWORD()
+        u32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        if pid.value:
+            pids.add(pid.value)
+
+    def _discard_dialogs():
+        for pid in list(pids):
+            def enum_cb(dhwnd, _lparam):
+                if not u32.IsWindowVisible(dhwnd):
+                    return True
+                dpid = ctypes.wintypes.DWORD()
+                u32.GetWindowThreadProcessId(dhwnd, ctypes.byref(dpid))
+                cls = ctypes.create_unicode_buffer(256)
+                u32.GetClassNameW(dhwnd, cls, 256)
+                if dpid.value == pid and cls.value == "#32770":
+                    u32.PostMessageW(dhwnd, 0x0111, 7, 0)   # WM_COMMAND IDNO
+                return True
+
+            u32.EnumWindows(ctypes.WINFUNCTYPE(
+                ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(enum_cb), 0)
+
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout:
         if all(not u32.IsWindow(h) for h in hwnds):
             return True
+        _discard_dialogs()
         time.sleep(0.2)
     return False
 
