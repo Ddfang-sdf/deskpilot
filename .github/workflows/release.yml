@@ -26,10 +26,20 @@ jobs:
 
       # ISS-0025 E：随机序(暴露顺序依赖)+真机集成显式开关;
       # 基准脚本(实开窗口长跑)不属 CI 常规套件
+      # -x 快停于首个失败;输出落盘供无条件上传产物(自诊断管线)
       - name: Run tests (random order + integration)
+        shell: pwsh
         run: |
           pip install pytest-randomly
-          python -m pytest tests -q --run-integration --ignore=tests/test_benchmark_iss8.py
+          python -m pytest tests -q -x --tb=short --run-integration --ignore=tests/test_benchmark_iss8.py 2>&1 | Tee-Object -FilePath pytest-output.txt
+          exit $LASTEXITCODE
+
+      - name: Upload pytest output (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-output
+          path: pytest-output.txt
 
       - name: Build exe
         run: pyinstaller deskpilot.spec --noconfirm --clean
