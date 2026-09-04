@@ -25,6 +25,21 @@ DEFAULT_PORT = 9420
 VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
 
 
+def resolve_budget(level: str, policy) -> float:
+    """ISS-0024：调用时限预算决议（单源纯函数）。
+
+    L2 写工具可被强制层动态升级 L3（终端绑定/危险键/启动终端,
+    enforcement 三处 eff=L3),升级路径含同步审批——其外层预算必须
+    覆盖 approval_ttl+5,否则审批挂起中必 TOOL_TIMEOUT("报错但动作
+    可能已执行",可靠性撒谎)。L3 同档。其余级别查静态表。
+    policy 缺失时 L2/L3 按 65s 兜底(fail-closed 方向:宁慢报不误杀)。
+    """
+    if level in ("L2", "L3"):
+        ttl = policy.approval_ttl if policy is not None else 60.0
+        return ttl + 5.0
+    return TOOL_TIME_BUDGETS.get(level, TOOL_TIME_BUDGETS["L2"])
+
+
 def tool_timeout_payload(level: str) -> dict:
     """TOOL_TIMEOUT 响应体（ISS-0023）：临期"处理中"附带重试指引。
 
@@ -136,12 +151,11 @@ class HttpDaemon:
         from .models import TOOL_LEVELS
         from .tools import call_tool
 
-        level = TOOL_LEVELS.get(tool)
-        if level == "L3":
-            policy = getattr(self._ctx, "policy", None)
-            budget = (policy.approval_ttl + 5.0) if policy else 65.0
-        else:
-            budget = TOOL_TIME_BUDGETS.get(level, TOOL_TIME_BUDGETS["L2"])
+        # ISS-0024：预算决议单源化(原 level=="L3" 分支因 TOOL_LEVELS
+        # 无 L3 成员而不可达,审批挂起中 30s 必超时——实证修死)
+        level = TOOL_LEVELS.get(tool, "L2")
+        policy = getattr(self._ctx, "policy", None)
+        budget = resolve_budget(level, policy)
 
         def invoke():
             if level == "L0":

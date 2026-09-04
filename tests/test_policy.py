@@ -34,7 +34,7 @@ class TestLoadValid:
         # 可选节缺省默认值（DDS §5.9）
         assert policy.input_max_chars == 65536
         assert policy.l0_during_freeze is True
-        assert policy.corner_hold_ms == 200
+        assert policy.corner_hold_ms == 1000        # ISS-0028 默认阈值
         assert policy.input_scenario_keys == frozenset({"backspace"})
         assert policy.input_control_types == frozenset({"Edit", "Document"})
         assert policy.binding_ttl == 600.0

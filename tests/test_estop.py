@@ -41,7 +41,7 @@ class TestTriggerAndReset:
 
 class TestCornerDebounce:
     def test_pass_by_does_not_trigger(self, estop, clock):
-        """TC-S-EST-02：路过左上角不停留（< 200ms）不触发。"""
+        """TC-S-EST-02：路过左上角不停留（< 1000ms）不触发。"""
         estop.check_corner(0, 0)                     # 进入角落
         clock.advance(0.1)                           # 停留 100ms
         estop.check_corner(500, 500)                 # 离开
@@ -52,26 +52,26 @@ class TestCornerDebounce:
         assert estop.is_frozen() is False
 
     def test_sustained_corner_triggers(self, estop, clock):
-        """停留 ≥ corner_hold_ms（默认 200ms）触发。"""
+        """停留 ≥ corner_hold_ms（默认 1000ms）触发。"""
         estop.check_corner(0, 0)
-        clock.advance(0.25)                          # 停留 250ms
+        clock.advance(1.05)                          # 停留 1050ms
         estop.check_corner(0, 0)
         assert estop.is_frozen() is True
 
     def test_corner_boundary_exactly_threshold(self, estop, clock):
         """恰好达到停留阈值即触发。"""
         estop.check_corner(0, 0)
-        clock.advance(0.2)                           # 恰好 200ms
+        clock.advance(1.0)                           # 恰好 1000ms
         estop.check_corner(0, 0)
         assert estop.is_frozen() is True
 
     def test_leave_corner_resets_timer(self, estop, clock):
         """离开后重新进入，停留时长重新计。"""
         estop.check_corner(0, 0)
-        clock.advance(0.15)
+        clock.advance(0.5)
         estop.check_corner(500, 500)                 # 离开，计时清零
-        clock.advance(0.15)
+        clock.advance(0.5)
         estop.check_corner(0, 0)                     # 重新进入
-        clock.advance(0.15)                          # 累计 150ms < 200ms
+        clock.advance(0.5)                           # 累计 500ms < 1000ms
         estop.check_corner(0, 0)
         assert estop.is_frozen() is False

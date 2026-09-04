@@ -16,7 +16,7 @@ from .models import Policy
 # 可选节默认值（详细设计 §5.9）
 DEFAULT_INPUT_MAX_CHARS = 65536
 DEFAULT_L0_DURING_FREEZE = True
-DEFAULT_CORNER_HOLD_MS = 200
+DEFAULT_CORNER_HOLD_MS = 1000    # ISS-0028：200→1000（sdfang 裁定,防误触）
 DEFAULT_FREEZE_REMIND_INTERVAL = 180.0   # 冻结弹窗"稍后提醒"重提醒间隔（秒，ISS-0004）
 DEFAULT_INPUT_SCENARIO_KEYS = frozenset({"backspace"})
 DEFAULT_INPUT_CONTROL_TYPES = frozenset({"Edit", "Document"})

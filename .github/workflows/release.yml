@@ -24,6 +24,13 @@ jobs:
       - name: Install dependencies
         run: pip install -e . pyinstaller
 
+      # ISS-0025 E：随机序(暴露顺序依赖)+真机集成显式开关;
+      # 基准脚本(实开窗口长跑)不属 CI 常规套件
+      - name: Run tests (random order + integration)
+        run: |
+          pip install pytest-randomly
+          python -m pytest tests -q --run-integration --ignore=tests/test_benchmark_iss8.py
+
       - name: Build exe
         run: pyinstaller deskpilot.spec --noconfirm --clean
 

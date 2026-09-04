@@ -117,7 +117,7 @@ pip install -e .
 python -m deskpilot
 ```
 
-要求 Windows 10/11 + Python ≥ 3.12。运行测试：`python -m pytest tests/ -q`（434 条用例）。自行打包：`pip install pyinstaller && pyinstaller deskpilot.spec`。
+要求 Windows 10/11 + Python ≥ 3.12。运行测试：`python -m pytest tests/ -q`（默认零副作用：不开真实窗口、不读生产目录）。真机集成用例（会开启真实记事本窗口）需显式 `--run-integration`，CI 全量执行。自行打包：`pip install pyinstaller && pyinstaller deskpilot.spec`。
 
 ## 路线图
 

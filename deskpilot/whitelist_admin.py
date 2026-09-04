@@ -34,6 +34,19 @@ def file_sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def verify_policy_sync(src: str, dst: str) -> bool:
+    """ISS-0025 C：构建期同步一致性校验（纯函数,构建/CI 调用）。
+
+    源缺失抛 PolicyError（fail-closed）;目标缺失/内容不同返回 False。
+    供构建流程断言"repo 真源 == 产物策略"。
+    """
+    if not Path(src).is_file():
+        raise PolicyError(f"策略真源缺失: {src}")
+    if not Path(dst).is_file():
+        return False
+    return file_sha256(src) == file_sha256(dst)
+
+
 class WhitelistAdmin:
     """ISS-0012 §6：运行期白名单状态（静态 ∪ 会话）与落盘。
 

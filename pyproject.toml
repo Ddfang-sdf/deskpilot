@@ -27,3 +27,6 @@ include = ["deskpilot*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: 真机集成用例(开真实窗口/进程,默认跳过;CI 以 --run-integration 执行)",
+]

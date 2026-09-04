@@ -13,6 +13,23 @@ from typing import Any
 import pytest
 import yaml
 
+
+# ---------- ISS-0025 A：真机集成默认跳过/显式开关 ----------
+
+def pytest_addoption(parser):
+    parser.addoption("--run-integration", action="store_true", default=False,
+                     help="运行真机集成用例（会开启真实应用窗口）")
+
+
+def pytest_collection_modifyitems(config, items):
+    """无 --run-integration 时跳过全部 integration 用例（默认零副作用）。"""
+    if config.getoption("--run-integration"):
+        return
+    skip = pytest.mark.skip(reason="真机集成用例，需 --run-integration")
+    for item in items:
+        if "integration" in item.keywords:
+            item.add_marker(skip)
+
 from deskpilot import models
 from deskpilot.approval import ApprovalManager
 from deskpilot.audit import AuditLogger
@@ -154,7 +171,7 @@ def make_policy(audit_dir: str = "", **overrides) -> models.Policy:
         input_control_types=frozenset({"Edit", "Document"}),
         binding_ttl=600.0, approval_ttl=60.0, wait_poll_interval=0.5,
         wait_timeout_max=300.0, input_max_chars=65536,
-        l0_during_freeze=True, corner_hold_ms=200, freeze_remind_interval=180.0,
+        l0_during_freeze=True, corner_hold_ms=1000, freeze_remind_interval=180.0,
         audit_dir=audit_dir,
     )
     base.update(overrides)

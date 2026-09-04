@@ -314,16 +314,33 @@ class TestEnrollDialog:
 
     def test_image_reference_kept_on_window(self, monkeypatch, tmp_path):
         """ISS-0020 空白图修复:实拍图的 PhotoImage 引用须挂在窗口对象上,
-        防止 build_window 返回后被 GC 回收导致弹窗图像空白。"""
+        防止 build_window 返回后被 GC 回收导致弹窗图像空白。
+
+        ISS-0026 D 自治化:PhotoImage 用记录实例的替身——零真实 tk、
+        零默认根窗口依赖(原实现单跑必挂,全量借前序残留假绿,实证)。
+        """
         import deskpilot.approval_dialog as ad
-        from PIL import Image
+        from PIL import Image, ImageTk
+
+        class FakePhotoImage:
+            instances: list = []
+
+            def __init__(self, im):
+                FakePhotoImage.instances.append(self)
+                self.im = im
+
         img = tmp_path / "shot.png"
         Image.new("RGB", (32, 32), (10, 20, 30)).save(img)
         clicks = []
         self._fake_tk(monkeypatch, ad, clicks)
+        # 替身打在 PIL.ImageTk.PhotoImage 上(对话框函数内 from PIL import
+        # ImageTk 取的同一模块对象),不触真实 tk PhotoImage
+        monkeypatch.setattr(ImageTk, "PhotoImage", FakePhotoImage)
         win = ad.build_window(object(), "常规审批", str(tmp_path / "r.txt"),
                               5, image_path=str(img))
-        assert getattr(win, "_approval_photo", None) is not None
+        photo = getattr(win, "_approval_photo", None)
+        assert isinstance(photo, FakePhotoImage)      # 引用未丢(直出)
+        assert photo in FakePhotoImage.instances      # 替身确实被实例化(直出)
 
 
 class TestChannelPassthrough:

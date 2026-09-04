@@ -85,6 +85,6 @@ limits:
 
 estop:
   l0_during_freeze: true
-  corner_hold_ms: 200
+  corner_hold_ms: 1000     # ISS-0028：200→1000（sdfang 裁定,防误触）
 
 audit_dir: ./audit
