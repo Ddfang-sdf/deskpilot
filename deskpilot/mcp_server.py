@@ -11,6 +11,7 @@ import asyncio
 import time
 from typing import Any, Awaitable, Callable, Mapping
 
+from .enforcement import _truncate_show     # ISS-0027：参数回显截断复用
 from .errors import InvalidParamsError  # noqa: F401  （供调用方捕获）
 from .models import Policy
 
@@ -166,8 +167,10 @@ def _check_type(name: str, value: Any, spec: tuple, policy: Policy) -> None:
         if not isinstance(value, str):
             raise InvalidParamsError(f"参数 {name} 必须为字符串")
         if typ == "text" and len(value) > policy.input_max_chars:
+            # ISS-0027 A：回显服务端实际收到的值(AI 对比发送/接收诊断传输故障)
             raise InvalidParamsError(
-                f"参数 {name} 超长（{len(value)} > {policy.input_max_chars}）")
+                f"参数 {name} 超长（{len(value)} > {policy.input_max_chars}）"
+                f"。收到: {_truncate_show(value, 60)}")
         return
     if typ == "int":
         if isinstance(value, bool) or not isinstance(value, int):

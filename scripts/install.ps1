@@ -74,6 +74,16 @@ try {
   $pol = Get-ChildItem $stage -Recurse -Filter policy.yml | Select-Object -First 1
   if (-not $exe -or -not $pol) { Fail 3 "zip 内缺 deskpilot.exe 或 policy.yml" }
   New-Item -ItemType Directory -Force $InstallDir | Out-Null
+  # ISS-0030 F：覆盖出厂策略前,把旧策略中用户入白的差额迁入 policy.local.yml
+  # (尽力而为:迁移不可用时警告并继续安装,用户重新审批即可恢复)
+  $existingPol = Join-Path $InstallDir "policy.yml"
+  if (Test-Path $existingPol) {
+    try {
+      & $exe.FullName --migrate-policy $existingPol $pol.FullName (Join-Path $InstallDir "policy.local.yml") | Out-Null
+    } catch {
+      Write-Host "[install] 入白迁移不可用,跳过(重新审批可恢复): $($PSItem.Exception.Message)"
+    }
+  }
   Copy-Item $exe.FullName (Join-Path $InstallDir "deskpilot.exe") -Force
   Copy-Item $pol.FullName (Join-Path $InstallDir "policy.yml") -Force
   Remove-Item $stage -Recurse -Force

@@ -49,6 +49,77 @@ def _fail(message: str) -> PolicyError:
     return PolicyError(f"策略非法：{message}")
 
 
+def _merge_local_whitelist(data: dict, local_path: str) -> None:
+    """ISS-0030 B：合并用户策略数据(仅 whitelist 键;墓碑撤回/覆盖/新增)。"""
+    lp = Path(local_path)
+    if not lp.is_file():
+        return                                   # 无用户数据=纯出厂形态
+    try:
+        local = yaml.safe_load(lp.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise _fail(f"用户策略数据解析失败: {e}") from e
+    if not isinstance(local, dict):
+        raise _fail("用户策略数据顶层必须为映射")
+    extra = sorted(set(local.keys()) - {"whitelist"})
+    if extra:
+        raise _fail("用户策略数据仅允许 whitelist 键"
+                    f"(安全参数不可本地放宽): {extra}")
+    merged = {str(i.get("process", "")).strip().lower(): i
+              for i in (data.get("whitelist") or [])}
+    for entry in local.get("whitelist") or []:
+        if not isinstance(entry, dict):
+            raise _fail("用户策略数据 whitelist 条目必须为映射")
+        proc = str(entry.get("process", "")).strip().lower()
+        if not proc:
+            raise _fail("用户策略数据 whitelist 条目缺 process")
+        level = entry.get("max_level")
+        if level is None:
+            merged.pop(proc, None)               # 墓碑：撤回出厂条目
+        elif level in ("L0", "L1", "L2"):
+            merged[proc] = {"process": proc, "max_level": level}
+        else:
+            raise _fail(f"用户策略数据级别非法: {level!r}")
+    data["whitelist"] = list(merged.values())
+
+
+def migrate_whitelist(old_path: str, new_path: str, local_path: str,
+                      audit=None) -> list[str]:
+    """ISS-0030 F：升级迁移——旧策略中不属于新出厂的白名单差额迁入 local。
+
+    返回迁移进程名列表;零差异零落盘。audit 提供时记录「入白迁移」。
+    """
+    def _names(path: str) -> dict[str, str]:
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        return {str(i.get("process", "")).strip().lower():
+                str(i.get("max_level", "L2")).upper()
+                for i in (data.get("whitelist") or [])}
+
+    old_wl, new_wl = _names(old_path), _names(new_path)
+    surplus = sorted(set(old_wl) - set(new_wl))
+    if not surplus:
+        return []
+    lp = Path(local_path)
+    local = {}
+    if lp.is_file():
+        try:
+            local = yaml.safe_load(lp.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as e:
+            raise _fail(f"用户策略数据解析失败: {e}") from e
+    entries = {str(i.get("process", "")).strip().lower(): i
+               for i in (local.get("whitelist") or [])}
+    for proc in surplus:
+        entries[proc] = {"process": proc, "max_level": old_wl[proc]}
+    local["whitelist"] = list(entries.values())
+    lp.write_text(yaml.safe_dump(local, allow_unicode=True, sort_keys=False),
+                  encoding="utf-8")
+    if audit is not None:
+        try:
+            audit.record_event("入白迁移", ", ".join(surplus))
+        except Exception:
+            pass
+    return surplus
+
+
 def _load_whitelist(raw) -> MappingProxyType:
     if not isinstance(raw, list):
         raise _fail("whitelist 必须为列表")
@@ -90,11 +161,15 @@ def _load_timeouts(raw) -> dict[str, float]:
     return out
 
 
-def load_policy(path: str) -> Policy:
+def load_policy(path: str, local_path: str | None = None) -> Policy:
     """加载并校验策略文件。
 
     文件缺失、节缺失、类型错误或取值非法时抛出 PolicyError（启动 fail-closed）。
     limits / estop / keys.input_scenario_keys / keys.input_control_types 缺省用默认值。
+
+    ISS-0030：local_path 提供时加载用户策略数据（policy.local.yml）并合并——
+    仅允许 whitelist 键（安全参数不可本地放宽,fail-closed）;条目
+    max_level: null 为撤回墓碑(覆盖出厂条目),其余覆盖/新增。
     """
     p = Path(path)
     if not p.is_file():
@@ -105,6 +180,9 @@ def load_policy(path: str) -> Policy:
         raise PolicyError(f"策略文件解析失败: {e}") from e
     if not isinstance(data, dict):
         raise _fail("顶层必须为映射")
+
+    if local_path:
+        _merge_local_whitelist(data, local_path)
 
     for section in _REQUIRED_SECTIONS:
         if section not in data:

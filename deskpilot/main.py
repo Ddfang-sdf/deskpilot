@@ -182,6 +182,17 @@ def policy_sha256_audit(policy_path: str, audit) -> str:
     return fp
 
 
+def local_policy_sha256_audit(local_path: str, audit) -> str:
+    """ISS-0030 E：用户策略数据(policy.local.yml)指纹审计——双轨第二轨。
+
+    审计事件「用户策略数据指纹」;出厂文件与用户数据分别留痕。
+    """
+    from .whitelist_admin import file_sha256
+    fp = file_sha256(local_path)
+    audit.record_event("用户策略数据指纹", f"{local_path} sha256={fp}")
+    return fp
+
+
 class _PolicyWatchThread(threading.Thread):
     """ISS-0012 §6 C：策略文件指纹周期比对线程（stop() 可停）。"""
 
@@ -248,19 +259,55 @@ def _start_janitor(policy, audit: AuditLogger) -> None:
         threading.Thread(target=loop, daemon=True).start()
 
 
+def _run_migrate_policy(args: list[str]) -> int:
+    """ISS-0030 F：--migrate-policy <old> <new> <local> 升级迁移子命令。
+
+    把旧策略中不属于新出厂的白名单差额迁入用户数据文件(审计「入白迁移」)。
+    """
+    if len(args) != 3:
+        print("用法: deskpilot.exe --migrate-policy <旧policy.yml> "
+              "<新出厂policy.yml> <policy.local.yml>", file=sys.stderr)
+        return 2
+    old, new, local = args
+    from .policy import migrate_whitelist
+    audit = None
+    try:
+        from .audit import AuditLogger
+        audit = AuditLogger(load_policy(new).audit_dir)
+    except Exception:
+        pass                    # 审计不可用时迁移照常(尽力留痕)
+    try:
+        migrated = migrate_whitelist(old, new, local, audit=audit)
+    except PolicyError as e:
+        print(f"入白迁移失败: {e}", file=sys.stderr)
+        return 2
+    print(f"入白迁移: {', '.join(migrated) if migrated else '无差异'}")
+    return 0
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     if "--reset" in sys.argv:
         return _cli_reset()
+    if "--migrate-policy" in sys.argv:
+        i = sys.argv.index("--migrate-policy")
+        return _run_migrate_policy(sys.argv[i + 1:i + 4])
     policy_path = _find_policy_path()
     if policy_path is None:
         print("未找到 policy.yml", file=sys.stderr)
         return 2
+    # ISS-0030 A：双文件——出厂只读 + 用户数据(policy.local.yml)
+    local_path = policy_path.with_name("policy.local.yml")
     try:
-        policy = load_policy(str(policy_path))
+        base_policy = load_policy(str(policy_path))
+        policy = load_policy(str(policy_path), local_path=str(local_path))
     except PolicyError as e:
         print(f"策略加载失败: {e}", file=sys.stderr)
         return 2
+    if not local_path.is_file():
+        local_path.write_text(
+            "# DeskPilot 用户策略数据(仅白名单差异:入白条目与撤回墓碑)\n"
+            "whitelist: []\n", encoding="utf-8")
 
     audit = AuditLogger(policy.audit_dir)
     try:
@@ -272,10 +319,15 @@ def main() -> int:
     # ISS-0012 C：策略指纹入审计 + 运行期外部修改留痕
     fp = policy_sha256_audit(str(policy_path), audit)
     _start_policy_watch(str(policy_path), audit, fingerprint=fp)
+    # ISS-0030 E：用户数据第二轨指纹+守望
+    local_fp = local_policy_sha256_audit(str(local_path), audit)
+    _start_policy_watch(str(local_path), audit, fingerprint=local_fp)
     # ISS-0012 A/D：运行期白名单管理（静态∪会话；落盘由 daemon 原子完成）
     from .whitelist_admin import WhitelistAdmin
     whitelist_admin = WhitelistAdmin(str(policy_path), policy.whitelist,
-                                     audit=audit)
+                                     audit=audit,
+                                     local_path=str(local_path),
+                                     base_whitelist=base_policy.whitelist)
     # ISS-0012 TC-FAST-04：并行暖名称/描述解析缓存（管理窗口/审批弹窗提速）
     from .appnames import warm_caches
     threading.Thread(target=warm_caches, kwargs={"parallel": True},

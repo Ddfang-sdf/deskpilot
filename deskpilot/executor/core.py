@@ -39,7 +39,7 @@ from ..errors import (ELEMENT_AMBIGUOUS, ELEMENT_DISABLED, ELEMENT_NOT_FOUND,
                       ExecutorError)
 from ..policy import normalize_key
 from .probe import DesktopProbe
-from .textclick import resolve_click
+from .textclick import resolve_click, suggest_similar
 
 _NOT_WIRED = {
     "get_clickable_map", "ocr", "template_match",
@@ -588,9 +588,14 @@ class Executor:
         if status == "invalid":
             raise ExecutorError(INVALID_PARAMS, payload)
         if status == "not_found":
+            # ISS-0027 B：附相似建议(仅文本,无载荷),AI 可一轮自愈
+            near = suggest_similar(ocr["items"],
+                                   str(params.get("text", "")))
+            hint = f"。相似文本: {' / '.join(near)}" if near else ""
             raise ExecutorError(
                 OCR_TEXT_NOT_FOUND,
-                f"未找到文字: {params.get('text')}。OCR 可见: {payload}")
+                f"未找到文字: {params.get('text')}。OCR 可见: {payload}"
+                f"{hint}")
         if status == "ambiguous":
             raise ExecutorError(
                 OCR_AMBIGUOUS,

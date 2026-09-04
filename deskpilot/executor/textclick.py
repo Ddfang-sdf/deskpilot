@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import difflib
+
 
 def resolve_click(items, query, match, index, img_w, img_h, rect):
     """OCR items 中求 query 的点击点(虚拟桌面坐标)。"""
@@ -47,6 +49,21 @@ def resolve_click(items, query, match, index, img_w, img_h, rect):
         return ("out_of_window", (cx, cy))
     return ("ok", {"point": _virtual_point(chosen, img_w, img_h, rect),
                    "matched": chosen.get("text", "")})
+
+
+def suggest_similar(items, query, limit: int = 3,
+                    min_ratio: float = 0.5) -> list[str]:
+    """ISS-0027 B：OCR 未命中时的相似文本候选(纯函数,difflib)。
+
+    按 SequenceMatcher ratio 降序取前 limit 个(≥min_ratio)。
+    仅产出文本建议——无坐标、无动作载荷,"建议即执行"由形态层杜绝。
+    """
+    scored = sorted(
+        ((difflib.SequenceMatcher(None, query, str(it.get("text", "")))
+          .ratio(), it.get("text", ""))
+         for it in items),
+        key=lambda p: p[0], reverse=True)
+    return [text for r, text in scored if r >= min_ratio][:limit]
 
 
 def _virtual_point(item, img_w, img_h, rect) -> tuple:

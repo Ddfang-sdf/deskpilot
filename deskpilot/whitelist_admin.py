@@ -55,8 +55,16 @@ class WhitelistAdmin:
     """
 
     def __init__(self, policy_path: str | None, static: Mapping[str, str],
-                 never_enroll: frozenset = NEVER_ENROLL, audit=None):
+                 never_enroll: frozenset = NEVER_ENROLL, audit=None,
+                 local_path: str | None = None,
+                 base_whitelist: Mapping[str, str] | None = None):
+        """ISS-0030：local_path 提供时为双文件模式——落盘只写
+        policy.local.yml(出厂 base 永不写);撤回出厂条目以墓碑
+        (max_level: null) 记录。local_path 缺省维持单文件旧语义
+        (测试/兼容装配)。base_whitelist 为出厂白名单进程集(墓碑判定)。"""
         self._path = Path(policy_path) if policy_path else None
+        self._local = Path(local_path) if local_path else None
+        self._base = {str(k).strip().lower() for k in (base_whitelist or {})}
         self._static: dict[str, str] = {str(k).strip().lower(): v
                                         for k, v in static.items()}
         self._session: dict[str, str] = {}
@@ -149,7 +157,28 @@ class WhitelistAdmin:
             raise PolicyError(f"进程 {proc} 属自保护集，永不可入白")
 
     def _write_disk(self, proc: str, level: str | None, remove: bool) -> None:
-        """原子改盘：读全量 → 改 whitelist 节 → 先 .bak → 临时文件替换。"""
+        """原子改盘：读全量 → 改 whitelist 节 → 先 .bak → 临时文件替换。
+
+        ISS-0030 双文件模式(local_path 提供):只写 policy.local.yml;
+        撤回出厂条目(proc∈base_whitelist)写墓碑 max_level: null,
+        出厂 base 文件永不触碰。单文件旧语义不变。
+        """
+        if self._local is not None:
+            target = self._local
+            data = (yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+                    if target.is_file() else {})
+            if not isinstance(data, dict):
+                raise PolicyError("用户策略数据顶层非映射，拒绝改写")
+            wl = [i for i in (data.get("whitelist") or [])
+                  if str(i.get("process", "")).strip().lower() != proc]
+            if remove and proc in self._base:
+                wl = wl + [{"process": proc, "max_level": None}]   # 墓碑
+            elif not remove:
+                wl = wl + [{"process": proc, "max_level": level}]
+            data["whitelist"] = wl
+            self._atomic_write(target, data)
+            return
+        # 单文件旧语义(兼容装配/测试)
         if self._path is None:
             raise PolicyError("无策略文件路径，永久变更不可用（fail-closed）")
         data = yaml.safe_load(self._path.read_text(encoding="utf-8")) or {}
@@ -163,15 +192,20 @@ class WhitelistAdmin:
                      for i in wl):
             wl = wl + [{"process": proc, "max_level": level}]
         data["whitelist"] = wl
-        try:
-            shutil.copy2(self._path,
-                         self._path.with_suffix(self._path.suffix + ".bak"))
-        except OSError as e:
-            raise PolicyError(f"策略备份失败，拒绝改写（fail-closed）: {e}") from e
-        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        self._atomic_write(self._path, data)
+
+    def _atomic_write(self, target: Path, data: dict) -> None:
+        """先 .bak 后临时文件 os.replace 原子替换(目标尚不存在则无备份可留)。"""
+        if target.is_file():
+            try:
+                shutil.copy2(target,
+                             target.with_suffix(target.suffix + ".bak"))
+            except OSError as e:
+                raise PolicyError(f"策略备份失败，拒绝改写（fail-closed）: {e}") from e
+        tmp = target.with_suffix(target.suffix + ".tmp")
         tmp.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
                        encoding="utf-8")
-        os.replace(tmp, self._path)
+        os.replace(tmp, target)
 
     def _event(self, name: str, detail: str) -> None:
         if self._audit is None:
