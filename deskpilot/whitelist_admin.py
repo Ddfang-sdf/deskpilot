@@ -57,13 +57,18 @@ class WhitelistAdmin:
     def __init__(self, policy_path: str | None, static: Mapping[str, str],
                  never_enroll: frozenset = NEVER_ENROLL, audit=None,
                  local_path: str | None = None,
-                 base_whitelist: Mapping[str, str] | None = None):
+                 base_whitelist: Mapping[str, str] | None = None,
+                 on_written=None):
         """ISS-0030：local_path 提供时为双文件模式——落盘只写
-        policy.local.yml(出厂 base 永不写);撤回出厂条目以墓碑
-        (max_level: null) 记录。local_path 缺省维持单文件旧语义
-        (测试/兼容装配)。base_whitelist 为出厂白名单进程集(墓碑判定)。"""
+        policy.local.yml(出厂 base 永不写);撤回一律以墓碑
+        (max_level: null) 记录(ISS-0032 A6)。local_path 缺省维持单文件
+        旧语义(测试/兼容装配)。base_whitelist 为出厂白名单进程集;
+        双文件模式缺失即报错(fail-closed,装配完整性)。on_written 为
+        内部落盘后的回调(参数=新指纹,ISS-0034 B1 守望基线刷新)。"""
         self._path = Path(policy_path) if policy_path else None
         self._local = Path(local_path) if local_path else None
+        if self._local is not None and base_whitelist is None:
+            raise PolicyError("双文件模式必须提供 base_whitelist（fail-closed）")
         self._base = {str(k).strip().lower() for k in (base_whitelist or {})}
         self._static: dict[str, str] = {str(k).strip().lower(): v
                                         for k, v in static.items()}
@@ -72,6 +77,7 @@ class WhitelistAdmin:
         self._audit = audit
         self._lock = threading.Lock()
         self.notify_permanent = None     # 装配侧挂 E4 入白确认 toast 回调
+        self.on_written = on_written     # ISS-0034 B1:落盘后守望基线刷新
 
     # ---- 查询 ----
 
@@ -171,12 +177,15 @@ class WhitelistAdmin:
                 raise PolicyError("用户策略数据顶层非映射，拒绝改写")
             wl = [i for i in (data.get("whitelist") or [])
                   if str(i.get("process", "")).strip().lower() != proc]
-            if remove and proc in self._base:
-                wl = wl + [{"process": proc, "max_level": None}]   # 墓碑
-            elif not remove:
+            if remove:
+                # ISS-0032 A6:撤回一律写墓碑(不论出厂/本地新增)——
+                # 撤回记录永续,未来出厂加回该进程也不被静默逆转
+                wl = wl + [{"process": proc, "max_level": None}]
+            else:
                 wl = wl + [{"process": proc, "max_level": level}]
             data["whitelist"] = wl
             self._atomic_write(target, data)
+            self._notify_written(target)
             return
         # 单文件旧语义(兼容装配/测试)
         if self._path is None:
@@ -206,6 +215,15 @@ class WhitelistAdmin:
         tmp.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
                        encoding="utf-8")
         os.replace(tmp, target)
+
+    def _notify_written(self, target: Path) -> None:
+        """ISS-0034 B1:内部落盘后回调守望基线刷新(尽力而为,不阻断写事实)。"""
+        if self.on_written is None:
+            return
+        try:
+            self.on_written(file_sha256(str(target)))
+        except Exception:
+            pass
 
     def _event(self, name: str, detail: str) -> None:
         if self._audit is None:

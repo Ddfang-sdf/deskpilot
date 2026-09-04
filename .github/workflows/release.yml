@@ -49,6 +49,13 @@ jobs:
           python scripts/render_release_notes.py --version $ver --sha256 $hash --changes-file release/CHANGES.md --output release-body.md
           "ZIP=$zip" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # ISS-0034 B6：守卫的真实调用点——产物策略必须与 repo 真源哈希一致,
+      # 失败即红(verify_policy_sync 非零退出)
+      - name: Verify policy sync
+        shell: pwsh
+        run: |
+          python -c "from deskpilot.whitelist_admin import verify_policy_sync; import sys; sys.exit(0 if verify_policy_sync('policy.yml', 'staging/policy.yml') else 1)"
+
       - name: Upload build artifact (dry-run evidence)
         uses: actions/upload-artifact@v4
         with:

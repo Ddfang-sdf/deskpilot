@@ -194,41 +194,61 @@ def local_policy_sha256_audit(local_path: str, audit) -> str:
 
 
 class _PolicyWatchThread(threading.Thread):
-    """ISS-0012 §6 C：策略文件指纹周期比对线程（stop() 可停）。"""
+    """ISS-0012 §6 C：策略文件指纹周期比对线程（stop() 可停）。
+
+    ISS-0034 B1：check_once 提取为单测接缝;refresh 供服务内部写入方
+    （WhitelistAdmin on_written 回调）同步基线——内部写入零假警,
+    真外部改动仍即时留痕。event_name 区分出厂/用户数据两轨。
+    """
 
     def __init__(self, policy_path: str, audit, interval: float,
-                 fingerprint: str):
+                 fingerprint: str, event_name: str = "策略文件被外部修改"):
         super().__init__(daemon=True, name="deskpilot-policy-watch")
         self._path = policy_path
         self._audit = audit
         self._interval = interval
         self._fp = fingerprint
+        self._event_name = event_name
+        self._lock = threading.Lock()
         self._stopped = threading.Event()
 
-    def run(self) -> None:
+    def check_once(self) -> None:
+        """单轮比对(提取接缝,run 与测试共用)。"""
         from .whitelist_admin import file_sha256
-        while not self._stopped.wait(self._interval):
-            try:
-                cur = file_sha256(self._path)
-            except OSError:
-                continue
+        try:
+            cur = file_sha256(self._path)
+        except OSError:
+            return
+        with self._lock:
             if cur != self._fp:
                 try:
                     self._audit.record_event(
-                        "策略文件被外部修改",
+                        self._event_name,
                         f"{self._path} sha256 {self._fp} -> {cur}")
                 except Exception:
                     pass
                 self._fp = cur
+
+    def refresh(self, fingerprint: str) -> None:
+        """服务内部写入后的基线刷新(ISS-0034 B1)。"""
+        with self._lock:
+            self._fp = fingerprint
+
+    def run(self) -> None:
+        while not self._stopped.wait(self._interval):
+            self.check_once()
 
     def stop(self) -> None:
         self._stopped.set()
 
 
 def _start_policy_watch(policy_path: str, audit, interval: float = 60.0,
-                        fingerprint: str = "") -> _PolicyWatchThread:
+                        fingerprint: str = "",
+                        event_name: str = "策略文件被外部修改"
+                        ) -> _PolicyWatchThread:
     """ISS-0012 §6 C：启动策略守望线程（不重载不冻结，仅留痕告警）。"""
-    t = _PolicyWatchThread(policy_path, audit, interval, fingerprint)
+    t = _PolicyWatchThread(policy_path, audit, interval, fingerprint,
+                           event_name=event_name)
     t.start()
     return t
 
@@ -320,15 +340,20 @@ def main() -> int:
     _start_policy_watch(str(policy_path), audit, fingerprint=fp)
     # ISS-0030 E：用户数据第二轨指纹+守望(文件未创建则跳过,
     # 首笔永久入白落盘后由下次启动纳入)
+    local_watch = None
     if local_path.is_file():
         local_fp = local_policy_sha256_audit(str(local_path), audit)
-        _start_policy_watch(str(local_path), audit, fingerprint=local_fp)
+        local_watch = _start_policy_watch(
+            str(local_path), audit, fingerprint=local_fp,
+            event_name="用户策略数据被外部修改")
     # ISS-0012 A/D：运行期白名单管理（静态∪会话；落盘由 daemon 原子完成）
     from .whitelist_admin import WhitelistAdmin
     whitelist_admin = WhitelistAdmin(str(policy_path), policy.whitelist,
                                      audit=audit,
                                      local_path=str(local_path),
-                                     base_whitelist=base_policy.whitelist)
+                                     base_whitelist=base_policy.whitelist,
+                                     on_written=(local_watch.refresh
+                                                 if local_watch else None))
     # ISS-0012 TC-FAST-04：并行暖名称/描述解析缓存（管理窗口/审批弹窗提速）
     from .appnames import warm_caches
     threading.Thread(target=warm_caches, kwargs={"parallel": True},
