@@ -21,11 +21,12 @@ class TestAppDisplayName:
         assert app_display_name("whatever.exe", "无标题 - 记事本") == "无标题 - 记事本"
 
     def test_file_description_for_calc(self):
-        """calc.exe 显示名含本地化名称(zh-CN 系统含"计算器")且中英并列(F2)。"""
+        """calc.exe 显示名取 OS/厂商数据(F2)——语言无关断言:
+        英文名在任意语言系统均存在,中文名随 OS 语言变(CI 英文系统实证)。"""
         from deskpilot.appnames import app_display_name
         name = app_display_name("calc.exe")
-        assert "计算器" in name
         assert "Calculator" in name
+        assert name != "calc.exe"                      # 非裸进程名回退(直出)
 
     def test_unknown_process_falls_back(self):
         from deskpilot.appnames import app_display_name
@@ -34,8 +35,8 @@ class TestAppDisplayName:
     def test_empty_title_goes_to_parse(self):
         from deskpilot.appnames import app_display_name
         name = app_display_name("calc.exe", "")
-        assert "计算器" in name
         assert "Calculator" in name
+        assert name != "calc.exe"
 
     def test_parse_time_bounded(self):
         """冷扫描(清双缓存)<2s;缓存命中 <100ms(F3 时限)。"""

@@ -626,11 +626,12 @@ class TestManagerWindow:
         assert cleared == [1]
 
     def test_rows_show_display_names(self, monkeypatch):
-        """管理窗口行主名显示应用显示名(与审批弹窗同源),次行含进程名。"""
+        """管理窗口行主名显示应用显示名(与审批弹窗同源),次行含进程名。
+        语言无关断言:显示名随 OS 语言变(中文"记事本"/英文"Notepad")。"""
         removed, cleared, labels = [], [], []
         entries = {"static": {"notepad.exe": "L2"}, "session": {}}
         self._build(monkeypatch, entries, removed, cleared, labels)
-        assert "记事本" in labels                       # 显示名(直出)
+        assert any("记事本" in s or "Notepad" in s for s in labels)  # 显示名(直出)
         assert any("notepad.exe" in s for s in labels)  # 次行进程名(直出)
 
     def test_more_button_expands_beyond_five(self, monkeypatch):

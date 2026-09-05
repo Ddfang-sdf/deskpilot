@@ -168,12 +168,13 @@ class TestStartAppsNames:
             if hasattr(appnames._startapps_map, attr):
                 delattr(appnames._startapps_map, attr)
 
-    def test_sa01_calc_chinese_bilingual(self):
-        """TC-SA-01:calc.exe 显示名含「计算器」且与英文并列。"""
+    def test_sa01_calc_os_data(self):
+        """TC-SA-01:calc.exe 显示名取 OS/厂商数据——语言无关断言
+        (中文名随 OS 语言变,CI 英文系统实证)。"""
         from deskpilot.appnames import app_display_name
         name = app_display_name("calc.exe")
-        assert "计算器" in name
         assert "Calculator" in name
+        assert name != "calc.exe"
 
     def test_sa02_powershell_failure_degrades(self, monkeypatch):
         """TC-SA-02:PowerShell 失败返回空表不崩,解析链自然降级。"""
