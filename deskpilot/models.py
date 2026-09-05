@@ -45,6 +45,14 @@ TOOL_TIME_BUDGETS: Mapping[str, float] = {
     "L2": 30.0,
 }
 
+# ISS-0039：per-tool 预算覆盖（注册表，通用性优先）——全屏 CPU OCR 实测
+# 首推 5.2s 超 L0 5s 预算（2026-09-05 实证，与 daemon 同一适配路径）；
+# screenshot 含 ocr:true（ISS-0037-B）同链。12.0 = 实测 2.3 倍余量。
+TOOL_BUDGET_OVERRIDES: Mapping[str, float] = {
+    "ocr": 12.0,
+    "screenshot": 12.0,
+}
+
 # ISS-0023：TOOL_TIMEOUT 重试指引（单源常量，httpd 响应构造消费）。
 # L3（审批挂起语义）密集重试无意义给 2000ms；其余预算级 500ms。
 RETRY_AFTER_MS: Mapping[str, int] = {"L3": 2000, "default": 500}

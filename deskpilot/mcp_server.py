@@ -44,13 +44,13 @@ async def call_with_progress(work: Awaitable, report: Callable[[], None],
 TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     # ---- L0 感知类（详细设计 §12.4）----
     "screenshot": {
-        "description": "拍 Windows 真实桌面/应用窗口的图像,返回可供多模态模型直接查看的图像内容;浏览器页面请用浏览器工具(它的网页视口截图不是桌面)。scope:fullscreen=整个虚拟桌面(多屏含负坐标)、window=绑定窗口、region=rect 矩形。另返回图像路径+宽高+coord_space+monitors 屏列表。",
+        "description": "拍 Windows 桌面/应用窗口图像,返回可查看的图像内容;浏览器页面请用浏览器工具。scope:fullscreen=整个虚拟桌面、window=绑定窗口、region=rect。另返回图像路径/宽高/坐标/vision_note。图像不可见时改调 ocr(source=路径);ocr:true 同次附 ocr_items(失败附 ocr_error,图像不受损)。",
         "required": {"scope": ("enum", ["fullscreen", "region", "window"])},
-        "optional": {"rect": ("rect",), "window": ("any",)},
+        "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",)},
         "conditional": {"region": ["rect"], "window": ["window"]},
     },
     "ocr": {
-        "description": "识别 Windows 桌面/窗口图像中的文字(OCR):要精确文字清单或文字定位时用我;布局理解请直接查看 screenshot 返回的图像(多模态可见)。浏览器网页文字请用浏览器工具读 DOM。source=图像路径或 screen,返回 [{text, position}],可直接配 attach 使用。",
+        "description": "识别 Windows 桌面/窗口图像中的文字:要精确文字清单或定位时用我;布局理解请直接看 screenshot 图像。source=图像路径或屏幕区域。优先局部实拍或路径直读——全屏识别系统繁忙时可能超时,按指引 500ms 重试。",
         "required": {"source": ("any",)}, "optional": {}},
     "find_window": {
         "description": "查找 Windows 桌面上的应用窗口(按标题/进程名),返回 hwnd/标题/进程/矩形;网页定位请用浏览器工具。操作任何应用前先调用它定位,再 attach 绑定、get_ui_tree 看内容。不要为此写临时脚本(uiautomation/mss)——窗口枚举已封装。",
@@ -172,6 +172,11 @@ def _check_type(name: str, value: Any, spec: tuple, policy: Policy) -> None:
             raise InvalidParamsError(
                 f"参数 {name} 超长（{len(value)} > {policy.input_max_chars}）"
                 f"。收到: {_truncate_show(value, 60)}")
+        return
+    if typ == "bool":
+        # ISS-0037 B：严格 bool——1/"yes" 拒绝(bool 是 int 子类陷阱)
+        if not isinstance(value, bool):
+            raise InvalidParamsError(f"参数 {name} 必须为布尔值")
         return
     if typ == "int":
         if isinstance(value, bool) or not isinstance(value, int):

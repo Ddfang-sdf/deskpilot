@@ -32,11 +32,11 @@ class TestResolveBudgetL1:
 
     def test_tc03_l1_escalation_budget(self, policy):
         from deskpilot.httpd import resolve_budget
-        assert resolve_budget("L1", policy) == policy.approval_ttl + 5
+        assert resolve_budget("wait_for_window", "L1", policy) == policy.approval_ttl + 5
 
     def test_tc04_l0_unchanged(self, policy):
         from deskpilot.httpd import resolve_budget
-        assert resolve_budget("L0", policy) == 5.0
+        assert resolve_budget("find_window", "L0", policy) == 5.0
 
 
 class TestAssemblyLabel:

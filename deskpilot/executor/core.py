@@ -120,7 +120,8 @@ class Executor:
 
     # ---------- 感知（L0，tools 层直调） ----------
 
-    def screenshot(self, scope: str, rect=None, window=None) -> dict:
+    def screenshot(self, scope: str, rect=None, window=None,
+                   ocr: bool = False) -> dict:
         region = self._resolve_region(scope, rect, window)
         path = self._save_shot(region, "sense")
         out = {"path": str(path), "width": region["width"],
@@ -137,6 +138,20 @@ class Executor:
             from ..monitors import enum_monitors
             out["coord_space"] = "virtual_desktop"
             out["monitors"] = enum_monitors()
+        # ISS-0037 A：盲眼自愈——调用方无法查看图像时的降级指引
+        out["vision_note"] = (f"本响应附有截图图像内容块;若你无法查看"
+                              f"图像,可改调 ocr(source={path}) 获取文字"
+                              f"清单,或用 get_ui_tree/get_clickable_map "
+                              f"替代感知")
+        # ISS-0037 B：ocr:true 一次返回图像+文字清单（引擎复用;
+        # 失败显式携带,禁止静默降级,图像本身不受损）
+        if ocr:
+            try:
+                out["ocr_items"] = self.ocr(str(path))["items"]
+            except Exception as e:                       # noqa: BLE001
+                out["ocr_error"] = {
+                    "code": getattr(e, "code", "INTERNAL_ERROR"),
+                    "message": str(e)}
         return out
 
     def find_windows(self, title=None, process=None, hwnd=None,

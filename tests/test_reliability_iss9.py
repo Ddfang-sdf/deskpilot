@@ -119,10 +119,11 @@ class TestToolTimeBudgets:
                                                     monkeypatch):
         # ISS-0033 重指:L1/L2 预算均改由 resolve_budget 按审批时限决议,
         # 收紧测试直接替换预算决议接缝(与旧测试 monkeypatch 常量的
-        # 手法等价,目标仍是验证"临期回结构化 TOOL_TIMEOUT")
+        # 手法等价,目标仍是验证"临期回结构化 TOOL_TIMEOUT")。
+        # ISS-0039 R4:决议接缝签名改 (tool, level, policy)。
         import deskpilot.httpd as httpd_mod
         monkeypatch.setattr(httpd_mod, "resolve_budget",
-                            lambda level, policy: 0.5)
+                            lambda tool, level, policy: 0.5)
         d = HttpDaemon(slow_ctx, host="127.0.0.1", port=0)
         d.start()
         try:

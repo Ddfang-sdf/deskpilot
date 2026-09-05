@@ -36,8 +36,50 @@
 - 三项均为感知通道增强,不动审批/审计/证据链;
 - 测试设计(五要素)于评审通过后产出。
 
-## 3. 变更记录
+## 3. 测试设计(五要素,2026-09-05)
+
+层级:单元(Executor 层打桩截图 I/O+注入假 OCR 引擎)+ 形态断言(schema/校验/描述)。
+
+### 实现契约(测试断言的目标形态)
+
+- `executor.screenshot(scope, rect=None, window=None, ocr=False)`:
+  - 返回 dict 增 `vision_note`(str,内含 `ocr(source=<本截图路径>)` 降级指引);
+  - `ocr=True` 时附 `ocr_items`(OCR 引擎 items 直出);
+  - OCR 失败:图像字段照常,附 `ocr_error`(显式 {code, message},禁止静默);
+  - 默认 `ocr=False` 无 `ocr_items` 键;
+- `TOOL_SCHEMAS["screenshot"]` optional 增 `ocr: ("bool",)`,description 增降级指引;
+- `_check_type` 增 "bool" 严格分支(1/"yes" 拒绝——bool 是 int 子类陷阱)。
+
+| 用例 | 场景 | 前提 | 步骤 | 预期结果 | 断言代码 |
+|------|------|------|------|----------|----------|
+| TC-SV-01 | vision_note 随截图返回 | Executor;_resolve_region/_save_shot 打桩(真写 10×10 PNG 至 tmp) | `screenshot("region", rect=[0,0,10,10])` | 返回 dict 含 vision_note:str,含 "ocr(source=" 与本截图路径 | 返回 dict 字段直出 |
+| TC-SV-02 | ocr:true 附带文字清单 | 注入假引擎返回固定 items | `screenshot(..., ocr=True)` | `out["ocr_items"] == 固定 items` | 直出 |
+| TC-SV-03 | 默认不 OCR(形态) | 同上 | `screenshot(...)` | `"ocr_items" not in out` | 键存在性直出 |
+| TC-SV-04 | OCR 失败显式携带,图像不受损 | 假引擎抛 ExecutorError | `screenshot(..., ocr=True)` | 图像字段(path/width/height)齐全 + ocr_error.code/message 非空 | 直出 |
+| TC-SV-05 | bool 参数校验 | validate_call+policy | `{"scope":"fullscreen","ocr":True}` 通过;`ocr=1`/`ocr="yes"` 抛 InvalidParamsError | 异常与通过直出 |
+| TC-SV-06 | schema 形态 | TOOL_SCHEMAS | 检查 optional 含 `("bool",)`;description 含降级指引关键词 | 形态断言直出 |
+
+### 交叉面清单(§2.1)
+
+| 触及对象 | 其他写入者/读取者 | 覆盖 |
+|---------|-----------------|------|
+| executor.screenshot 签名 | 消费方 tools/_run_sensing(直调)、tests 打桩面(FakeExecutor 若打桩需同步) | TC-SV-01~04 |
+| _check_type | validate_call 全工具参数校验;新增 "bool" 为通用类型 | TC-SV-05 |
+| TOOL_SCHEMAS | validate_call 形态断言(test_validation 计数若按工具枚举则回归) | TC-SV-06+既有 |
+| OCR 引擎接缝(_ocr_engine/_ensure) | executor.ocr 复用路径;懒加载+锁不动 | TC-SV-02/04 |
+| 预算决议 | screenshot 含 ocr:true 时全屏推理 3.6~5.2s 超 L0 5s 预算——与 ISS-0039 覆盖表联动 | ISS-0039 TC-OC-03 |
+
+### 装配守门五条(R1~R5)
+
+R1 装配矩阵:全部单元/形态,无真机装配(不需放宽);
+R2 mock 边界:只打桩截图 I/O(_resolve_region/_save_shot)与 OCR 引擎(注入接缝),不打桩被测方法本体;
+R3 形态断言:TC-SV-03/05/06;
+R4 路径变迁表:executor.screenshot 加参(既有调用点 tools 层一处)、_check_type 加分支(既有类型不受影响)、TOOL_SCHEMAS 加 optional(不影响既有校验);
+R5 终效应断言:TC-SV-01 断言 vision_note 含实际截图路径(终效应=AI 可直接复用的降级指令)。
+
+## 4. 变更记录
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v0.1 | 2026-09-05 | 建单(实证:sdfang 质询"为什么不反馈给我"——图像通道故障静默降级的失职复盘),待评审 |
+| v0.2 | 2026-09-05 | 测试设计定稿(sdfang 评审通过,2026-09-05 批次开工):TC-SV-01~06,实现契约+交叉面+装配守门五条随单 |

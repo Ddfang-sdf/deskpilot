@@ -18,23 +18,28 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from . import errors
-from .models import RETRY_AFTER_MS, RETRY_MAX, TOOL_TIME_BUDGETS
+from .models import (RETRY_AFTER_MS, RETRY_MAX, TOOL_BUDGET_OVERRIDES,
+                     TOOL_TIME_BUDGETS)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9420
 VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
 
 
-def resolve_budget(level: str, policy) -> float:
-    """调用时限预算决议（单源纯函数,ISS-0024 + ISS-0033 A3 扩面）。
+def resolve_budget(tool: str, level: str, policy) -> float:
+    """调用时限预算决议（单源纯函数,ISS-0024 + ISS-0033 A3 扩面;
+    ISS-0039 per-tool 覆盖）。
 
     L1/L2 写工具均可被强制层动态升级 L3（终端绑定/危险键/启动终端/
     入白审批,enforcement 三处 eff=L3 与闸二 request_enroll),升级路径
     含同步审批——其外层预算必须覆盖 approval_ttl+5,否则审批挂起中必
     TOOL_TIMEOUT("报错但动作可能已执行",可靠性撒谎)。L3 同档。
-    其余级别查静态表。policy 缺失时按 65s 兜底(fail-closed 方向:
-    宁慢报不误杀)。
+    per-tool 覆盖表(TOOL_BUDGET_OVERRIDES)优先:全屏 CPU OCR 实测
+    超 L0 档(ISS-0039 实证)。其余级别查静态表。policy 缺失时按 65s
+    兜底(fail-closed 方向:宁慢报不误杀)。
     """
+    if tool in TOOL_BUDGET_OVERRIDES:
+        return TOOL_BUDGET_OVERRIDES[tool]
     if level in ("L1", "L2", "L3"):
         ttl = policy.approval_ttl if policy is not None else 60.0
         return ttl + 5.0
@@ -165,7 +170,7 @@ class HttpDaemon:
         # 无 L3 成员而不可达,审批挂起中 30s 必超时——实证修死)
         level = TOOL_LEVELS.get(tool, "L2")
         policy = getattr(self._ctx, "policy", None)
-        budget = resolve_budget(level, policy)
+        budget = resolve_budget(tool, level, policy)
 
         def invoke():
             if level == "L0":

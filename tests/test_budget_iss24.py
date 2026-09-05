@@ -21,17 +21,18 @@ class TestResolveBudgetUnit:
     """TC-BT-01~03:预算决议按级别与审批时限(返回值直出)。"""
 
     def test_bt01_l2_write_gets_approval_budget(self, policy):
-        """TC-BT-01:L2 写工具(可升级 L3) → approval_ttl+5。"""
-        assert resolve_budget("L2", policy) == policy.approval_ttl + 5
+        """TC-BT-01:L2 写工具(可升级 L3) → approval_ttl+5。
+        (ISS-0039 R4:签名改 (tool, level, policy),断言值不变)"""
+        assert resolve_budget("click", "L2", policy) == policy.approval_ttl + 5
 
     def test_bt02_l0_unchanged(self, policy):
         """TC-BT-02:L0 → 静态预算 5s。"""
-        assert resolve_budget("L0", policy) == 5.0
+        assert resolve_budget("find_window", "L0", policy) == 5.0
 
     def test_bt03_l1_escalation_tier(self, policy):
         """TC-BT-03(ISS-0033 A3 重指):L1 可升级(attach 入白/终端绑定)
         → 与 L2 同档 approval_ttl+5。"""
-        assert resolve_budget("L1", policy) == policy.approval_ttl + 5
+        assert resolve_budget("wait_for_window", "L1", policy) == policy.approval_ttl + 5
 
 
 class SlowApproveChannel:
