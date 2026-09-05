@@ -81,6 +81,64 @@ def save_gif(frames: list[Image.Image], out: str | Path, fps: int,
             "size_bytes": out.stat().st_size}
 
 
+def concat_gifs(paths: list[str], out: str | Path, gap_ms: int = 0) -> dict:
+    """分段拍摄拼接:各 GIF 帧序列首尾相连;gap_ms>0 时段间停顿
+    (上段末帧停留时长加 gap_ms,硬切观感自然)。
+
+    停顿实现:追加一帧与上段末帧同内容的帧——PIL 保存时会把同内容
+    相邻帧合并成"时长加长"(实测 optimize 开关皆然),视觉即停顿帧。
+    产物信息以落盘后直读为准,不虚报物理帧数。
+
+    fail-closed:空列表/尺寸不一致 → ValueError。返回产物信息(直出)。
+    """
+    if not paths:
+        raise ValueError("无输入 GIF")
+    segments: list[list[tuple[Image.Image, int]]] = []   # 每段=帧序列
+    size = None
+    for p in paths:
+        with Image.open(p) as gif:
+            n = getattr(gif, "n_frames", 1)
+            frames = []
+            for i in range(n):
+                gif.seek(i)
+                frame = gif.convert("RGB")
+                if size is None:
+                    size = frame.size
+                elif frame.size != size:
+                    raise ValueError(
+                        f"帧尺寸不一致: {frame.size} != {size}"
+                        f"（各段须用同一录制参数）")
+                frames.append((frame, int(gif.info.get("duration", 100))))
+            segments.append(frames)
+    frames: list[Image.Image] = []
+    durations: list[int] = []
+    for idx, seg in enumerate(segments):
+        for frame, dur in seg:
+            frames.append(frame)
+            durations.append(dur)
+        # 段间停顿:只在上一段的末帧之后插,时长 gap_ms
+        if gap_ms > 0 and idx < len(segments) - 1:
+            frames.append(seg[-1][0])
+            durations.append(gap_ms)
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    paletted = [f.convert("P", palette=Image.ADAPTIVE, colors=256)
+                for f in frames]
+    # optimize=False:optimize=True 会把跨段同内容帧也合并(段结构被
+    # 破坏);False 仅合并相邻同内容帧=停顿帧,恰是设计语义
+    paletted[0].save(out, save_all=True, append_images=paletted[1:],
+                     duration=durations, loop=0, optimize=False)
+    with Image.open(out) as gif:                 # 落盘直读,不虚报
+        n = getattr(gif, "n_frames", 1)
+        total_ms = 0
+        for i in range(n):
+            gif.seek(i)
+            total_ms += gif.info.get("duration", 0)
+    return {"path": str(out), "frames": n,
+            "duration_s": round(total_ms / 1000, 2),
+            "size_bytes": out.stat().st_size}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="DeskPilot 演示 GIF 录制")
     ap.add_argument("--out", required=True)

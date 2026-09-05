@@ -101,3 +101,66 @@ class TestSaveGif:
         out = tmp_path / "a" / "b" / "t.gif"
         rec.save_gif([Image.new("RGB", (64, 64))], out, fps=5)
         assert out.exists()
+
+
+class TestConcatGifs:
+    """分段拍摄拼接(演示 GIF 分段方案配套)。断言:产物 PIL 直读。"""
+
+    def _mk(self, rec, tmp_path, name, frames_n, fps, color):
+        out = tmp_path / name
+        frames = [Image.new("RGB", (64, 64), (i * 20, color, 0))
+                  for i in range(frames_n)]
+        rec.save_gif(frames, out, fps=fps)
+        return str(out)
+
+    def test_con01_frames_sum_duration(self, tmp_path):
+        rec = _load()
+        a = self._mk(rec, tmp_path, "a.gif", 3, fps=2, color=100)
+        b = self._mk(rec, tmp_path, "b.gif", 4, fps=2, color=200)
+        info = rec.concat_gifs([a, b], str(tmp_path / "c.gif"))
+        assert info["frames"] == 7                        # 帧数=和(直出)
+        assert abs(info["duration_s"] - 3.5) < 0.1        # 7×500ms(直出)
+        with Image.open(tmp_path / "c.gif") as gif:
+            assert gif.n_frames == 7
+
+    def test_con02_gap_hold_frame(self, tmp_path):
+        rec = _load()
+        a = self._mk(rec, tmp_path, "a.gif", 2, fps=2, color=100)
+        b = self._mk(rec, tmp_path, "b.gif", 2, fps=2, color=200)
+        info = rec.concat_gifs([a, b], str(tmp_path / "c.gif"), gap_ms=1000)
+        assert info["frames"] == 4                        # 停顿帧被 PIL 合并进上段末帧(直读)
+        assert abs(info["duration_s"] - 3.0) < 0.1        # 2s+1s 停顿(直读)
+        with Image.open(tmp_path / "c.gif") as gif:
+            gif.seek(1)
+            last_a = gif.convert("RGB").getpixel((0, 0))
+            assert last_a == (20, 100, 0)                 # 上段末帧内容(直读)
+            assert gif.info["duration"] == 1500           # 500+停顿1000(直读)
+            gif.seek(2)
+            first_b = gif.convert("RGB").getpixel((0, 0))
+            assert first_b == (0, 200, 0)                 # 停顿后接下一段(直读)
+            assert gif.info["duration"] == 500            # 段内帧时长不变(直读)
+
+    def test_con03_single_passthrough(self, tmp_path):
+        rec = _load()
+        a = self._mk(rec, tmp_path, "a.gif", 3, fps=2, color=100)
+        info = rec.concat_gifs([a], str(tmp_path / "c.gif"))
+        assert info["frames"] == 3
+
+    def test_con04_empty_rejected(self, tmp_path):
+        rec = _load()
+        try:
+            rec.concat_gifs([], str(tmp_path / "c.gif"))
+        except ValueError:
+            return
+        raise AssertionError("空列表必须报错(fail-closed)")
+
+    def test_con05_mismatched_sizes_rejected(self, tmp_path):
+        rec = _load()
+        a = self._mk(rec, tmp_path, "a.gif", 2, fps=2, color=100)
+        out = tmp_path / "big.gif"
+        rec.save_gif([Image.new("RGB", (128, 128))], out, fps=2)
+        try:
+            rec.concat_gifs([a, str(out)], str(tmp_path / "c.gif"))
+        except ValueError:
+            return
+        raise AssertionError("尺寸不一致必须报错(fail-closed)")
