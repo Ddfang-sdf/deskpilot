@@ -1,3 +1,12 @@
+## v0.3.5
+
+- **screenshot 感知自愈**（ISS-0037）：响应附 `vision_note` 降级指引（图像不可见时改调 `ocr(source=路径)`，零摸索）；`ocr:true` 一次调用返回图像+文字清单（OCR 失败显式附 `ocr_error`，图像不受损）；严格 bool 参数校验
+- **OCR 超时指引与预算覆盖**（ISS-0039）：ocr/screenshot 专属时限预算 12s（实测全屏 CPU 推理首推 5.2s 超旧 5s 预算，负载下必然超时）；ocr 描述明示「局部实拍优先+超时按指引重试」
+- **工具清单构建修复**（ISS-0040【修改引入】）：inputSchema 类型映射补齐 bool，修复 list_tools 全量 KeyError 致 MCP 客户端「tools fetch failed」
+- **README 加白管理能力**：入白审批与白名单管理实拍截图、双文件政策（policy.yml 基础 / policy.local.yml 用户数据，升级不丢、移出即墓碑）
+- **需求演进体系**：docs/需求/ 建立 REQ-001 鼠标能力补全 / REQ-002 桌面图标感知（原始输入随单归档）
+- 测试：536 用例全绿（默认零副作用）
+
 ## v0.3.4
 
 - **按文字点击 click_text**（ISS-0021）：OCR 定位文字→自动换算虚拟桌面坐标→与裸坐标点击同安全链（防误射/遮挡校验/证据图）；未命中/多命中 fail-closed；多命中必须显式 index；screenshot 返回坐标系元数据（virtual_rect/scale）
