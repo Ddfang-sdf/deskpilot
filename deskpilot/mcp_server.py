@@ -239,9 +239,14 @@ def validate_call(tool: str, raw_params: Mapping[str, Any], policy: Policy) -> d
 
 
 def _input_schema(schema: Mapping[str, Any]) -> dict:
-    """把内部参数模式转换为 MCP inputSchema。"""
+    """把内部参数模式转换为 MCP inputSchema。
+
+    type_map 与 _check_type 分支一一对应:新增校验类型必须同步此表
+    (ISS-0040【修改引入】:'bool' 漏映射致 list_tools 全量 KeyError)。
+    """
     type_map = {"str": {"type": "string"}, "text": {"type": "string"},
                 "int": {"type": "integer"}, "num": {"type": "number"},
+                "bool": {"type": "boolean"},
                 "any": {}, "enum": {"type": "string"},
                 "coord": {"type": "array", "items": {"type": "number"}},
                 "rect": {"type": "array", "items": {"type": "number"}}}
