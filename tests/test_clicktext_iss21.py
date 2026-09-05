@@ -169,8 +169,16 @@ class TestClickTextIntegration:
         # 卫生断言(泄漏即红):打字类测试同样零残留
         assert closed is True, "测试残留记事本窗口(未保存关窗失败)"
 
-    def test_ct08_real_ocr_click(self, policy, audit_log, tmp_path):
-        """TC-CT-08:真 OCR 点击独特字符串 → ok 且落点在窗口 rect 内。"""
+    def test_ct08_real_ocr_click(self, policy, audit_log, tmp_path, monkeypatch):
+        """TC-CT-08:真 OCR 点击独特字符串 → ok 且落点在窗口 rect 内。
+
+        CI 实证:无前台桌面的 runner 上 SetForegroundWindow 受限,遮挡
+        校验(真实屏幕 WindowFromPoint)必挂——遮挡语义非本用例被测对象
+        (由 click 系专测+实盘覆盖),打桩隔离,聚焦真链:实拍+OCR+换算。
+        """
+        from deskpilot.executor.core import Executor
+        monkeypatch.setattr(Executor, "_check_occlusion",
+                            lambda self, hwnd, x, y: None)
         proc, new = self._spawn_notepad()
         try:
             def real_ocr():

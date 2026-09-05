@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           pip install pytest-randomly
-          python -m pytest tests -q -x --tb=short --run-integration --ignore=tests/test_benchmark_iss8.py 2>&1 | Tee-Object -FilePath pytest-output.txt
+          python -m pytest tests -q --tb=short --run-integration --ignore=tests/test_benchmark_iss8.py 2>&1 | Tee-Object -FilePath pytest-output.txt
           exit $LASTEXITCODE
 
       - name: Upload pytest output (always)
