@@ -120,7 +120,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "启动后用 wait_for_window 等位再 attach。",
         "required": {"app": ("str",)}, "optional": {}},
     "activate_window": {
-        "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台)。token=attach 返回令牌。",
+        "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台;最大化窗口保持最大化不被打回)。token=attach 返回令牌。窗口最大化/移动/缩放等几何变化后,既有截图与坐标即作废,请先重新感知再操作。",
         "required": {"token": ("str",)}, "optional": {}},
     "click_element": {
         "description": "按名称/AutomationId/SoM 编号点击绑定的 Windows 窗口内控件(UIA 优先,比像素坐标稳);网页元素点击请用浏览器工具。attach 绑定后,先 get_ui_tree 找控件名,再点它。token+name/automation_id/som_id。",

@@ -1,5 +1,6 @@
 ## v0.3.5
 
+- **activate 最大化保持**（ISS-0041）：激活窗口不再把最大化打回原始尺寸——ShowWindow 命令按窗口状态选择（最小化恢复/最大化保持/普通不动）；工具描述增几何变化后先重新感知指引
 - **screenshot 感知自愈**（ISS-0037）：响应附 `vision_note` 降级指引（图像不可见时改调 `ocr(source=路径)`，零摸索）；`ocr:true` 一次调用返回图像+文字清单（OCR 失败显式附 `ocr_error`，图像不受损）；严格 bool 参数校验
 - **OCR 超时指引与预算覆盖**（ISS-0039）：ocr/screenshot 专属时限预算 12s（实测全屏 CPU 推理首推 5.2s 超旧 5s 预算，负载下必然超时）；ocr 描述明示「局部实拍优先+超时按指引重试」
 - **工具清单构建修复**（ISS-0040【修改引入】）：inputSchema 类型映射补齐 bool，修复 list_tools 全量 KeyError 致 MCP 客户端「tools fetch failed」

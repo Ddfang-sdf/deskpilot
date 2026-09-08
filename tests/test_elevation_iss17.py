@@ -26,6 +26,10 @@ class TestActivateRetry:
         from deskpilot.executor import probe as probe_mod
         fg = iter(foreground_seq)
         monkeypatch.setattr(probe_mod.user32, "IsWindow", lambda h: True)
+        # ISS-0041 R4:activate 修复后新调 IsIconic/IsZoomed 两 OS 接口,
+        # 显式替身(密封性;断言不变)——原靠假 hwnd 真实调用恰返回 0 侥幸通过
+        monkeypatch.setattr(probe_mod.user32, "IsIconic", lambda h: False)
+        monkeypatch.setattr(probe_mod.user32, "IsZoomed", lambda h: False)
         monkeypatch.setattr(probe_mod.user32, "ShowWindow", lambda h, s: None)
         monkeypatch.setattr(probe_mod.user32, "SetForegroundWindow",
                             lambda h: True)

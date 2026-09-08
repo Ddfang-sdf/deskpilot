@@ -14,6 +14,8 @@ kernel32 = ctypes.windll.kernel32
 
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _SW_RESTORE = 9
+_SW_SHOWMAXIMIZED = 3                     # ISS-0041:最大化窗激活且保持最大化
+_SW_SHOW = 5                              # ISS-0041:普通窗按当前尺寸显示(不恢复)
 
 
 def _process_name_of(pid: int) -> str:
@@ -104,15 +106,26 @@ class DesktopProbe:
         return user32.GetForegroundWindow() == hwnd
 
     def activate(self, hwnd: int) -> bool:
-        """把窗口提到前台（恢复最小化 + 前台附加线程技巧 + 短退避重试）。
+        """把窗口提到前台（按窗口状态选显示命令 + 前台附加线程技巧 + 短退避重试）。
 
         ISS-0017 A：前台锁瞬时失败按 ≤3 次短退避重试；最终失败返回 False
         （fail-closed，调用方必须检查，绝不成功假象）。
+        ISS-0041：ShowWindow 命令按执行时刻窗口状态选择——IsIconic（最小化,
+        含最小化的最大化窗优先）→ SW_RESTORE（恢复原意图）;IsZoomed（最大化）
+        → SW_SHOWMAXIMIZED（激活且保持最大化,修复最大化被打回原始尺寸的缺陷）;
+        其余 → SW_SHOW（按当前尺寸显示,不做任何恢复）。状态判定在重试循环外
+        取一次,各轮重试命令不漂移。
         """
         if not user32.IsWindow(hwnd):
             return False
+        if user32.IsIconic(hwnd):
+            cmd = _SW_RESTORE
+        elif user32.IsZoomed(hwnd):
+            cmd = _SW_SHOWMAXIMIZED
+        else:
+            cmd = _SW_SHOW
         for attempt in range(3):
-            user32.ShowWindow(hwnd, _SW_RESTORE)
+            user32.ShowWindow(hwnd, cmd)
             foreground = user32.GetForegroundWindow()
             cur_thread = kernel32.GetCurrentThreadId()
             fg_thread = user32.GetWindowThreadProcessId(foreground, None)
