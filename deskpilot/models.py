@@ -18,13 +18,15 @@ L3 = "L3"
 TOOL_LEVELS: Mapping[str, str] = {
     "screenshot": L0, "ocr": L0, "find_window": L0, "get_ui_tree": L0,
     "get_clickable_map": L0, "template_match": L0, "get_cursor": L0,
-    "get_clipboard": L0,
+    "get_clipboard": L0, "list_desktop_icons": L0,
     "wait_for_window": L1, "wait_for_element": L1, "move": L1,
     "scroll": L1, "attach": L1, "detach": L1,
     "launch_app": L2, "activate_window": L2, "click_element": L2,
     "type_element": L2, "click": L2, "type_text": L2, "key": L2,
     "set_clipboard": L2, "drag": L2,
     "click_text": L2,                # ISS-0021：按文字点击(OCR 定位)
+    # REQ-001 鼠标能力补全:原语层与按住不放,全 L2 并既有链路
+    "mouse_down": L2, "mouse_up": L2, "hold": L2,
     # ISS-0012 §6 E3：AI 请求撤回白名单（人类弹窗裁决后才执行，L1 请求类）
     "request_remove_from_whitelist": L1,
 }
@@ -35,6 +37,8 @@ BINDING_REQUIRED_TOOLS = frozenset({
     "wait_for_element", "scroll", "detach",
     "activate_window", "click_element", "type_element", "click",
     "type_text", "key", "set_clipboard", "drag", "click_text",
+    # REQ-001 原语层与按住不放(绑定必需)
+    "mouse_down", "mouse_up", "hold",
 })
 
 # ISS-0009 §6：各级别调用的内部时限预算（秒）；临期返回 TOOL_TIMEOUT

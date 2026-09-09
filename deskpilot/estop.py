@@ -27,8 +27,14 @@ class EstopMonitor:
         self._clock = clock
         self._audit = audit_log
         self._on_state_change = on_state_change   # 冻结通知钩子（ISS-0004）
+        self._freeze_listeners: list[Callable[[], None]] = []  # REQ-001 冻结监听器
         self._frozen = False
         self._corner_since: float | None = None
+
+    def add_freeze_listener(self, fn: Callable[[], None]) -> None:
+        """REQ-001：注册冻结触发监听器(无参)——执行层按下键强抬等追加消费方。
+        与 on_state_change 并存:监听器逐个独立容错,单方异常不阻断其余。"""
+        self._freeze_listeners.append(fn)
 
     def is_frozen(self) -> bool:
         """冻结查询（强制层与执行层写路径双检查）。"""
@@ -76,6 +82,11 @@ class EstopMonitor:
             self._audit.record_event("急停触发", source)
         if self._on_state_change is not None:
             self._on_state_change(True, source)
+        for fn in self._freeze_listeners:       # REQ-001:冻结监听器(独立容错)
+            try:
+                fn()
+            except Exception:                   # noqa: BLE001
+                pass
 
     def _reset(self, source: str) -> None:
         if not self._frozen:

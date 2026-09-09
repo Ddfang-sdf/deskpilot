@@ -22,7 +22,8 @@ from ..models import (BINDING_REQUIRED_TOOLS, L2, TOOL_LEVELS, AuditEntry,
                       OperationRequest, Policy, ToolResult)
 
 _L0_DIRECT = {"screenshot", "find_window", "get_ui_tree", "get_cursor",
-              "get_clipboard", "ocr", "template_match", "get_clickable_map"}
+              "get_clipboard", "ocr", "template_match", "get_clickable_map",
+              "list_desktop_icons"}
 _L1_DIRECT = {"move", "wait_for_window"}
 
 
@@ -82,6 +83,8 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
                     "可改按进程名(process)或句柄(hwnd)查找", data=result)
         elif tool == "get_ui_tree":
             result = ctx.executor.get_ui_tree(params["window"])
+        elif tool == "list_desktop_icons":
+            result = ctx.executor.list_desktop_icons(params.get("region"))
         elif tool == "get_cursor":
             result = ctx.executor.get_cursor()
         elif tool == "get_clipboard":

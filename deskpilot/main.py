@@ -395,7 +395,8 @@ def main() -> int:
     except Exception as e:
         print(f"审批弹窗通道不可用（L3 将恒拒绝）: {e}", file=sys.stderr)
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
-                        policy.wait_timeout_max)
+                        policy.wait_timeout_max, audit=audit)
+    executor._mouse_watchdog.start()        # REQ-001 看门狗线程(生产装配启动)
 
     def _ocr_factory():
         """ISS-0008 P2：OCR 懒加载工厂——首次 ocr 调用才加载模型。"""

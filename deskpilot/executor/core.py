@@ -36,8 +36,9 @@ from ..errors import (ELEMENT_AMBIGUOUS, ELEMENT_DISABLED, ELEMENT_NOT_FOUND,
                       ELEMENT_UNSUPPORTED, EMERGENCY_STOP, INTERNAL_ERROR,
                       INVALID_PARAMS, OCR_AMBIGUOUS, OCR_TEXT_NOT_FOUND,
                       OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE, WINDOW_OCCLUDED,
-                      ExecutorError)
+                      ExecutorError, InvalidParamsError)
 from ..policy import normalize_key
+from .mousehold import MOUSE_BUTTONS, PressedTracker, WatchdogThread
 from .probe import DesktopProbe
 from .textclick import resolve_click, suggest_similar
 
@@ -53,7 +54,8 @@ class Executor:
 
     def __init__(self, estop, audit_dir: str, poll_interval: float = 0.5,
                  wait_timeout_max: float = 300.0, clock: Callable[[], float] = time.monotonic,
-                 probe=None, element_source=None, shot_fn=None, ocr_engine=None):
+                 probe=None, element_source=None, shot_fn=None, ocr_engine=None,
+                 audit=None):
         self._probe = probe if probe is not None else DesktopProbe()
         self._estop = estop
         self._shots_dir = Path(audit_dir) / "shots"
@@ -63,10 +65,25 @@ class Executor:
         self._element_source = element_source   # UIA 根控件工厂（可注入，测试接缝）
         self._shot_fn = shot_fn                 # 区域截图工厂（可注入，测试接缝）
         self._ocr_engine = ocr_engine           # OCR 引擎（可注入，测试接缝）
+        self._audit = audit                     # 审计通道（可注入;无则安全网事件不落盘）
         self.ocr_factory = None                 # ISS-0008 §6：OCR 懒加载工厂（公开属性）
         self._ocr_lock = threading.Lock()       # ISS-0008 P2：懒初始化一次性锁
         self._ocr_failed: str | None = None     # ISS-0008 P2：初始化失败记忆化
         self._som_cache: dict[int, dict] = {}   # SoM 编号缓存（§9.9）
+        # REQ-001：按下状态跟踪器+看门狗(安全网基座;线程由装配方显式启动,
+        # 测试经 _mouse_watchdog_tick 手动驱动,防背景线程抢跑断言)
+        self._mouse = PressedTracker(clock=self._clock)
+        self._mouse_watchdog = WatchdogThread(
+            self._mouse, self._force_release_button, self._audit)
+        # REQ-001 D-02：启动抬键清扫——旧进程死亡期悬空按键的系统级自愈
+        for _b in MOUSE_BUTTONS:
+            pyautogui.mouseUp(button=_b)        # 幂等:无按下=系统级 no-op
+        if self._audit is not None:
+            self._audit.record_event("启动抬键清扫", "三键幂等抬起")
+        # REQ-001 安全网①：急停冻结→强制抬起全部按下键
+        add_listener = getattr(self._estop, "add_freeze_listener", None)
+        if callable(add_listener):
+            add_listener(self._force_release_all)
         pyautogui.PAUSE = 0.02
 
     # ---------- 公开入口 ----------
@@ -82,7 +99,9 @@ class Executor:
             raise ExecutorError(INTERNAL_ERROR,
                                 f"工具 {tool} 的驱动未包含在 M1 构建（见里程碑规划）")
         rect = self._binding_rect(hwnd)
-        before = self._evidence_shot(tool, "before", rect)
+        # REQ-001 MOUSE-14:原语层 down/up 只记审计不拍图(高频组合证据成本控制)
+        no_shot = tool in ("mouse_down", "mouse_up")
+        before = "" if no_shot else self._evidence_shot(tool, "before", rect)
         try:
             result = self._dispatch(tool, params, hwnd)
         except ExecutorError:
@@ -95,7 +114,7 @@ class Executor:
             # ISS-0009 §6 C：未知异常不再裸抛（防 handler/进程断连）
             raise ExecutorError(INTERNAL_ERROR,
                                 f"执行层未处理异常: {e}") from e
-        after = self._evidence_shot(tool, "after", rect)
+        after = "" if no_shot else self._evidence_shot(tool, "after", rect)
         result = dict(result or {})
         result["before_shot"] = before
         result["after_shot"] = after
@@ -176,6 +195,24 @@ class Executor:
 
     def get_clipboard(self) -> dict:
         return {"text": pyperclip.paste()}
+
+    def list_desktop_icons(self, region=None) -> dict:
+        """桌面图标清单(REQ-002):三路装配;fail-closed;每次调用动态定位。"""
+        from .desktop_icons import (ContainerLocator, DesktopIconAssembler,
+                                    ListViewIconProvider,
+                                    ShellViewIconProvider, UiaIconProvider)
+
+        def walker(hwnd):
+            root = self._element_root(hwnd)
+            nodes: list[dict] = []
+            self._walk(root, nodes, depth=0)
+            return nodes
+
+        assembler = DesktopIconAssembler(
+            ContainerLocator(), UiaIconProvider(walker),
+            ListViewIconProvider(), ShellViewIconProvider())
+        items = assembler.assemble(region=region)
+        return {"items": items, "count": len(items)}
 
     def move(self, x: int, y: int) -> dict:
         """移动鼠标（L1，无写入）。"""
@@ -323,7 +360,16 @@ class Executor:
         if hwnd is not None and not self._probe.hwnd_alive(hwnd):
             raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
         if tool == "click":
-            return self._click(params["x"], params["y"], hwnd)
+            return self._click(params["x"], params["y"], hwnd,
+                               button=params.get("button", "left"),
+                               clicks=params.get("clicks", 1))
+        if tool == "mouse_down":
+            return self._mouse_down(params["button"], hwnd)
+        if tool == "mouse_up":
+            return self._mouse_up(params["button"], hwnd)
+        if tool == "hold":
+            return self._hold(params["duration_ms"],
+                              params.get("button", "left"), hwnd)
         if tool == "click_text":
             return self._click_text(params, hwnd)
         if tool == "type_text":
@@ -336,7 +382,8 @@ class Executor:
         if tool == "scroll":
             return self._scroll(params["direction"], params["amount"], hwnd)
         if tool == "drag":
-            return self._drag(params["start"], params["end"], hwnd)
+            return self._drag(params["start"], params["end"], hwnd,
+                              button=params.get("button", "left"))
         if tool == "activate_window":
             ok = self._activate_if_needed(hwnd)
             if not ok:
@@ -569,16 +616,69 @@ class Executor:
                     f"automation_id={cond[1]!r}）")
             time.sleep(self._poll)
 
-    def _click(self, x: int, y: int, hwnd: int) -> dict:
+    def _click(self, x: int, y: int, hwnd: int,
+               button: str = "left", clicks: int = 1) -> dict:
+        if button not in MOUSE_BUTTONS:
+            raise ExecutorError(INVALID_PARAMS, f"button 非法: {button}")
+        if isinstance(clicks, bool) or not isinstance(clicks, int) \
+                or clicks not in (1, 2, 3):
+            raise ExecutorError(INVALID_PARAMS, f"clicks 非法(1/2/3): {clicks}")
         self._check_point(hwnd, x, y)
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         self._check_occlusion(hwnd, x, y)     # ISS-0017 C：激活后再验遮挡
         try:
-            pyautogui.click(x, y)
+            pyautogui.click(x, y, button=button, clicks=clicks)
         except pyautogui.FailSafeException as e:
             raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
         return {"status": "ok"}
+
+    # ---------- REQ-001 原语层:mouse_down/mouse_up/hold ----------
+
+    def _mouse_down(self, button: str, hwnd: int) -> dict:
+        """按下指定键并登记;位置无关(光标态操作),不激活不拍图(MOUSE-14)。"""
+        self._mouse.press(button)
+        pyautogui.mouseDown(button=button)
+        return {"status": "ok", "button": button,
+                "pressed": self._mouse.snapshot()}
+
+    def _mouse_up(self, button: str, hwnd: int) -> dict:
+        """抬起指定键并核销;无对应按下时 no-op(released=false,防重试误抬)。"""
+        if self._mouse.release(button):
+            pyautogui.mouseUp(button=button)
+            return {"status": "ok", "button": button, "released": True}
+        return {"status": "ok", "button": button, "released": False}
+
+    def _hold(self, duration_ms: int, button: str, hwnd: int) -> dict:
+        """按住不放:按下→等待→抬起;任何异常路径键必抬(finally)。"""
+        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) \
+                or not (1 <= duration_ms <= 30000):
+            raise ExecutorError(
+                INVALID_PARAMS,
+                f"duration_ms 越界(1~30000): {duration_ms}")
+        self._mouse.press(button)
+        pyautogui.mouseDown(button=button)
+        try:
+            time.sleep(duration_ms / 1000)
+        finally:
+            pyautogui.mouseUp(button=button)
+            self._mouse.release(button)
+        return {"status": "ok", "button": button, "held_ms": duration_ms}
+
+    def _mouse_watchdog_tick(self) -> None:
+        """看门狗单轮检测(公开接缝:测试手动驱动;生产由装配方启动线程)。"""
+        self._mouse_watchdog.tick()
+
+    def _force_release_button(self, button: str) -> None:
+        pyautogui.mouseUp(button=button)
+
+    def _force_release_all(self) -> None:
+        """安全网①:estop 冻结监听器——强制抬起全部按下键。"""
+        for b in self._mouse.release_all():
+            try:
+                pyautogui.mouseUp(button=b)
+            except Exception:                   # noqa: BLE001
+                pass
 
     def _click_text(self, params: dict, hwnd: int) -> dict:
         """ISS-0021 A：按文字点击——前置实拍→OCR→换算→与 click 同安全链。
@@ -587,8 +687,12 @@ class Executor:
         落点复用 _check_point/_check_occlusion 防误射管线。
         """
         button = params.get("button", "left")
-        if button not in ("left", "right"):
+        if button not in MOUSE_BUTTONS:
             raise ExecutorError(INVALID_PARAMS, f"button 非法: {button}")
+        clicks = params.get("clicks", 1)
+        if isinstance(clicks, bool) or not isinstance(clicks, int) \
+                or clicks not in (1, 2, 3):
+            raise ExecutorError(INVALID_PARAMS, f"clicks 非法(1/2/3): {clicks}")
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         rect = self._binding_rect(hwnd)
@@ -622,13 +726,15 @@ class Executor:
         self._check_point(hwnd, x, y)
         self._check_occlusion(hwnd, x, y)     # 与 click 同遮挡校验
         try:
-            pyautogui.click(x, y, button=button)
+            pyautogui.click(x, y, button=button, clicks=clicks)
         except pyautogui.FailSafeException as e:
             raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
         return {"status": "ok", "target": [x, y],
                 "matched": payload["matched"]}
 
-    def _drag(self, start, end, hwnd: int) -> dict:
+    def _drag(self, start, end, hwnd: int, button: str = "left") -> dict:
+        if button not in MOUSE_BUTTONS:
+            raise ExecutorError(INVALID_PARAMS, f"button 非法: {button}")
         self._check_point(hwnd, *start)
         self._check_point(hwnd, *end)
         if not self._activate_if_needed(hwnd):
@@ -636,15 +742,20 @@ class Executor:
         self._check_occlusion(hwnd, *start)   # ISS-0017 C：激活后再验遮挡
         try:
             pyautogui.moveTo(*start)
-            pyautogui.mouseDown()
-            time.sleep(0.15)                      # 让目标应用识别按下
-            steps = 24                            # 分段慢移，保证轨迹被采到
-            for i in range(1, steps + 1):
-                x = start[0] + (end[0] - start[0]) * i / steps
-                y = start[1] + (end[1] - start[1]) * i / steps
-                pyautogui.moveTo(x, y, duration=0.02)
-            time.sleep(0.1)
-            pyautogui.mouseUp()
+            # REQ-001:按下表对称登记/核销(任意 button;安全网覆盖一切物理按下)
+            self._mouse.press(button)
+            pyautogui.mouseDown(button=button)
+            try:
+                time.sleep(0.15)                      # 让目标应用识别按下
+                steps = 24                            # 分段慢移，保证轨迹被采到
+                for i in range(1, steps + 1):
+                    x = start[0] + (end[0] - start[0]) * i / steps
+                    y = start[1] + (end[1] - start[1]) * i / steps
+                    pyautogui.moveTo(x, y, duration=0.02)
+                time.sleep(0.1)
+            finally:
+                pyautogui.mouseUp(button=button)
+                self._mouse.release(button)
         except pyautogui.FailSafeException as e:
             raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
         return {"status": "ok"}
@@ -654,7 +765,13 @@ class Executor:
         cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
-        pyautogui.scroll(-amount if direction == "down" else amount, x=cx, y=cy)
+        if direction in ("left", "right"):
+            # REQ-001 水平滚轮:left=负向,right=正向(与垂直对称)
+            pyautogui.hscroll(-amount if direction == "left" else amount,
+                              x=cx, y=cy)
+        else:
+            pyautogui.scroll(-amount if direction == "down" else amount,
+                             x=cx, y=cy)
         return {"status": "ok"}
 
     def _key(self, raw_key: str, hwnd: int) -> dict:
@@ -740,7 +857,8 @@ class Executor:
 
     def _check_occlusion(self, hwnd: int, x: int, y: int) -> None:
         """ISS-0017 C：遮挡判定（激活后调用）——落点处顶层窗口非目标/
-        非其子窗口则拒绝（fail-closed,绝不盲打）。"""
+        非其子窗口则拒绝（fail-closed,绝不盲打）。
+        ISS-0042：错误附遮挡者进程名与标题（AI 一轮可诊断,免自行侦查）。"""
         u32 = _occlusion_user32
         if u32 is None:
             import ctypes
@@ -748,8 +866,27 @@ class Executor:
         from ctypes import wintypes
         pt_hwnd = u32.WindowFromPoint(wintypes.POINT(x, y))
         if pt_hwnd != hwnd and not u32.IsChild(hwnd, pt_hwnd):
+            proc = ""
+            title = ""
+            try:
+                proc = self._probe.process_of(pt_hwnd) or ""
+            except Exception:                       # noqa: BLE001
+                pass
+            try:
+                n = u32.GetWindowTextLengthW(pt_hwnd)
+                if n:
+                    import ctypes
+                    buf = ctypes.create_unicode_buffer(n + 1)
+                    u32.GetWindowTextW(pt_hwnd, buf, n + 1)
+                    title = buf.value
+            except Exception:                       # noqa: BLE001
+                pass
+            who = proc or "未知进程"
+            if title:
+                who = f"{who}({title})"
             raise ExecutorError(
-                WINDOW_OCCLUDED, "落点被其他窗口遮挡，请先前置目标窗口")
+                WINDOW_OCCLUDED,
+                f"落点被 {who} 遮挡,请先前置目标窗口或请人类处理遮挡程序")
 
     def _resolve_window(self, window) -> int:
         if isinstance(window, int):

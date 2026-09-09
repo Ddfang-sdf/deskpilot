@@ -64,6 +64,9 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "get_clickable_map": {
         "description": "给绑定的 Windows 窗口做 SoM 标注截图:把可点击元素编号画在图上。需要「指第 N 号元素」点击时用,编号传入 click_element 的 som_id 即可点中。",
         "required": {"window": ("any",)}, "optional": {}},
+    "list_desktop_icons": {
+        "description": "列出 Windows 桌面图标清单(无需绑定):display 显示名/source 路径(回收站等虚拟项为 null)/graphic_rect 图形矩形(拖拽抓点取中心)/cell_rect 单元矩形(槽位核验用),虚拟桌面坐标;栈叠图标各成一条。桌面定位/拖拽核验用;与 screenshot 的 ocr:true 分工:本工具给图标矩形,ocr 给文字。region=可选限定区域。",
+        "required": {}, "optional": {"region": ("rect",)}},
     "template_match": {
         "description": "在 Windows 屏幕或窗口里按模板小图找位置(图像匹配);UIA 读不出的自绘界面(游戏/老软件/画布)时用。template=模板图路径,scope=搜索范围,返回命中坐标。",
         "required": {"template": ("str",), "scope": ("rect",)},
@@ -92,8 +95,8 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "移动 Windows 桌面鼠标到指定坐标(不点击,虚拟桌面坐标系)。x,y 整数。",
         "required": {"x": ("int",), "y": ("int",)}, "optional": {}},
     "scroll": {
-        "description": "在绑定的 Windows 窗口滚动鼠标滚轮。attach 绑定后使用。direction(up/down)+amount(格数)。",
-        "required": {"token": ("str",), "direction": ("enum", ["up", "down"]),
+        "description": "在绑定的 Windows 窗口滚动鼠标滚轮(垂直/水平)。attach 绑定后使用。direction(up/down/left/right)+amount(格数);left=负向,right=正向。",
+        "required": {"token": ("str",), "direction": ("enum", ["up", "down", "left", "right"]),
                      "amount": ("int",)},
         "optional": {},
     },
@@ -135,14 +138,15 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "at_least_one": ["name", "automation_id"],
     },
     "click": {
-        "description": "按 Windows 虚拟桌面坐标像素点击(元素不可用时的兜底;能用 click_element 就别用它)。token+x+y。",
+        "description": "按 Windows 虚拟桌面坐标像素点击(元素不可用时的兜底;能用 click_element 就别用它)。token+x+y;button=left/right/middle(默认 left),clicks=1/2/3(单/双/三连击,默认 1)。",
         "required": {"token": ("str",), "x": ("int",), "y": ("int",)},
-              "optional": {}},
+              "optional": {"button": ("enum", ["left", "right", "middle"]),
+                           "clicks": ("int",)}},
     "click_text": {
-        "description": "在绑定的 Windows 窗口内按文字点击(OCR 定位;能用文字定位就不要手算坐标,优先于裸坐标 click)。token+text;match=contains/exact;多命中默认不放行,用 index 指定第几个(从 0);button=left/right。",
+        "description": "在绑定的 Windows 窗口内按文字点击(OCR 定位;能用文字定位就不要手算坐标,优先于裸坐标 click)。token+text;match=contains/exact;多命中默认不放行,用 index 指定第几个(从 0);button=left/right/middle;clicks=1/2/3。",
         "required": {"token": ("str",), "text": ("str",)},
         "optional": {"match": ("str",), "index": ("int",),
-                     "button": ("str",)}},
+                     "button": ("str",), "clicks": ("int",)}},
     "type_text": {
         "description": "经剪贴板向 Windows 窗口当前焦点输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
@@ -154,9 +158,24 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "token+text。读取用 get_clipboard(无需绑定)。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "drag": {
-        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y])。",
+        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y]);button=left/right/middle(默认 left)。",
         "required": {"token": ("str",), "start": ("coord",), "end": ("coord",)},
-             "optional": {}},
+             "optional": {"button": ("enum", ["left", "right", "middle"])}},
+    # ---- REQ-001 原语层(组合基座,详设 §5.1~5.3)----
+    "mouse_down": {
+        "description": "在 Windows 桌面按下鼠标指定键不松(原语层,组合基座:down+move+up=按住拖动,左右键可同按)。token+button(left/right/middle)。光标态操作,按前请先激活目标窗口或移动光标就位。安全网:30s 看门狗自动抬/急停强抬/启动清扫。",
+        "required": {"token": ("str",),
+                     "button": ("enum", ["left", "right", "middle"])},
+        "optional": {}},
+    "mouse_up": {
+        "description": "抬起 Windows 桌面鼠标指定键,与 mouse_down 配对组合任意序列。token+button。幂等:无对应按下时 no-op 返回 released=false,防重试误抬。光标态操作,生效于当前光标所在处。",
+        "required": {"token": ("str",),
+                     "button": ("enum", ["left", "right", "middle"])},
+        "optional": {}},
+    "hold": {
+        "description": "在 Windows 桌面按住鼠标指定键不放,到时自动抬起(异常也必抬)。token+duration_ms(1~30000 毫秒)+button(默认 left)。光标态操作,按前请确认光标就位。",
+        "required": {"token": ("str",), "duration_ms": ("int",)},
+        "optional": {"button": ("enum", ["left", "right", "middle"])}},
 }
 
 
