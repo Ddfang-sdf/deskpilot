@@ -215,13 +215,15 @@ class Enforcement:
 
         # 闸四 L3 同步审批（ISS-0003：同步等待人类裁决，AI 自发起后退出环路）
         if eff == L3:
-            # ISS-0019：批量授权——同窗口同工具会话内后续同类免批
-            # （终端类与 key 类永不适用）
-            excluded = (tool == "key") or (
-                binding is not None
-                and binding.process_name in self._policy.terminal_apps)
+            # ISS-0019 + ISS-0053：批量授权——同窗口同工具会话内后续同类免批;
+            # key 类按同键粒度(norm_key:esc≠delete,2026-09-10 sdfang 批准);
+            # 终端类永远逐操作(自由文本载荷无批量边界,结构上不批量)
+            norm_key = norm if tool == "key" else ""
+            excluded = (binding is not None
+                        and binding.process_name in self._policy.terminal_apps)
             if (binding is not None and not excluded
-                    and self._approvals.session_scope_of(tool, binding.token)
+                    and self._approvals.session_scope_of(tool, binding.hwnd,
+                                                         norm_key)
                     == "window_session"):
                 pass                              # 批量命中：不弹窗直接放行
             else:
@@ -236,7 +238,8 @@ class Enforcement:
                     desc, fp, image_path=image_path,
                     target_rect=target_rect,
                     tool=tool,
-                    binding_token=binding.token if binding else None,
+                    window_hwnd=binding.hwnd if binding else None,
+                    norm_key=norm_key,
                     allow_scope=not excluded)
                 if decision not in ("approve", "approve_session"):
                     code = APPROVAL_TIMEOUT if decision == "timeout" \

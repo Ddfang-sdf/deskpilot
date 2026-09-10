@@ -56,7 +56,9 @@ def resolve_click(items, query, match, index, img_w, img_h, rect):
         cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
         return ("out_of_window", (cx, cy))
     return ("ok", {"point": _virtual_point(chosen, img_w, img_h, rect),
-                   "matched": chosen.get("text", "")})
+                   "matched": chosen.get("text", ""),
+                   # ISS-0044 G-02:命中框虚拟坐标(文字锚点偏移的几何输入)
+                   "box": list(_virtual_box(chosen, img_w, img_h, rect))})
 
 
 def suggest_similar(items, query, limit: int = 3,
@@ -84,3 +86,12 @@ def _virtual_point(item, img_w, img_h, rect) -> tuple:
     scale_x = (rect[2] - rect[0]) / img_w
     scale_y = (rect[3] - rect[1]) / img_h
     return (int(rect[0] + cx * scale_x), int(rect[1] + cy * scale_y))
+
+
+def _virtual_box(item, img_w, img_h, rect) -> tuple:
+    """item 框四边(图像像素)→ 虚拟桌面坐标(ISS-0044 G-02 锚点几何输入)。"""
+    box = item["position"]
+    scale_x = (rect[2] - rect[0]) / img_w
+    scale_y = (rect[3] - rect[1]) / img_h
+    return (int(rect[0] + box[0] * scale_x), int(rect[1] + box[1] * scale_y),
+            int(rect[0] + box[2] * scale_x), int(rect[1] + box[3] * scale_y))

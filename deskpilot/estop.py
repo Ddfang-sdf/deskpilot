@@ -30,6 +30,7 @@ class EstopMonitor:
         self._freeze_listeners: list[Callable[[], None]] = []  # REQ-001 冻结监听器
         self._frozen = False
         self._corner_since: float | None = None
+        self._corner_inside: bool | None = None   # ISS-0049: None=首采未定基线
 
     def add_freeze_listener(self, fn: Callable[[], None]) -> None:
         """REQ-001：注册冻结触发监听器(无参)——执行层按下键强抬等追加消费方。
@@ -61,18 +62,27 @@ class EstopMonitor:
         self._reset("复位-共享同步")
 
     def check_corner(self, x: int, y: int) -> None:
-        """鼠标位置轮询回调：甩角防抖判定。
+        """鼠标位置轮询回调：甩角边沿防抖判定(ISS-0049)。
 
-        光标进入左上角触发区域且持续停留 ≥ corner_hold_ms 才触发；
-        路过不停留不触发（详细设计 §11.6）。
+        首采定基线:启动(或复位)后第一次采样只确立"在内/在外"基线——
+        光标早已停在角落=压角残留,不是恐慌(恐慌甩角必从区域外闯入);
+        仅"外→内"跳变起计停留,持续 ≥ corner_hold_ms 才触发;
+        路过不停留不触发(详细设计 §11.6)。
         """
-        if x <= CORNER_X and y <= CORNER_Y:
-            if self._corner_since is None:
-                self._corner_since = self._clock()
-            elif self._clock() - self._corner_since >= self._corner_hold_ms / 1000:
+        inside = x <= CORNER_X and y <= CORNER_Y
+        if self._corner_inside is None:
+            self._corner_inside = inside            # 首采只定基线,不起计
+            return
+        if inside:
+            if not self._corner_inside:
+                self._corner_since = self._clock()  # 边沿:外→内,起计 hold
+            elif (self._corner_since is not None
+                  and self._clock() - self._corner_since
+                  >= self._corner_hold_ms / 1000):
                 self._trigger("鼠标甩角")
         else:
             self._corner_since = None
+        self._corner_inside = inside
 
     def _trigger(self, source: str) -> None:
         if self._frozen:
@@ -96,6 +106,7 @@ class EstopMonitor:
             return
         self._frozen = False
         self._corner_since = None
+        self._corner_inside = None     # ISS-0049:复位再基线——压角残留不复活恐慌
         if self._audit is not None:
             self._audit.record_event("急停复位", source)
         if self._on_state_change is not None:

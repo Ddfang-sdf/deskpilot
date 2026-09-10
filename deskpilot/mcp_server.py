@@ -59,8 +59,8 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "at_least_one": ["title", "process"],
     },
     "get_ui_tree": {
-        "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用浏览器工具。attach 绑定之后用它「看懂」窗口里有哪些按钮、输入框、列表。返回 elements+coord_space。",
-        "required": {"window": ("any",)}, "optional": {}},
+        "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用浏览器工具。attach 绑定之后用它「看懂」窗口里有哪些按钮、输入框、列表。control_type=按控件类型过滤(如 CheckBox/Button/MenuItem,找无文字图形先用它)。返回 elements+coord_space。",
+        "required": {"window": ("any",)}, "optional": {"control_type": ("str",)}},
     "get_clickable_map": {
         "description": "给绑定的 Windows 窗口做 SoM 标注截图:把可点击元素编号画在图上。需要「指第 N 号元素」点击时用,编号传入 click_element 的 som_id 即可点中。",
         "required": {"window": ("any",)}, "optional": {}},
@@ -126,10 +126,11 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台;最大化窗口保持最大化不被打回)。token=attach 返回令牌。窗口最大化/移动/缩放等几何变化后,既有截图与坐标即作废,请先重新感知再操作。",
         "required": {"token": ("str",)}, "optional": {}},
     "click_element": {
-        "description": "按名称/AutomationId/SoM 编号点击绑定的 Windows 窗口内控件(UIA 优先,比像素坐标稳);网页元素点击请用浏览器工具。attach 绑定后,先 get_ui_tree 找控件名,再点它。token+name/automation_id/som_id。",
+        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定的 Windows 窗口内控件(UIA 优先,比像素稳);网页元素请用浏览器工具。先 get_ui_tree 找控件再点。token+name/automation_id/som_id;无文字图形用 control_type=类型+index=第几个;som_id 与 control_type 互斥。",
         "required": {"token": ("str",)},
-        "optional": {"name": ("str",), "automation_id": ("str",), "som_id": ("int",)},
-        "at_least_one": ["name", "automation_id", "som_id"],
+        "optional": {"name": ("str",), "automation_id": ("str",), "som_id": ("int",),
+                     "control_type": ("str",), "index": ("int",)},
+        "at_least_one": ["name", "automation_id", "som_id", "control_type"],
     },
     "type_element": {
         "description": "向绑定的 Windows 窗口内控件(输入框等)输入文本;网页表单请用浏览器工具。attach 绑定后使用。token+name/automation_id+text。",
@@ -143,10 +144,12 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
               "optional": {"button": ("enum", ["left", "right", "middle"]),
                            "clicks": ("int",)}},
     "click_text": {
-        "description": "在绑定的 Windows 窗口内按文字点击(OCR 定位;能用文字定位就不要手算坐标,优先于裸坐标 click)。token+text;match=contains/exact;多命中默认不放行,用 index 指定第几个(从 0);button=left/right/middle;clicks=1/2/3。",
+        "description": "在绑定的 Windows 窗口内按文字点击(OCR 定位,优先于裸坐标 click)。token+text;match=contains/exact;多命中须 index;button=left/right/middle;clicks=1/2/3;offset=left/right/above/below 点文字旁图形(如「记住我」旁的复选框),distance=偏移像素(默认 28)。",
         "required": {"token": ("str",), "text": ("str",)},
         "optional": {"match": ("str",), "index": ("int",),
-                     "button": ("str",), "clicks": ("int",)}},
+                     "button": ("str",), "clicks": ("int",),
+                     "offset": ("enum", ["left", "right", "above", "below"]),
+                     "distance": ("int",)}},
     "type_text": {
         "description": "经剪贴板向 Windows 窗口当前焦点输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
@@ -158,7 +161,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "token+text。读取用 get_clipboard(无需绑定)。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "drag": {
-        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y]);button=left/right/middle(默认 left)。",
+        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y]);button=left/right/middle(默认 left)。起点须在绑定窗内(防误射);终点可为虚拟桌面任意点(移动窗口/跨屏拖拽允许,越出所有屏拒)。",
         "required": {"token": ("str",), "start": ("coord",), "end": ("coord",)},
              "optional": {"button": ("enum", ["left", "right", "middle"])}},
     # ---- REQ-001 原语层(组合基座,详设 §5.1~5.3)----

@@ -15,30 +15,60 @@ from pathlib import Path
 from typing import Callable
 
 def _set_dpi_awareness() -> str:
-    """ISS-0007 D：DPI 感知——优先 Per-Monitor V2，失败回退 V1，再败不阻断。
+    """DPI 感知声明 + 查询制如实回报(ISS-0007 D / ISS-0051)。
 
-    返回所用形态（"pmv2" / "v1" / "none"）。
+    声明:优先 Per-Monitor V2,失败回退系统级——ISS-0051:必须传
+    c_void_p 对象;.value 拆包成 64 位巨无符号整数,无 argtypes 时
+    ctypes 按 c_int 封送溢出抛 ArgumentError,被回退静默吞掉
+    (PMV2 自 ISS-0007 起从未真正生效的实证根因)。
+
+    回报:不按调用成败记账(清单预设/调用被拒/封送异常都可能说谎),
+    一律查询真实上下文——pmv2/pmv1/v1/unaware/unknown。
+    """
+    import ctypes
+    u32 = ctypes.windll.user32
+    try:
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (HANDLE)-4
+        u32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except Exception:
+        try:
+            u32.SetProcessDPIAware()
+        except Exception:
+            pass
+    return _query_dpi_mode()
+
+
+def _query_dpi_mode() -> str:
+    """查询进程真实 DPI 感知形态(ISS-0051:回报必须如实)。
+
+    原始句柄含标志位(实证:PMV2 上下文原值可为 34),必须经
+    AreDpiAwarenessContextsEqual 归一比较,禁止直比句柄数值;
+    句柄同样传 c_void_p 对象(同 ISS-0051 封送教训)。
     """
     import ctypes
     try:
-        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (HANDLE)-4
-        if ctypes.windll.user32.SetProcessDpiAwarenessContext(
-                ctypes.c_void_p(-4).value):
-            return "pmv2"
+        u32 = ctypes.windll.user32
+        ctx = u32.GetThreadDpiAwarenessContext()
+        eq = u32.AreDpiAwarenessContextsEqual
+        for value, name in ((-4, "pmv2"), (-3, "pmv1"),
+                            (-2, "v1"), (-1, "unaware")):
+            if eq(ctx, ctypes.c_void_p(value)):
+                return name
+        return "unknown"
     except Exception:
-        pass
-    try:
-        if ctypes.windll.user32.SetProcessDPIAware():
-            return "v1"
-    except Exception:
-        pass
-    return "none"
+        return "unknown"
 
 
 # DPI 感知必须在任何窗口/坐标 API 使用前声明（实盘教训：
 # 150% 缩放主机上 UIA 物理像素与键鼠虚拟坐标错位，画笔落点全偏；
 # ISS-0007：双屏混合 DPI 下 V1 会在副屏被位图拉伸，须 Per-Monitor V2）。
 _DPI_MODE = _set_dpi_awareness()
+
+
+def _startup_detail(form: str) -> str:
+    """启动审计明细：形态 + DPI 感知形态(ISS-0050:DPI 形态必须可诊断,
+    否则混合缩放主机上 V2 静默回退后"AI 点不准"无从定位)。"""
+    return f"{form}; DPI={_DPI_MODE}"
 
 from .approval import ApprovalManager, DenyAllChannel
 from .audit import AuditLogger
@@ -341,6 +371,15 @@ def main() -> int:
         print(f"审计目录不可用: {e}", file=sys.stderr)
         return 3
 
+    # ISS-0046 A:daemon 单例守门——已有属主在线时本实例显式退出(不僵尸)。
+    # 必须在甩角/热键监听与弹窗装配之前:非属主进程不监听、不弹窗、不绑端口。
+    if "--daemon" in sys.argv and probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+        audit.record_event("daemon 单例退出",
+                           "9420 已有属主在线,拒绝双起(甩角监听/弹窗归属主)")
+        print("已有 DeskPilot daemon 在线(127.0.0.1:9420),本实例退出",
+              file=sys.stderr)
+        return 4
+
     # ISS-0012 C：策略指纹入审计 + 运行期外部修改留痕
     fp = policy_sha256_audit(str(policy_path), audit)
     _start_policy_watch(str(policy_path), audit, fingerprint=fp)
@@ -419,7 +458,7 @@ def main() -> int:
                       whitelist_admin=whitelist_admin,
                       revoke_channel=revoke_channel)
 
-    audit.record_event("服务启动", "MCP stdio 就绪")
+    audit.record_event("服务启动", _startup_detail("MCP stdio 就绪"))
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
     if "--daemon" in sys.argv:
         # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
@@ -427,9 +466,15 @@ def main() -> int:
         daemon = HttpDaemon(ctx, estop=estop,
                             idle_timeout_s=policy.idle_timeout_minutes * 60,
                             whitelist_admin=whitelist_admin)
-        daemon.start()
-        audit.record_event("服务启动",
-                           f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}")
+        try:
+            daemon.start()
+        except RuntimeError as e:
+            # ISS-0046 A:预检→绑定竞态的败者干净退出(不抛栈、不僵尸)
+            audit.record_event("daemon 单例退出", f"端口绑定失败: {e}")
+            print(f"daemon 启动退出: {e}", file=sys.stderr)
+            return 4
+        audit.record_event("服务启动", _startup_detail(
+            f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}"))
         print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
               file=sys.stderr)
         # ISS-0012 E1：系统托盘图标（白名单管理可视化入口；托盘即在跑）

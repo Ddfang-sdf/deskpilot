@@ -21,14 +21,16 @@ class TestCornerThreshold1000:
 
     def test_cor02_999ms_does_not_freeze(self, estop, clock):
         """TC-COR-02:驻留 999ms 不触发。"""
-        estop.check_corner(0, 0)
+        estop.check_corner(500, 500)                 # ISS-0049:首采外基线
+        estop.check_corner(0, 0)                     # 边沿进入,起计 hold
         clock.advance(0.999)
         estop.check_corner(0, 0)
         assert estop.is_frozen() is False
 
     def test_cor03_1001ms_freezes(self, estop, clock):
         """TC-COR-03:驻留 1001ms 触发(语义锁定用例,阈值变更后防回退)。"""
-        estop.check_corner(0, 0)
+        estop.check_corner(500, 500)                 # ISS-0049:首采外基线
+        estop.check_corner(0, 0)                     # 边沿进入
         clock.advance(1.001)
         estop.check_corner(0, 0)
         assert estop.is_frozen() is True

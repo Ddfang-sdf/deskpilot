@@ -82,7 +82,8 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
                     ok=True, error_code="", message="未找到目标窗口，"
                     "可改按进程名(process)或句柄(hwnd)查找", data=result)
         elif tool == "get_ui_tree":
-            result = ctx.executor.get_ui_tree(params["window"])
+            result = ctx.executor.get_ui_tree(params["window"],
+                                              params.get("control_type"))
         elif tool == "list_desktop_icons":
             result = ctx.executor.list_desktop_icons(params.get("region"))
         elif tool == "get_cursor":

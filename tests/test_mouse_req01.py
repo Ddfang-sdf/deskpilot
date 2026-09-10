@@ -382,6 +382,29 @@ class TestMouseSafetyNet:
         events = _audit_events(str(tmp_path / "audit"))
         assert any(e.get("event") == "启动抬键清扫" for e in events)
 
+    def test_mouse16b_sweep_tolerates_corner_failsafe(self, estop, tmp_path,
+                                                      monkeypatch,
+                                                      audit_log):
+        """ISS-0048(修改引入回归):光标压角时 pyautogui FAILSAFE 拦截清扫,
+        构造不得崩+审计拦截事件。"""
+        import pyautogui
+        rec = _Rec()
+
+        def boom_up(*a, **k):
+            rec.calls.append(("mouseUp", a, k))
+            raise pyautogui.FailSafeException("光标压角")
+
+        monkeypatch.setattr(core_mod.pyautogui, "mouseUp", boom_up)
+        for fn in ("mouseDown", "moveTo", "click", "hscroll", "scroll"):
+            monkeypatch.setattr(core_mod.pyautogui, fn, rec.fn(fn))
+        # 构造不得抛(清扫被 FAILSAFE 拦截也须活)
+        ex = Executor(estop, str(tmp_path / "audit"), poll_interval=0.02,
+                      probe=FakeProbe(), audit=audit_log)
+        assert len(rec.named("mouseUp")) == 3         # 三键都尝试过(直出)
+        events = _audit_events(str(tmp_path / "audit"))
+        assert any(e.get("event") == "启动抬键清扫-FAILSAFE拦截"
+                   for e in events)                   # 拦截如实记审计(直出)
+
     def test_mouse18_drag_tracks_pressed_symmetric(self, estop, tmp_path,
                                                    monkeypatch):
         ex, rec = _exec(estop, tmp_path, monkeypatch)

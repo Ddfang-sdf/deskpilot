@@ -176,13 +176,28 @@ class TestCoordSpaceDeclaration:
 # ---------- D DPI 感知回退 ----------
 
 class TestDpiAwareness:
-    """场景:优先 Per-Monitor V2,失败回退 V1,再败不阻断启动。
-    断言:_set_dpi_awareness 返回所用形态(直出)。"""
+    """场景:优先 Per-Monitor V2 声明;回报为查询制(ISS-0051:
+    不按调用成败记账,一律查真实上下文)。
+    断言:_set_dpi_awareness 返回所查形态(直出)。"""
+
+    @staticmethod
+    def _stub_query(monkeypatch, matched_value):
+        import ctypes
+        # c_void_p.value 无符号回绕,比较同形化(ISS-0051 教训)
+        wrapped = ctypes.c_void_p(matched_value).value
+        monkeypatch.setattr(
+            "ctypes.windll.user32.GetThreadDpiAwarenessContext",
+            lambda: 999, raising=False)
+        monkeypatch.setattr(
+            "ctypes.windll.user32.AreDpiAwarenessContextsEqual",
+            lambda a, b: getattr(b, "value", None) == wrapped,
+            raising=False)
 
     def test_pmv2_success(self, monkeypatch):
         from deskpilot import main as m
         monkeypatch.setattr("ctypes.windll.user32.SetProcessDpiAwarenessContext",
                             lambda v: True, raising=False)
+        self._stub_query(monkeypatch, -4)          # 查询:实为 PMV2
         assert m._set_dpi_awareness() == "pmv2"
 
     def test_fallback_to_v1(self, monkeypatch):
@@ -191,9 +206,10 @@ class TestDpiAwareness:
                             lambda v: False, raising=False)
         monkeypatch.setattr("ctypes.windll.user32.SetProcessDPIAware",
                             lambda: True, raising=False)
+        self._stub_query(monkeypatch, -2)          # 查询:实为系统级
         assert m._set_dpi_awareness() == "v1"
 
-    def test_all_fail_returns_none_not_raise(self, monkeypatch):
+    def test_all_fail_reports_unaware(self, monkeypatch):
         from deskpilot import main as m
         monkeypatch.setattr("ctypes.windll.user32.SetProcessDpiAwarenessContext",
                             lambda v: (_ for _ in ()).throw(OSError()),
@@ -201,7 +217,8 @@ class TestDpiAwareness:
         monkeypatch.setattr("ctypes.windll.user32.SetProcessDPIAware",
                             lambda: (_ for _ in ()).throw(OSError()),
                             raising=False)
-        assert m._set_dpi_awareness() == "none"
+        self._stub_query(monkeypatch, -1)          # 查询:实为未感知
+        assert m._set_dpi_awareness() == "unaware"
 
 
 @pytest.fixture

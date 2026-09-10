@@ -53,14 +53,16 @@ class TestCornerDebounce:
 
     def test_sustained_corner_triggers(self, estop, clock):
         """停留 ≥ corner_hold_ms（默认 1000ms）触发。"""
-        estop.check_corner(0, 0)
+        estop.check_corner(500, 500)                 # ISS-0049:首采外基线
+        estop.check_corner(0, 0)                     # 边沿进入,起计 hold
         clock.advance(1.05)                          # 停留 1050ms
         estop.check_corner(0, 0)
         assert estop.is_frozen() is True
 
     def test_corner_boundary_exactly_threshold(self, estop, clock):
         """恰好达到停留阈值即触发。"""
-        estop.check_corner(0, 0)
+        estop.check_corner(500, 500)                 # ISS-0049:首采外基线
+        estop.check_corner(0, 0)                     # 边沿进入
         clock.advance(1.0)                           # 恰好 1000ms
         estop.check_corner(0, 0)
         assert estop.is_frozen() is True

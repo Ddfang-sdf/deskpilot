@@ -163,7 +163,7 @@ class HttpDaemon:
         超预算返回 _BUDGET_EXCEEDED（写路径持锁串行语义不变）；
         执行体异常原样上抛，由 handler 兜底为 500 结构化错误。
         """
-        from .models import TOOL_LEVELS
+        from .models import TOOL_LEVELS, ToolResult
         from .tools import call_tool
 
         # ISS-0024：预算决议单源化(原 level=="L3" 分支因 TOOL_LEVELS
@@ -175,6 +175,17 @@ class HttpDaemon:
         def invoke():
             if level == "L0":
                 return call_tool(self._ctx, tool, raw)   # 只读路径不入写锁
+            # ISS-0045 ③:参数校验前置到写锁之外——超限/非法输入秒拒,
+            # 不排在在途写锁后把预算耗成 TOOL_TIMEOUT(校验根本没机会执行
+            # 的级联实证:C-09 65537 字符)。validate_call 纯函数幂等,
+            # 锁外预校+call_tool 锁内复核,语义不变。
+            if policy is not None:
+                from .mcp_server import validate_call
+                try:
+                    validate_call(tool, raw, policy)
+                except errors.InvalidParamsError as e:
+                    return ToolResult(ok=False, error_code=e.code,
+                                      message=e.message)
             self._inflight_writes += 1
             try:
                 with self._write_lock:                   # 写路径严格串行
@@ -232,7 +243,12 @@ class HttpDaemon:
 
             def do_GET(self):
                 if self.path == "/health":
-                    self._send(200, {"status": "ok"})
+                    # ISS-0050: dpi_mode 暴露(静默回退可诊断);延迟 import
+                    # 避免 main↔httpd 模块级环引
+                    from . import main as _main
+                    self._send(200, {"status": "ok",
+                                     "dpi_mode": getattr(_main, "_DPI_MODE",
+                                                         "unknown")})
                 elif self.path == "/version":
                     import deskpilot
                     self._send(200, {"version": deskpilot.__version__})

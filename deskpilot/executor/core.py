@@ -76,10 +76,20 @@ class Executor:
         self._mouse_watchdog = WatchdogThread(
             self._mouse, self._force_release_button, self._audit)
         # REQ-001 D-02：启动抬键清扫——旧进程死亡期悬空按键的系统级自愈
+        # ISS-0048(修改引入回归):光标压角时 pyautogui FAILSAFE 会拦截
+        # mouseUp——逐键容错,记审计「启动抬键清扫-FAILSAFE拦截」并继续,
+        # 启动不得崩;启动期 FAILSAFE 不映射冻结(光标压角≠用户急停意图)。
+        _sweep_blocked = 0
         for _b in MOUSE_BUTTONS:
-            pyautogui.mouseUp(button=_b)        # 幂等:无按下=系统级 no-op
+            try:
+                pyautogui.mouseUp(button=_b)    # 幂等:无按下=系统级 no-op
+            except pyautogui.FailSafeException:
+                _sweep_blocked += 1
         if self._audit is not None:
             self._audit.record_event("启动抬键清扫", "三键幂等抬起")
+            if _sweep_blocked:
+                self._audit.record_event("启动抬键清扫-FAILSAFE拦截",
+                                         f"光标压角拦截 {_sweep_blocked} 键")
         # REQ-001 安全网①：急停冻结→强制抬起全部按下键
         add_listener = getattr(self._estop, "add_freeze_listener", None)
         if callable(add_listener):
@@ -179,14 +189,21 @@ class Executor:
                                         hwnd=hwnd,
                                         include_hidden=include_hidden)
 
-    def get_ui_tree(self, window) -> dict:
+    def get_ui_tree(self, window, control_type: str | None = None) -> dict:
         hwnd = self._resolve_window(window)
         root = self._element_root(hwnd)      # 走元素源接缝（测试可注入）
         nodes: list[dict] = []
         self._walk(root, nodes, depth=0)
+        truncated = len(nodes) >= 800
+        if control_type:
+            # ISS-0044 G-01:类型过滤(walk 后子串+大小写不敏感);
+            # 截断继承诚实:truncated 标志原样保留,AI 得知结果不完整
+            needle = control_type.strip().casefold()
+            nodes = [n for n in nodes
+                     if needle in n["control_type"].casefold()]
         # ISS-0007 C：坐标系声明（rect 为虚拟桌面坐标，可含负值）
         return {"hwnd": hwnd, "elements": nodes,
-                "truncated": len(nodes) >= 800,
+                "truncated": truncated,
                 "coord_space": "virtual_desktop"}
 
     def get_cursor(self) -> dict:
@@ -439,16 +456,25 @@ class Executor:
         _com_initialize()
         local.inited = True
 
-    def _find_elements(self, root, *, name=None, automation_id=None) -> list:
-        """按名称/自动化标识在绑定窗口树内查找（§14.7 定位条件）。
+    def _find_elements(self, root, *, name=None, automation_id=None,
+                       control_type=None) -> list:
+        """按名称/自动化标识/控件类型在绑定窗口树内查找（§14.7 定位条件）。
 
+        ISS-0044 G-01:control_type 子串+大小写不敏感过滤;与 name 同传时
+        取交集(名称子串∧类型子串)。
         WinUI 树存在幽灵重复（同名同型同矩形可见/离屏两份）——按
         名称+自动化标识+矩形三元组去重，视为同一元素。
         """
         matches = []
         seen: set[tuple] = set()
+        needle_type = control_type.strip().casefold() if control_type else None
         for s in self._iter_summaries(root):           # ISS-0008 P4：摘要复用
-            if name is not None and automation_id is not None:
+            if control_type is not None and name is not None:
+                hit = (needle_type in s["control_type"].casefold()
+                       and name in s["name"])
+            elif control_type is not None:
+                hit = needle_type in s["control_type"].casefold()
+            elif name is not None and automation_id is not None:
                 hit = s["name"] == name and s["automation_id"] == automation_id
             elif name is not None:
                 hit = s["name"] == name
@@ -531,6 +557,12 @@ class Executor:
 
     def _click_element(self, params: dict, hwnd: int) -> dict:
         som_id = params.get("som_id")
+        control_type = params.get("control_type")
+        # ISS-0044 G-01:som_id 与 control_type 为两条寻址路径,互斥
+        if som_id is not None and control_type:
+            raise ExecutorError(
+                INVALID_PARAMS,
+                "som_id 与 control_type 为两条寻址路径,不可同传")
         if som_id is not None:
             entry = self._som_cache.get(int(som_id))
             if (entry is None or entry["hwnd"] != hwnd
@@ -543,6 +575,11 @@ class Executor:
             element = self._resolve_unique_element(
                 root, name=entry["name"] or None,
                 automation_id=entry["automation_id"] or None)
+        elif control_type:
+            root = self._element_root(hwnd)
+            element = self._resolve_typed_element(
+                root, control_type=control_type, name=params.get("name"),
+                index=params.get("index"))
         else:
             root = self._element_root(hwnd)
             element = self._resolve_unique_element(
@@ -550,6 +587,27 @@ class Executor:
                 automation_id=params.get("automation_id"))
         self._invoke_element(element, hwnd)
         return {"status": "ok", "element": self._element_summary(element)}
+
+    def _resolve_typed_element(self, root, *, control_type, name=None,
+                               index=None):
+        """ISS-0044 G-01:类型+序号寻址——类型过滤(可与 name 交集)后按序取。"""
+        matches = self._find_elements(root, name=name,
+                                      control_type=control_type)
+        if not matches:
+            raise ExecutorError(
+                ELEMENT_NOT_FOUND,
+                f"元素不存在（类型 {control_type!r}"
+                f"{f', 名称 {name!r}' if name else ''}）。"
+                f"候选元素: {self._candidate_names(root)}")
+        i = index if index is not None else 0
+        if isinstance(i, bool) or not isinstance(i, int) or i < 0:
+            raise ExecutorError(INVALID_PARAMS, f"index 非法: {i!r}")
+        if i >= len(matches):
+            raise ExecutorError(
+                ELEMENT_NOT_FOUND,
+                f"类型 {control_type!r} 命中 {len(matches)} 个,"
+                f"index={i} 越界(0~{len(matches) - 1})")
+        return matches[i]
 
     def _invoke_element(self, element, hwnd: int | None = None) -> None:
         """元素激活：Invoke 优先，SelectionItem 选择模式次之，像素点击兜底。
@@ -723,6 +781,24 @@ class Executor:
             raise ExecutorError(INTERNAL_ERROR,
                                 f"OCR 命中框越窗（数据异常）: {payload}")
         x, y = payload["point"]
+        # ISS-0044 G-02:文字锚点偏移——命中框边缘±distance(几何契约见问题单 §2)
+        offset = params.get("offset")
+        if offset:
+            distance = params.get("distance", 28)
+            if isinstance(distance, bool) or not isinstance(distance, int) \
+                    or distance < 1:
+                raise ExecutorError(
+                    INVALID_PARAMS, f"distance 非法(≥1): {distance}")
+            bx1, by1, bx2, by2 = payload["box"]
+            mx, my = (bx1 + bx2) // 2, (by1 + by2) // 2
+            if offset == "left":
+                x, y = bx1 - distance, my
+            elif offset == "right":
+                x, y = bx2 + distance, my
+            elif offset == "above":
+                x, y = mx, by1 - distance
+            else:                               # below
+                x, y = mx, by2 + distance
         self._check_point(hwnd, x, y)
         self._check_occlusion(hwnd, x, y)     # 与 click 同遮挡校验
         try:
@@ -735,8 +811,8 @@ class Executor:
     def _drag(self, start, end, hwnd: int, button: str = "left") -> dict:
         if button not in MOUSE_BUTTONS:
             raise ExecutorError(INVALID_PARAMS, f"button 非法: {button}")
-        self._check_point(hwnd, *start)
-        self._check_point(hwnd, *end)
+        self._check_point(hwnd, *start)   # 起点防误射不变(绑定窗内)
+        self._check_drag_end(*end)        # ISS-0047:终点=虚拟桌面逐屏判定
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         self._check_occlusion(hwnd, *start)   # ISS-0017 C：激活后再验遮挡
@@ -810,9 +886,13 @@ class Executor:
                 pyautogui.hotkey("ctrl", "v")
                 # ISS-0035 C1:读回轮询确认——UIA 值刷新有滞后,单次立读
                 # 会把"成功但滞后"误判为失败而重贴(文档重复实证)。轮询
-                # 3 次×300ms 仍不含目标文本才判失败重贴;宁重复不丢字
+                # 耗尽仍不含目标文本才判失败重贴;宁重复不丢字
                 # 原则保留(轮询耗尽仍重贴至上限)。
-                for _poll in range(3):
+                # ISS-0045 ①:轮询窗口按文本规模缩放——刷新耗时随文本量
+                # 增长(65k 实证 3×300ms 远不够),每 8k 字符加一拍,
+                # 3 拍起步、20 拍(6s)封顶。
+                poll_budget = min(20, max(3, -(-len(text) // 8192)))
+                for _poll in range(poll_budget):
                     time.sleep(0.3)
                     current = self._read_edit_value(hwnd)
                     if current is None:
@@ -854,6 +934,31 @@ class Executor:
         rect = self._probe.rect_of(hwnd)   # 执行时刻矩形
         if not (rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]):
             raise ExecutorError(OUT_OF_BOUNDS, "落点在绑定窗口矩形外")
+
+    def _enum_monitors(self) -> list[dict]:
+        """ISS-0047:显示器枚举接缝(测试替身入口;生产=monitors.enum_monitors)。"""
+        from ..monitors import enum_monitors
+        return enum_monitors()
+
+    def _check_drag_end(self, x: int, y: int) -> None:
+        """ISS-0047:drag 终点校验=虚拟桌面全域。
+
+        移动窗口类拖拽的终点合法地在绑定窗当前矩形外(跨屏移动必越窗),
+        两类拖拽语义分离:起点仍限绑定窗(防误射),终点放宽到虚拟桌面。
+        逐屏矩形判定(非并集包围盒——错位排列的虚空死角仍拒);
+        枚举失败/为空 fail-closed,绝不静默放行。
+        """
+        try:
+            rects = [m["rect"] for m in self._enum_monitors()]
+        except Exception as e:
+            raise ExecutorError(INTERNAL_ERROR,
+                                f"显示器枚举失败,终点校验无法执行: {e}") from e
+        if not rects:
+            raise ExecutorError(INTERNAL_ERROR, "显示器枚举为空,终点校验无法执行")
+        if not any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in rects):
+            raise ExecutorError(
+                OUT_OF_BOUNDS,
+                f"终点 ({x},{y}) 不在任何显示器矩形内: {rects}")
 
     def _check_occlusion(self, hwnd: int, x: int, y: int) -> None:
         """ISS-0017 C：遮挡判定（激活后调用）——落点处顶层窗口非目标/

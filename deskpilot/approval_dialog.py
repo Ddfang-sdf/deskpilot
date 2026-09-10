@@ -78,7 +78,9 @@ def build_window(parent, description: str, result_path, timeout_s: float,
         except Exception:
             photo_im = None
 
-    height = _HEIGHT + (img_h + 8 if photo_im is not None else 0)
+    # ISS-0043 A:常规审批多一行作用域提示(「此后同类允许」的边界可见化)
+    hint_h = 0 if enroll else 18
+    height = _HEIGHT + hint_h + (img_h + 8 if photo_im is not None else 0)
 
     win = tk.Toplevel(parent)
     win.title("DeskPilot 入白审批" if enroll else "DeskPilot 审批")
@@ -190,6 +192,13 @@ def build_window(parent, description: str, result_path, timeout_s: float,
                           command=lambda: decide("approve_session"))
         batch.pack(side="right", padx=(0, _BTN_GAP))
         _hover(batch, _DENY_BG, _DENY_HOVER)
+        # ISS-0043 A + ISS-0053 C:作用域可见化——许可键=同窗口同类操作
+        # (按键类=同键),仅本次会话;hwnd 键法下重绑不失忆,daemon 重启才重批
+        tk.Label(body,
+                 text="「此后同类允许」仅本次会话有效：同窗口同类操作免批"
+                      "（按键类=同键），daemon 重启后需重批",
+                 font=("Microsoft YaHei", 8), fg=_TIMER_FG, bg=_BG,
+                 anchor="e", justify="right").pack(fill="x", pady=(6, 0))
         deny_text = "拒绝"
     deny = tk.Button(bar, text=deny_text, width=_BTN_WIDTH, relief="flat",
                      bg=_DENY_BG, fg=_TITLE_FG,

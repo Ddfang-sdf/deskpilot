@@ -113,10 +113,13 @@ class ApprovalToken:
     expires_at: float
     consumed: bool = False
     # ISS-0019：授权范围——"once" 单操作(默认) / "window_session"
-    # 同一绑定窗口+同一工具的会话内后续同类(终端类与 key 类不适用)
+    # 同一绑定窗口+同一工具的会话内后续同类(终端类不适用)
+    # ISS-0053 A/B:许可键=(tool, window_hwnd, norm_key)——重绑不失忆;
+    # key 类按同键粒度批量(esc≠delete),norm_key 仅 key 工具有值
     scope: str = "once"
     tool: str = ""
-    binding_token: str = ""
+    window_hwnd: int = 0
+    norm_key: str = ""
 
 
 @dataclass(frozen=True)

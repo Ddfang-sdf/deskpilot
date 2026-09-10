@@ -148,7 +148,15 @@ def build_window(parent, audit_dir: str, interval: float,
     import math
     import tkinter as tk
 
+    # ISS-0046 B:跨进程单例收口到建窗点——共享线程路径(dialog_service)
+    # 与子进程路径(main)同锁;抢不到不建窗(多进程同时冻结也只弹一框);
+    # 窗毁(Destroy)释放,add="+" 与调用方既有 Destroy 绑定共存。
+    if not acquire_singleton():
+        return None
     win = tk.Toplevel(parent)
+    win.bind("<Destroy>",
+             lambda e: release_singleton() if e.widget is win else None,
+             add="+")
     win.title("DeskPilot 急停")
     win.overrideredirect(True)                  # toast 形态：无边框
     win.attributes("-topmost", True)
@@ -323,13 +331,14 @@ def main() -> None:
     audit_dir = sys.argv[1]
     interval = float(sys.argv[2]) if len(sys.argv) > 2 else 180.0
 
-    if not acquire_singleton():                   # ISS-0006：互斥单例，抢不到即退出
-        return
-
     root = tk.Tk()
     root.withdraw()
+    # ISS-0046 B:单例互斥收口进 build_window(共享/子进程同锁);
+    # 未抢到 → None,本进程直接退出(等价原"抢不到即退出")。
     win = build_window(root, audit_dir, interval)
+    if win is None:
+        return
     # 独立形态：本窗关闭即退出 mainloop（共享线程形态由服务托管，不绑此事件）
-    win.bind("<Destroy>", lambda e: root.quit() if e.widget is win else None)
+    win.bind("<Destroy>", lambda e: root.quit() if e.widget is win else None,
+             add="+")
     root.mainloop()
-    release_singleton()
