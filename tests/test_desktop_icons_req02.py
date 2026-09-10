@@ -312,10 +312,15 @@ class TestRealDesktop:
             # 数量自洽 + 回收站虚拟项 + 实体项 source/graphic 链路存在
             assert r["data"]["count"] == len(items) >= 1
             names = [i["display"] for i in items]
-            assert "回收站" in names
-            recycle = items[names.index("回收站")]
-            assert recycle["source"] is None          # 虚拟项如实 null
-            real = [i for i in items if i["display"] != "回收站"]
+            # 虚拟项在场且如实 null——名录单源引用,本地化无关
+            # (CI runner 英文系统实证:显示名为 "Recycle Bin" 非「回收站」)
+            from deskpilot.executor.desktop_icons import _VIRTUAL_FIRST_NAMES
+            virtual = [i for i in items if (i["display"] or "").strip().lower()
+                       in _VIRTUAL_FIRST_NAMES]
+            assert virtual, f"虚拟项(回收站)不在清单: {names}"
+            assert all(i["source"] is None for i in virtual)
+            real = [i for i in items if (i["display"] or "").strip().lower()
+                    not in _VIRTUAL_FIRST_NAMES]
             if real:                                   # 桌面有实体项时:
                 assert any(i["source"] for i in real)  # PIDL→path 链路实证
             # 图形真实性抽验(泛化不具名):可见(未被遮挡)图形的中心像素非空;
