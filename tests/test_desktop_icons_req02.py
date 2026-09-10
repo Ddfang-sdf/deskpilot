@@ -304,26 +304,46 @@ class TestRealDesktop:
             r = self._call(d.port, "list_desktop_icons", {})
             assert r["ok"] is True, r.get("message")
             items = r["data"]["items"]
-            assert r["data"]["count"] == len(items) >= 25
+            # 环境不变量断言(修复:原 ">=25" 与具名图标抽验打在本机富桌面上,
+            # 干净 CI runner 仅 6 图标必败——断言只许打在环境无关不变量上):
+            # 数量自洽 + 回收站虚拟项 + 实体项 source/graphic 链路存在
+            assert r["data"]["count"] == len(items) >= 1
             names = [i["display"] for i in items]
             assert "回收站" in names
             recycle = items[names.index("回收站")]
             assert recycle["source"] is None          # 虚拟项如实 null
-            # 抽验 3 个:graphic_rect 中心像素非空(图形真实存在)
+            real = [i for i in items if i["display"] != "回收站"]
+            if real:                                   # 桌面有实体项时:
+                assert any(i["source"] for i in real)  # PIDL→path 链路实证
+            # 图形真实性抽验(泛化不具名):可见(未被遮挡)图形的中心像素非空;
+            # 可见性判定同 ct12(WindowFromPoint 属 Progman 链)
+            import ctypes
+            from ctypes import wintypes
             from PIL import Image
+            u32 = ctypes.windll.user32
+            pm_hwnd = u32.FindWindowW("Progman", None)
             shot = self._call(d.port, "screenshot", {"scope": "fullscreen"})
             im = Image.open(shot["data"]["path"]).convert("RGB")
             checked = 0
             for it in items:
-                if it["display"] in ("微信", "Google Chrome", "Visual Studio Code"):
-                    g = it["graphic_rect"]
-                    cx, cy = (g[0] + g[2]) // 2, (g[1] + g[3]) // 2
-                    n = sum(1 for x in range(cx - 8, cx + 8)
-                            for y in range(cy - 8, cy + 8)
-                            if im.getpixel((x, y)) != (0, 0, 0))
-                    assert n > 40, f"{it['display']} graphic 中心附近无图形"
-                    checked += 1
-            assert checked >= 2, f"抽验命中过少: {checked}"
+                g = it.get("graphic_rect")
+                if not g:
+                    continue
+                cx, cy = (g[0] + g[2]) // 2, (g[1] + g[3]) // 2
+                if not (0 <= cx < im.width and 0 <= cy < im.height):
+                    continue                          # 屏外项跳过
+                h = u32.WindowFromPoint(wintypes.POINT(cx, cy))
+                if not (h == pm_hwnd or u32.IsChild(pm_hwnd, h)):
+                    continue                          # 被遮挡项跳过(环境守卫)
+                n = sum(1 for x in range(cx - 8, cx + 8)
+                        for y in range(cy - 8, cy + 8)
+                        if im.getpixel((x, y)) != (0, 0, 0))
+                assert n > 40, f"{it['display']} graphic 中心附近无图形"
+                checked += 1
+                if checked >= 3:
+                    break
+            if not checked:
+                pytest.skip("当前桌面图标全被遮挡(环境守卫——清桌面后跑)")
             # 栈叠同 rect 各成一条(若存在)
             rects = [tuple(i["cell_rect"]) for i in items]
             assert len(rects) == len(items)           # 数量守恒(未合并)
