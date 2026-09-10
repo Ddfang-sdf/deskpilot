@@ -361,11 +361,27 @@ class ShellViewIconProvider:
 
 # ---------- 装配 ----------
 
+def _norm_icon_name(name: str) -> str:
+    """ISS-0054:归并键规范化——小写去空白、剥 .lnk/.url 后缀
+    (Explorer"显示扩展名"开/关两种显示形态与文件名形态三方归一)。"""
+    n = (name or "").strip().lower()
+    for ext in (".lnk", ".url"):
+        if n.endswith(ext):
+            n = n[: -len(ext)]
+    return n
+
+
+# 虚拟项名录:无文件路径的系统项(归并时 source 恒 null)
 _VIRTUAL_FIRST_NAMES = {"回收站", "recycle bin"}
 
 
 class DesktopIconAssembler:
-    """三路装配:序对齐校验→按索引合并→region 过滤(fail-closed)。"""
+    """三路装配:计数一致性校验→按名归并 source→region 过滤(fail-closed)。
+
+    ISS-0054:source 归并按名(UIA 显示名 ↔ PIDL 文件名),不按索引——
+    IEnumIDList 枚举序与 UIA 可视序在自定义排列/桌面编辑后分叉(实机实证)。
+    序假设仅剩 LVIR 图形矩形(与 UIA 同视图同源,序天然一致)。
+    """
 
     def __init__(self, locator, uia, listview, shellview):
         self._locator = locator
@@ -384,21 +400,49 @@ class DesktopIconAssembler:
                 INTERNAL_ERROR,
                 f"序对齐失败:三路计数不一致 uia/listview/shellview={counts}")
         graphics = self._graphics(hwnd, len(uia_items))
-        if uia_items:
-            first_name = (uia_items[0][0] or "").strip().lower()
-            if first_name in _VIRTUAL_FIRST_NAMES and sources[0] is not None:
+        src_by_name = self._index_sources(sources)
+        name_count: dict[str, int] = {}
+        for display, _cell in uia_items:
+            k = _norm_icon_name(display)
+            name_count[k] = name_count.get(k, 0) + 1
+        items = []
+        for (display, cell), g in zip(uia_items, graphics):
+            key = _norm_icon_name(display)
+            if key in _VIRTUAL_FIRST_NAMES:
+                src = None                        # 虚拟项(回收站等)如实 null
+            elif name_count[key] > 1 and key in src_by_name:
                 raise ExecutorError(
                     INTERNAL_ERROR,
-                    f"序对齐失败:首项虚拟一致性——uia={uia_items[0][0]!r} 而 "
-                    f"shellview 有路径 {sources[0]!r}")
-        items = [{"display": display, "source": src,
-                  "graphic_rect": g, "cell_rect": cell}
-                 for (display, cell), g, src
-                 in zip(uia_items, graphics, sources)]
+                    f"归并失败:图标重名歧义 {display!r}——桌面存在同名项,"
+                    f"无法确定来源归属(请改名后重试)")
+            elif key in src_by_name:
+                src = src_by_name[key]
+            else:
+                raise ExecutorError(
+                    INTERNAL_ERROR,
+                    f"归并失败:图标 {display!r} 无匹配来源——shellview 枚举未含"
+                    f"同名文件(禁止静默错配;若是系统虚拟项请上报扩充名录)")
+            items.append({"display": display, "source": src,
+                          "graphic_rect": g, "cell_rect": cell})
         if region is not None:
             items = [i for i in items
                      if rects_intersect(i["cell_rect"], region)]
         return items
+
+    @staticmethod
+    def _index_sources(sources: list) -> dict:
+        """PIDL 路径→归并键索引;重名来源 fail-closed(归并歧义宁可拒)。"""
+        out: dict[str, str] = {}
+        for src in sources:
+            if src is None:
+                continue
+            stem = _norm_icon_name(src.rsplit("\\", 1)[-1])
+            if stem in out:
+                raise ExecutorError(
+                    INTERNAL_ERROR,
+                    f"归并失败:来源文件重名 {stem!r}(公共/用户桌面同文件名)")
+            out[stem] = src
+        return out
 
     def _locate(self):
         try:

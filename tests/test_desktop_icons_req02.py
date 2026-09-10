@@ -82,6 +82,7 @@ class TestAssemble:
     """TC-ICONS-01/03/04/05/06/08:合并/序对齐/fail-closed。断言:直出。"""
 
     def test_icons01_merge_by_index(self):
+        """TC-ICONS-01:归并主路径(ISS-0054 起=按名;序一致时与按索引同果)。"""
         a = _assembler(_FakeUia([("微信", CELL_A), ("回收站", CELL_B)]),
                        _FakeListView([G_A, G_B]),
                        _FakeShellView([r"C:\D\微信.lnk", None]))
@@ -101,14 +102,16 @@ class TestAssemble:
         assert ei.value.code == INTERNAL_ERROR
         assert "3" in str(ei.value) and "2" in str(ei.value)   # 三路 count 直出
 
-    def test_icons04_first_item_virtual_mismatch_fails(self):
-        """序对齐-首项虚拟一致性:UIA 首项为回收站而 ShellView 首项却有路径。"""
+    def test_icons04_obsolete_first_item_check(self):
+        """TC-ICONS-04 已废除(ISS-0054):首项序对齐检查机制被按名归并取代;
+        该场景(回收站位有路径源)新语义下正常归并,fail-closed 由
+        TC-54-02(重名歧义)/TC-54-03(实体无源)承接。保留此注释作废除记录。"""
         a = _assembler(_FakeUia([("回收站", CELL_A), ("微信", CELL_B)]),
                        _FakeListView([G_A, G_B]),
                        _FakeShellView([r"C:\X\回收站.lnk", r"C:\D\微信.lnk"]))
-        with pytest.raises(ExecutorError) as ei:
-            a.assemble()
-        assert ei.value.code == INTERNAL_ERROR
+        items = a.assemble()                      # 新语义:不再误判序对齐失败
+        assert items[0]["display"] == "回收站" and items[0]["source"] is None
+        assert items[1]["source"] == r"C:\D\微信.lnk"
 
     def test_icons05_locate_unreachable_no_empty_list(self):
         a = _assembler(_FakeUia([]), _FakeListView([]), _FakeShellView([]),
@@ -171,7 +174,7 @@ class TestAssemble:
     def test_icons08_stacked_icons_stay_separate(self):
         a = _assembler(_FakeUia([("Google", CELL_A), ("Chrome", CELL_A)]),
                        _FakeListView([G_A, G_A]),
-                       _FakeShellView([r"C:\D\g.lnk", r"C:\D\c.lnk"]))
+                       _FakeShellView([r"C:\D\Google.lnk", r"C:\D\Chrome.lnk"]))
         items = a.assemble()
         assert len(items) == 2                        # 不合并不加 count
         assert items[0]["cell_rect"] == items[1]["cell_rect"]
