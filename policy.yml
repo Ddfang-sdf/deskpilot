@@ -46,6 +46,7 @@ keys:
     - f10
     - f11
     - f12
+    - ctrl+a              # ISS-0083 裁定：全选（与 ctrl+c/v/x 同族，无不可逆副作用）
     - ctrl+c
     - ctrl+v
     - ctrl+x
