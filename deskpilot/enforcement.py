@@ -18,7 +18,8 @@ from .binding import BindingManager
 from .errors import (APPROVAL_DENIED, APPROVAL_TIMEOUT, AUDIT_FAILURE,
                      ELEVATION_REQUIRED, EMERGENCY_STOP, INVALID_PARAMS,
                      KEY_DENIED, KEY_UNKNOWN, NO_BINDING, NOT_WHITELISTED,
-                     POLICY_VIOLATION, AuditFailure, ExecutorError)
+                     POLICY_VIOLATION, REVOKED_BY_HUMAN, AuditFailure,
+                     ExecutorError)
 from .estop import EstopMonitor
 from .executor import Executor
 from .models import (BINDING_REQUIRED_TOOLS, L0, L1, L2, L3, TOOL_LEVELS,
@@ -98,7 +99,9 @@ class Enforcement:
         self._executor = executor
         self._audit = audit_log
         # ISS-0012 §6：运行期白名单视图（静态∪会话）；缺省内存态兼容装配
-        self._admin = whitelist_admin or WhitelistAdmin(None, policy.whitelist)
+        # ISS-0072：缺省装配一并注入 policy.revoked，撤回语义不因缺省而丢失
+        self._admin = whitelist_admin or WhitelistAdmin(
+            None, policy.whitelist, revoked=policy.revoked)
 
     def submit(self, request: OperationRequest) -> Decision:
         """对写操作请求执行四道闸裁决（详细设计 §8.7 流程）。"""
@@ -137,6 +140,15 @@ class Enforcement:
         else:
             proc = target_proc
         cap = self._admin.cap_of(proc) if proc else None
+        # ISS-0072 INV-2 补款：撤回即人类否决，永久有效
+        if cap is None and proc and self._admin.is_revoked(proc):
+            # 硬拒：零弹窗/零取图/零抢焦点。撤回语义压过终端旁路（Q4 假设）
+            # ——任何形态的"再次询问"都是把人类的裁决重新推回人类面前。
+            return self._deny(request, eff, REVOKED_BY_HUMAN,
+                              f"目标进程 {proc} 已被人类从白名单移出："
+                              f"该决定长期有效，重复请求不会改变结果；"
+                              f"如需恢复授权，须由人类在白名单管理窗口中主动操作",
+                              t0)
         if cap is None and proc in self._policy.terminal_apps:
             cap = L3            # 终端类成员资格满足闸二（attach 已经 L3 审批）；
             if tool == "launch_app":

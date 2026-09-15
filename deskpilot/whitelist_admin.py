@@ -12,7 +12,7 @@ import os
 import shutil
 import threading
 from pathlib import Path
-from typing import Mapping
+from typing import Iterable, Mapping
 
 import yaml
 
@@ -58,13 +58,18 @@ class WhitelistAdmin:
                  never_enroll: frozenset = NEVER_ENROLL, audit=None,
                  local_path: str | None = None,
                  base_whitelist: Mapping[str, str] | None = None,
-                 on_written=None):
+                 on_written=None, revoked: Iterable[str] = ()):
         """ISS-0030：local_path 提供时为双文件模式——落盘只写
         policy.local.yml(出厂 base 永不写);撤回一律以墓碑
         (max_level: null) 记录(ISS-0032 A6)。local_path 缺省维持单文件
         旧语义(测试/兼容装配)。base_whitelist 为出厂白名单进程集;
         双文件模式缺失即报错(fail-closed,装配完整性)。on_written 为
-        内部落盘后的回调(参数=新指纹,ISS-0034 B1 守望基线刷新)。"""
+        内部落盘后的回调(参数=新指纹,ISS-0034 B1 守望基线刷新)。
+
+        ISS-0072：revoked 为**撤回集**(装配侧由 ``policy.revoked`` 注入)。
+        撤回是人类的永久否决,须与"素未谋面"在强制层可区分——故本类
+        同时维护第三个状态集,并提供查询口 ``is_revoked()``。
+        """
         self._path = Path(policy_path) if policy_path else None
         self._local = Path(local_path) if local_path else None
         if self._local is not None and base_whitelist is None:
@@ -73,6 +78,7 @@ class WhitelistAdmin:
         self._static: dict[str, str] = {str(k).strip().lower(): v
                                         for k, v in static.items()}
         self._session: dict[str, str] = {}
+        self._revoked: set[str] = {str(k).strip().lower() for k in revoked}
         self._never = frozenset(never_enroll)
         self._audit = audit
         self._lock = threading.Lock()
@@ -80,6 +86,15 @@ class WhitelistAdmin:
         self.on_written = on_written     # ISS-0034 B1:落盘后守望基线刷新
 
     # ---- 查询 ----
+
+    def is_revoked(self, process: str) -> bool:
+        """是否处于撤回态（ISS-0072：人类否决,须与"素未谋面"区分）。
+
+        只读查询,不产生任何入白/落盘副作用。
+        """
+        p = str(process).strip().lower()
+        with self._lock:
+            return p in self._revoked
 
     def cap_of(self, process: str) -> str | None:
         """进程级别上限（静态 ∪ 会话合并视图；进程名小写归一）。"""
@@ -114,6 +129,9 @@ class WhitelistAdmin:
             self._write_disk(p, lv, remove=False)
             self._static[p] = lv
             self._session.pop(p, None)
+            # ISS-0072：人类主动加回＝唯一恢复通道,解除撤回态
+            # （盘面墓碑被真条目覆盖,见 _write_disk 的进程名去重）
+            self._revoked.discard(p)
         self._event("白名单入白-永久", f"{p} {lv}")
         if self.notify_permanent is not None:
             try:
@@ -122,12 +140,17 @@ class WhitelistAdmin:
                 pass                           # 通知层异常不影响入白事实
 
     def remove(self, process: str) -> str | None:
-        """撤回：静态命中改盘返回 "static"；会话命中返回 "session"；否则 None。"""
+        """撤回：静态命中改盘返回 "static"；会话命中返回 "session"；否则 None。
+
+        ISS-0072：静态撤回即人类否决——并入撤回集,强制层据此硬拒
+        （永不进入入白审批,否则否决被"永久加入"抹平）。
+        """
         p = str(process).strip().lower()
         with self._lock:
             if p in self._static:
                 self._write_disk(p, None, remove=True)
                 del self._static[p]
+                self._revoked.add(p)
                 self._event("白名单移除", p)
                 return "static"
             if p in self._session:

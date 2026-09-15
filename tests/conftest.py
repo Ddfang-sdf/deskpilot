@@ -157,6 +157,8 @@ def make_policy(audit_dir: str = "", **overrides) -> models.Policy:
         whitelist={"notepad.exe": "L2", "explorer.exe": "L1"},
         terminal_apps=frozenset(
             {"cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe", "wt.exe"}),
+        # ISS-0072：撤回集缺省空——既有用例的"素未谋面"语义零变化
+        revoked=frozenset(),
         l2_keys=frozenset(
             {"enter", "tab", "backspace", "home", "end", "pageup", "pagedown",
              "up", "down", "left", "right", "ctrl+c", "ctrl+v", "ctrl+x", "ctrl+z",
