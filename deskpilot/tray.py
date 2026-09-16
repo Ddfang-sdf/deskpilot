@@ -20,9 +20,11 @@ _WM_COMMAND = 0x0111
 _WM_DESTROY = 0x0002
 _NIM_ADD = 0x0
 _NIM_DELETE = 0x2
+_NIM_MODIFY = 0x1
 _NIF_MESSAGE = 0x1
 _NIF_ICON = 0x2
 _NIF_TIP = 0x4
+_NIF_INFO = 0x10          # ISS-0084 ③:气泡通知(死亡告警主动可达)
 _IDI_APPLICATION = 32512
 _IMAGE_ICON = 1
 _LR_SHARED = 0x8000
@@ -174,6 +176,22 @@ class TrayIcon:
         if self._thread is not None:
             self._thread.join(timeout=3)
             self._thread = None
+
+    def notify(self, title: str, text: str) -> None:
+        """托盘气泡通知(ISS-0084 ③:死亡告警主动可达通道,NIIF_WARNING)。"""
+        if not self._hwnd:
+            return
+        nid = _NOTIFYICONDATAW()
+        nid.cbSize = ctypes.sizeof(_NOTIFYICONDATAW)
+        nid.hWnd = self._hwnd
+        nid.uID = 1
+        nid.uFlags = _NIF_INFO | _NIF_ICON | _NIF_TIP
+        nid.hIcon = _load_tray_icon()
+        nid.szTip = self._tooltip[:127]
+        nid.szInfoTitle = title[:63]
+        nid.szInfo = text[:255]
+        nid.dwInfoFlags = 0x2                       # NIIF_WARNING
+        _shell32.Shell_NotifyIconW(_NIM_MODIFY, ctypes.byref(nid))
 
     # ---- 内部 ----
 

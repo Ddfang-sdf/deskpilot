@@ -1,3 +1,12 @@
+## v0.3.7
+
+- **GUI 图形检测与 SoM 扩面**（REQ-003，D-12 终裁 CV 单线出货）：`get_clickable_map` 增 `detect` 开关——CV 管线（`cv-contour`，零权重零下载零新依赖）把 UIA 看不见的画布图形/自绘控件框出并入单一编号空间；`source=uia/detect` 双通道，UIA 优先去重（判据集取枚举全量、减结构容器含宿主型 CustomControl，D-17/D-20）；检测编号不可经 `som_id` 点击（误用报指引级错误，零点击）；`detect=false` 默认零变化；`DETECTOR_UNAVAILABLE` 新码登记
+- **daemon 属主与生命周期族**（ISS-0084）：`owner.lock` 属主文件锁 + 心跳/遗嘱/死亡告警（托盘气泡）+ 开机自启幂等注册——daemon 静默死亡不再无迹；daemon 不在时 stdio 实例经属主锁升属主（9420/热键/托盘随 MCP 存活），daemon 复出自动让位回迁；热键争抢改节流（只记首败+恢复，刷屏终止）；属主面文件与急停邮箱锚定 `%LOCALAPPDATA%\DeskPilot`（双邮箱分裂收口）
+- **screenshot 按屏取图档与覆盖率**（ISS-0083）：`scope=screen`（screen=屏号，即 fullscreen 的 monitors 序号，双屏不再让 AI 自算偏移；越界屏号 fail-closed）；返回值增 `coverage`（本图占虚拟桌面比例，AI 自见截取比）；region 定位注明「精读/局部核对用」
+- **撤回即否决**（ISS-0072）：白名单墓碑经闸二硬拒 `REVOKED_BY_HUMAN`（零弹窗/零取图/零抢焦点）；缺省装配注入 policy.revoked
+- **白名单补 ctrl+a**（全选，与 ctrl+c/v/x 同族，sdfang 当次下令当次落盘）
+- 测试：758 用例全绿（默认零副作用）+ 集成用例真机终验收（TC-INT-01/02/03 检测主链/误用防护、TC-GOV-03b 预算实测）；真机验收作业（画图房子与树经检测通道框出编号）见 docs/需求/REQ-003-侦察/ 与手工测试记录
+
 ## v0.3.6
 
 - **无文字图形定位**（ISS-0044）：`get_ui_tree` 增 control_type 过滤；`click_element` 支持 类型+序号 寻址（歧义不再死锁）；`click_text` 增 offset/distance 相对点击（锚点文字上/下/左/右邻位）——图标/复选框等无文字图形不再靠猜坐标

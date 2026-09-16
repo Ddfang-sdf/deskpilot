@@ -44,10 +44,12 @@ async def call_with_progress(work: Awaitable, report: Callable[[], None],
 TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     # ---- L0 感知类（详细设计 §12.4）----
     "screenshot": {
-        "description": "拍 Windows 桌面/应用窗口图像,返回可查看的图像内容;浏览器页面请用浏览器工具。scope:fullscreen=整个虚拟桌面、window=绑定窗口、region=rect。另返回图像路径/宽高/坐标/vision_note。图像不可见时改调 ocr(source=路径);ocr:true 同次附 ocr_items(失败附 ocr_error,图像不受损)。",
-        "required": {"scope": ("enum", ["fullscreen", "region", "window"])},
-        "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",)},
-        "conditional": {"region": ["rect"], "window": ["window"]},
+        "description": "拍 Windows 桌面/应用窗口图像,返回可查看内容;浏览器页面请用浏览器工具。scope:fullscreen=整个虚拟桌面、screen=按屏(screen=屏号,即 fullscreen 的 monitors 序号)、window=绑定窗口、region=rect(精读/局部核对用,含 coverage 占比)。图像不可见时改调 ocr;ocr:true 同次附文字清单。",
+        "required": {"scope": ("enum", ["fullscreen", "screen", "region", "window"])},
+        "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",),
+                     "screen": ("int",)},
+        "conditional": {"region": ["rect"], "window": ["window"],
+                        "screen": ["screen"]},
     },
     "ocr": {
         "description": "识别 Windows 桌面/窗口图像中的文字:要精确文字清单或定位时用我;布局理解请直接看 screenshot 图像。source=图像路径或屏幕区域。优先局部实拍或路径直读——全屏识别系统繁忙时可能超时,按指引 500ms 重试。",
@@ -62,8 +64,9 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用浏览器工具。attach 绑定之后用它「看懂」窗口里有哪些按钮、输入框、列表。control_type=按控件类型过滤(如 CheckBox/Button/MenuItem,找无文字图形先用它)。返回 elements+coord_space。",
         "required": {"window": ("any",)}, "optional": {"control_type": ("str",)}},
     "get_clickable_map": {
-        "description": "给绑定的 Windows 窗口做 SoM 标注截图:把可点击元素编号画在图上。需要「指第 N 号元素」点击时用,编号传入 click_element 的 som_id 即可点中。",
-        "required": {"window": ("any",)}, "optional": {}},
+        "description": "给绑定的 Windows 窗口做 SoM 标注截图:把可点击元素编号画在图上。detect=true 追加图形检测,覆盖 UIA 看不见的图形控件;条目带 source(uia/detect)。source=uia 的编号传 click_element 的 som_id 点中;source=detect 的编号是图形区域,不可传 som_id,取其 rect 用 click 按坐标点击。",
+        "required": {"window": ("any",)},
+        "optional": {"detect": ("bool",)}},
     "list_desktop_icons": {
         "description": "列出 Windows 桌面图标清单(无需绑定):display 显示名/source 路径(回收站等虚拟项为 null)/graphic_rect 图形矩形(拖拽抓点取中心)/cell_rect 单元矩形(槽位核验用),虚拟桌面坐标;栈叠图标各成一条。桌面定位/拖拽核验用;与 screenshot 的 ocr:true 分工:本工具给图标矩形,ocr 给文字。region=可选限定区域。",
         "required": {}, "optional": {"region": ("rect",)}},
@@ -126,7 +129,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台;最大化窗口保持最大化不被打回)。token=attach 返回令牌。窗口最大化/移动/缩放等几何变化后,既有截图与坐标即作废,请先重新感知再操作。",
         "required": {"token": ("str",)}, "optional": {}},
     "click_element": {
-        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定的 Windows 窗口内控件(UIA 优先,比像素稳);网页元素请用浏览器工具。先 get_ui_tree 找控件再点。token+name/automation_id/som_id;无文字图形用 control_type=类型+index=第几个;som_id 与 control_type 互斥。",
+        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定的 Windows 窗口内控件(UIA 优先,比像素稳);网页元素请用浏览器工具。先 get_ui_tree 找控件再点。无文字图形用 control_type=类型+index=第几个;som_id 与 control_type 互斥;som_id 只点 UIA 编号,detect 图形编号取其 rect 用 click。",
         "required": {"token": ("str",)},
         "optional": {"name": ("str",), "automation_id": ("str",), "som_id": ("int",),
                      "control_type": ("str",), "index": ("int",)},

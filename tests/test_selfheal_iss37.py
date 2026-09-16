@@ -23,7 +23,8 @@ def _make(estop, tmp_path):
     Image.new("RGB", (10, 10), (255, 0, 0)).save(shot)
     region = {"left": 0, "top": 0, "width": 10, "height": 10}
     ex._resolve_region = types.MethodType(
-        lambda self, scope, rect=None, window=None: region, ex)
+        # ISS-0083:签名随核心实现增 screen 参数(打桩跟随签名演进,不断言它)
+        lambda self, scope, rect=None, window=None, screen=None: region, ex)
     ex._save_shot = types.MethodType(
         lambda self, reg, tag: str(shot), ex)
     return ex

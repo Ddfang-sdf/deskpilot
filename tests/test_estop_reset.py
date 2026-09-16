@@ -71,10 +71,12 @@ class TestHotkeyRetry:
         m._hotkey_loop(estop, audit_log, sleep=sleeps.append)
         assert sleeps == [1, 2, 4]
         events = read_audit(str(tmp_path / "audit"))
+        # ISS-0084 ②节流:失败审计只记**首次**——逐次审计正是 2026-09-14 实机的
+        # 每分钟刷屏之源;恢复时记一条带「恢复」的成功事件。退避节奏不变。
         assert sum(1 for e in events
-                   if e["event"] == "急停热键注册失败") == 3
-        assert sum(1 for e in events
-                   if e["event"] == "急停热键注册") == 1
+                   if e["event"] == "急停热键注册失败") == 1
+        ok_events = [e for e in events if e["event"] == "急停热键注册"]
+        assert len(ok_events) == 1 and "恢复" in ok_events[0]["detail"]
         assert capsys.readouterr().err != ""
 
 

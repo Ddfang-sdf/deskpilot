@@ -113,18 +113,30 @@ def _hotkey_loop(estop: EstopMonitor, audit: AuditLogger,
     from ctypes import wintypes
     user32 = ctypes.windll.user32
     delay = 1
+    failed_rounds = 0
     while True:
         ok1 = user32.RegisterHotKey(None, 1, _MOD_CONTROL | _MOD_SHIFT, _VK_F12)
         ok2 = user32.RegisterHotKey(None, 2, _MOD_CONTROL | _MOD_SHIFT, _VK_F11)
         if ok1 and ok2:
             break
-        audit.record_event("急停热键注册失败",
-                           f"热键可能被占用；{delay}s 后重试；甩角触发仍可用")
+        failed_rounds += 1
+        # ISS-0084 ②节流:失败审计只记首次——逐次审计曾是实机每分钟刷屏之源;
+        # stderr 每次照打(控制台即时可见),审计面只留首败与恢复两条
+        if failed_rounds == 1:
+            audit.record_event("急停热键注册失败",
+                               f"热键可能被占用;退避重试中(节流:仅记首败);"
+                               f"甩角触发仍可用")
         print(f"急停热键注册失败（{delay}s 后重试）：热键可能被其他程序占用",
               file=sys.stderr)
         sleep(delay)
         delay = min(delay * 2, 60)
-    audit.record_event("急停热键注册", "Ctrl+Shift+F12 触发 / Ctrl+Shift+F11 复位")
+    if failed_rounds:
+        audit.record_event("急停热键注册",
+                           f"Ctrl+Shift+F12 触发 / Ctrl+Shift+F11 复位"
+                           f"(恢复:重试 {failed_rounds} 轮后成功)")
+    else:
+        audit.record_event("急停热键注册",
+                           "Ctrl+Shift+F12 触发 / Ctrl+Shift+F11 复位")
     msg = wintypes.MSG()
     while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
         if msg.message == _WM_HOTKEY:
@@ -144,6 +156,25 @@ def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier) -> None:
         notifier.check_reset_request(estop)
         notifier.sync_local_with_shared_state(estop)
         time.sleep(0.05)
+
+
+def _open_manager_for(port: int):
+    """白名单管理窗口的拉起命令(托盘 on_manage 回调;daemon/stdio 属主共用)。"""
+    def _open() -> None:
+        import subprocess
+        base_url = f"http://127.0.0.1:{port}"
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--whitelist-manager", base_url]
+            env = {k: v for k, v in os.environ.items() if k != "_MEIPASS2"}
+        else:
+            cmd = [sys.executable, "-m", "deskpilot.whitelist_window",
+                   base_url]
+            env = None
+        try:
+            subprocess.Popen(cmd, env=env)
+        except OSError:
+            pass
+    return _open
 
 
 def _start_estop_listeners(estop: EstopMonitor, audit: AuditLogger,
@@ -397,6 +428,7 @@ def main() -> int:
                                      audit=audit,
                                      local_path=str(local_path),
                                      base_whitelist=base_policy.whitelist,
+                                     revoked=policy.revoked,
                                      on_written=(local_watch.refresh
                                                  if local_watch else None))
     # ISS-0012 TC-FAST-04：并行暖名称/描述解析缓存（管理窗口/审批弹窗提速）
@@ -408,18 +440,19 @@ def main() -> int:
     dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
     from .audit_paths import AuditPaths
     audit_paths = AuditPaths(policy.audit_dir)    # ISS-0010 B：受管目录归队
-    notifier = FreezeNotifier(policy.audit_dir,
+    # ISS-0084:属主面文件与急停邮箱锚定 LOCALAPPDATA\DeskPilot(跨形态共享
+    # ——daemon(dist)与 stdio(repo)的审计目录分离,属主面/邮箱若跟随审计
+    # 目录则双世界分裂,v0.2 实证),与各形态自己的审计**日志**目录分离
+    from .ownership import (RoleSupervisor, ensure_autostart,  # noqa: F401
+                            install_last_will, is_daemon_alive)
+    _shared_dir = str(Path(os.environ.get("LOCALAPPDATA")
+                           or str(Path.home())) / "DeskPilot")
+    notifier = FreezeNotifier(_shared_dir,
                               remind_interval=policy.freeze_remind_interval,
                               dialog_service=dialog_service)
     estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
                          on_state_change=notifier.on_state_change)
-    if "--daemon" not in sys.argv and probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-        # stdio 瘦代理：冻结标志归 daemon 所有，本进程注册热键只会抢占
-        # 复位通道（RegisterHotKey 全系统单持有者，ISS-0002 根因修复）
-        audit.record_event("瘦代理跳过热键注册",
-                           "daemon 在线；急停热键与甩角监听归 daemon 持有")
-    else:
-        _start_estop_listeners(estop, audit, notifier)
+    install_last_will(audit, "daemon" if "--daemon" in sys.argv else "stdio")
 
     probe = DesktopProbe()
     bindings = BindingManager(probe, policy.binding_ttl, time.monotonic)
@@ -433,9 +466,28 @@ def main() -> int:
             dialog_service=dialog_service, audit_paths=audit_paths))
     except Exception as e:
         print(f"审批弹窗通道不可用（L3 将恒拒绝）: {e}", file=sys.stderr)
+    # REQ-003 §3.3：检测权重目录(可选顶层键)——锚定规矩与 audit_dir 同
+    # (ISS-0010):绝对路径原样;冻结形态锚 exe 目录;源码形态锚策略文件目录。
+    # 装配期预解析为绝对路径传入 Executor(resolve 对绝对路径幂等)
+    from .executor.detector import resolve as _resolve_weight_dir
+    _weights_dir = policy.detector_weights_dir
+    if _weights_dir:
+        _weights_dir = str(_resolve_weight_dir(
+            _weights_dir, policy_path=os.path.abspath(str(policy_path))))
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
-                        policy.wait_timeout_max, audit=audit)
+                        policy.wait_timeout_max, audit=audit,
+                        detector_weights_dir=_weights_dir)
     executor._mouse_watchdog.start()        # REQ-001 看门狗线程(生产装配启动)
+
+    def _detector_factory():
+        """REQ-003 D-12 终裁:CV 管线检测器(注册表出厂标识 cv-contour,
+        零权重零装填开销;与 _ocr_factory 同处的懒装填装配位)。"""
+        from .executor.detector import DetectorRegistry
+        return DetectorRegistry().build("cv-contour")
+
+    executor.detector_factory = _detector_factory
+    # weight_manifest **不赋值**:CV 线零权重,出厂空清单即真实形态(D-12/D-18),
+    # 空清单下 _ensure_detector 跳过校验直接装填,生产 detect=true 即刻可用
 
     def _ocr_factory():
         """ISS-0008 P2：OCR 懒加载工厂——首次 ocr 调用才加载模型。"""
@@ -458,6 +510,112 @@ def main() -> int:
                       whitelist_admin=whitelist_admin,
                       revoke_channel=revoke_channel)
 
+    # ---------- ISS-0084 属主权装配(①②③⑤⑥) ----------
+    supervisor: "RoleSupervisor | None" = None
+    owner_httpd: dict = {"d": None}
+    owner_tray: dict = {"t": None}
+
+    def _become_owner() -> None:
+        """属主升起(②⑥):9420 HTTP + 托盘 + 热键/甩角监听。"""
+        from .httpd import HttpDaemon
+        from .tray import TrayIcon
+        d = HttpDaemon(ctx, estop=estop,
+                       idle_timeout_s=policy.idle_timeout_minutes * 60,
+                       whitelist_admin=whitelist_admin)
+        try:
+            d.start()
+        except RuntimeError as e:
+            # 锁与端口不一致的异常面:记审计,属主回调内不持 HTTP,
+            # 调用方据此放锁退瘦代理
+            audit.record_event("属主 9420 绑定失败", f"{e}")
+            return
+        owner_httpd["d"] = d
+        t = TrayIcon(on_manage=_open_manager_for(d.port))
+        t.start()
+        owner_tray["t"] = t
+        _start_estop_listeners(estop, audit, notifier)
+
+    def _cede_owner() -> None:
+        """daemon 复出回迁(②):停 HTTP/托盘,注销热键——属主语义回 daemon。"""
+        if owner_httpd["d"] is not None:
+            owner_httpd["d"].stop()
+            owner_httpd["d"] = None
+        if owner_tray["t"] is not None:
+            owner_tray["t"].stop()
+            owner_tray["t"] = None
+        import ctypes as _ct
+        _ct.windll.user32.UnregisterHotKey(None, 1)   # 热键(急停/复位)注销,
+        _ct.windll.user32.UnregisterHotKey(None, 2)   # 消息循环随进程退运清理
+
+    def _alarm_fn(msg: str) -> None:
+        """③死亡告警:托盘气泡(属主形态)+ stderr 双通道。"""
+        if owner_tray["t"] is not None:
+            owner_tray["t"].notify("DeskPilot 守护进程不在",
+                                   "白名单管理/热键复位不可用,请重启 daemon")
+        print(msg + "(白名单管理/热键复位不可用)", file=sys.stderr)
+
+    def _ownership_watch() -> None:
+        """属主周期:daemon 复出让位 / daemon 死亡自愈接管 / 死亡告警(③)。"""
+        while supervisor is not None:
+            time.sleep(10.0)
+            supervisor.tick()
+
+    if "--daemon" in sys.argv:
+        # daemon:持锁重试(心跳在 supervisor.start 内先行——stdio 属主见之
+        # 让位,§7.2);锁不得 → 干净退出(单例语义升级:锁先于端口)
+        supervisor = RoleSupervisor(_shared_dir, "daemon", audit=audit)
+        _acquired = False
+        for _att in range(12):
+            if supervisor.start():
+                _acquired = True
+                break
+            time.sleep(min(1.0 * (_att + 1), 2.0))
+        if not _acquired:
+            audit.record_event("daemon 单例退出", "属主锁未获得:已有属主在线")
+            print("属主锁未获得(已有属主在线),本实例退出", file=sys.stderr)
+            return 4
+        # ⑤开机自启:冻结形态幂等注册(源码形态跳过——开发形态不自启)
+        if getattr(sys, "frozen", False):
+            if ensure_autostart(str(Path(sys.executable).resolve())):
+                audit.record_event("开机自启注册", "HKCU Run: DeskPilotDaemon")
+        _start_estop_listeners(estop, audit, notifier)
+    elif probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+        # stdio 瘦代理：冻结标志归属主(9420 持有人)所有——本进程注册热键
+        # 只会抢占复位通道(RegisterHotKey 全系统单持有者,ISS-0002 根因修复)
+        audit.record_event("瘦代理跳过热键注册",
+                           "daemon/既有属主在线；急停热键与甩角监听归其持有")
+    else:
+        # daemon 不在:心跳新鲜(启动中)则稍候重探;否则试持属主锁
+        for _w in range(6):
+            if not is_daemon_alive(_shared_dir):
+                break
+            time.sleep(1.0)
+            if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+                break
+        if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+            audit.record_event("瘦代理跳过热键注册",
+                               "daemon 启动中(心跳新鲜),转瘦代理")
+        else:
+            supervisor = RoleSupervisor(
+                _shared_dir, "stdio", audit=audit,
+                on_become_owner=_become_owner, on_cede=_cede_owner,
+                alarm_fn=_alarm_fn)
+            if supervisor.start():
+                if owner_httpd["d"] is None:
+                    # 9420 绑定失败(锁与端口不一致的异常面):放锁退瘦代理
+                    supervisor.stop()
+                    supervisor = None
+                    audit.record_event("瘦代理跳过热键注册",
+                                       "9420 绑定失败(锁端口不一致),退瘦代理")
+                else:
+                    audit.record_event("stdio 升属主",
+                                       "daemon 不在,本实例接管 9420/热键/托盘")
+                    threading.Thread(target=_ownership_watch, daemon=True,
+                                     name="deskpilot-ownership").start()
+            else:
+                audit.record_event("瘦代理跳过热键注册",
+                                   "另一 stdio 属主在(属主锁被持)")
+
     audit.record_event("服务启动", _startup_detail("MCP stdio 就绪"))
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
     if "--daemon" in sys.argv:
@@ -477,26 +635,13 @@ def main() -> int:
             f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}"))
         print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
               file=sys.stderr)
-        # ISS-0012 E1：系统托盘图标（白名单管理可视化入口；托盘即在跑）
+        # ISS-0012 E1：系统托盘图标（白名单管理可视化入口；托盘即在跑;
+        # ISS-0084 ②:托盘随属主——daemon 属主形态此处,stdio 属主见
+        # _become_owner)
         from .tray import TrayIcon
         base_url = f"http://127.0.0.1:{daemon.port}"
 
-        def _open_manager() -> None:
-            import subprocess
-            if getattr(sys, "frozen", False):
-                cmd = [sys.executable, "--whitelist-manager", base_url]
-                env = {k: v for k, v in os.environ.items()
-                       if k != "_MEIPASS2"}
-            else:
-                cmd = [sys.executable, "-m", "deskpilot.whitelist_window",
-                       base_url]
-                env = None
-            try:
-                subprocess.Popen(cmd, env=env)
-            except OSError:
-                pass
-
-        tray = TrayIcon(on_manage=_open_manager)
+        tray = TrayIcon(on_manage=_open_manager_for(daemon.port))
         tray.start()
         try:
             while True:
@@ -504,6 +649,8 @@ def main() -> int:
         except KeyboardInterrupt:
             tray.stop()
             daemon.stop()
+            if supervisor is not None:
+                supervisor.stop()
             audit.record_event("服务停止", "常驻服务停止")
             return 0
     serve(ctx)                                   # 阻塞于 stdio
