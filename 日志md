@@ -1,9 +1,21 @@
-{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-16T10:57:25.241671+08:00"}
-{"event": "策略指纹", "detail": "C:\\tools\\deskpilot\\policy.yml sha256=aff2478be05d248cc563060e0001055fd880c7a7f4567c6887f9189c5b01c067", "seq": 2, "timestamp": "2026-09-16T10:57:25.247660+08:00"}
-{"event": "用户策略数据指纹", "detail": "C:\\tools\\deskpilot\\policy.local.yml sha256=01a3f897e1fa7b972f83cede94ca110f5c0fe841d77babf4e313dfc4f166df8b", "seq": 3, "timestamp": "2026-09-16T10:57:25.252634+08:00"}
-{"event": "启动抬键清扫", "detail": "三键幂等抬起", "seq": 4, "timestamp": "2026-09-16T10:57:25.701663+08:00"}
-{"event": "瘦代理跳过热键注册", "detail": "daemon/既有属主在线；急停热键与甩角监听归其持有", "seq": 5, "timestamp": "2026-09-16T10:57:25.717756+08:00"}
-{"event": "服务启动", "detail": "MCP stdio 就绪; DPI=pmv2", "seq": 6, "timestamp": "2026-09-16T10:57:25.722240+08:00"}
-{"event": "截图清理", "detail": "删除 0 个文件,释放 0 字节,当前占用 23708667 字节", "seq": 7, "timestamp": "2026-09-16T10:57:25.730250+08:00"}
-{"event": "服务停止", "detail": "stdio 关闭", "seq": 8, "timestamp": "2026-09-16T11:15:21.921092+08:00"}
-{"event": "进程退出", "detail": "stdio: 正常退出", "seq": 9, "timestamp": "2026-09-16T11:15:21.926097+08:00"}
+estop-state：
+
+{"frozen": true, "seq": 15, "source": "鼠标甩角", "ts": "2026-09-16T14:39:50.377763+08:00"}
+
+---
+
+estop-reset-15.req：
+
+{"seq": 15}
+
+---
+estop-state.json.tmp：
+
+{"frozen": false, "seq": 16, "source": "冻结提示弹窗", "ts": "2026-09-16T14:41:04.926418+08:00"}
+---
+owner.lock：
+{"pid": 50960, "role": "stdio", "ts": 1789530805.6072028}
+
+---
+daemon-heartbeat
+{"pid": 50960, "role": "stdio", "ts": 1789548912.4155445, "version": "0.3.7"}
