@@ -451,6 +451,16 @@ class _ManagerUI:
         self._query = self._search.get().strip().lower()
         self.render()
 
+    def set_data(self, entries: dict, display_map: dict | None = None) -> None:
+        """ISS-0085:数据整表替换+就地重渲染(窗口不销毁,几何天然不动)。
+
+        整表替换(换引用,非逐键改)——与 SoM 缓存同款纪律(ISS-0081 教训):
+        就地改键会留残影,换表则旧数据整体作废。
+        """
+        self._entries = entries
+        self._dmap = display_map or {}
+        self.render()
+
 
 def build_window(parent, entries: dict, on_remove: Callable[[str], None],
                  on_clear_session: Callable[[], None],
@@ -694,6 +704,47 @@ def _http_json(url: str, payload: dict | None = None) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _fetch_whitelist(base: str):
+    """ISS-0085:GET /whitelist → (entries, dmap);失败返回空表(既有容错语义
+    原样迁移,非新增降级)。
+
+    entries = {group: {proc: level}};dmap = {proc: (display, desc)}——
+    端点直供显示名/描述时零本地解析(TC-FAST-02 同语义)。
+    """
+    try:
+        data = _http_json(f"{base}/whitelist")["data"]
+        entries: dict = {}
+        dmap: dict = {}
+        for group, items in data.items():
+            entries[group] = {}
+            for it in items:
+                entries[group][it["process"]] = it["level"]
+                dmap[it["process"]] = (it.get("display") or None,
+                                       it.get("desc") or None)
+        return entries, dmap
+    except Exception:
+        return {"static": {}, "session": {}}, {}
+
+
+def refresh_view(state: dict, base: str, root, on_remove, on_clear) -> None:
+    """ISS-0085 ①:首建=build_window;后续=set_data 就地刷新(窗不销毁不重建,
+    几何天然不动)。
+
+    state["win"] is None → 建窗+WM_DELETE_WINDOW 注册+存入 state;否则取
+    win._manager 整表替换数据(set_data),复用既有 _render_block 就地重渲染
+    路径(与搜索过滤同形态),窗口对象身份与几何保持。
+    """
+    entries, dmap = _fetch_whitelist(base)
+    win = state.get("win")
+    if win is None:
+        win = build_window(root, entries, on_remove, on_clear,
+                           display_map=dmap)
+        win.protocol("WM_DELETE_WINDOW", root.quit)
+        state["win"] = win
+        return
+    win._manager.set_data(entries, dmap)
+
+
 def main() -> None:
     """--whitelist-manager <base_url>：管理窗口进程（经本机 HTTP 操作）。
 
@@ -708,26 +759,8 @@ def main() -> None:
     state: dict[str, Any] = {"win": None}
 
     def refresh() -> None:
-        try:
-            data = _http_json(f"{base}/whitelist")["data"]
-            entries: dict = {}
-            dmap: dict = {}
-            for group, items in data.items():
-                entries[group] = {}
-                for it in items:
-                    entries[group][it["process"]] = it["level"]
-                    dmap[it["process"]] = (it.get("display") or None,
-                                           it.get("desc") or None)
-        except Exception:
-            entries, dmap = {"static": {}, "session": {}}, {}
-        if state["win"] is not None:
-            try:
-                state["win"].destroy()
-            except Exception:
-                pass
-        state["win"] = build_window(root, entries, on_remove, on_clear,
-                                    display_map=dmap)
-        state["win"].protocol("WM_DELETE_WINDOW", root.quit)
+        # ISS-0085 ①:就地刷新(窗不销毁重建,几何不动);首建/后续统一入口
+        refresh_view(state, base, root, on_remove, on_clear)
 
     def on_remove(proc: str) -> None:
         try:
