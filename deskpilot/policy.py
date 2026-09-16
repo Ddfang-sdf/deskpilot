@@ -51,11 +51,18 @@ def _fail(message: str) -> PolicyError:
     return PolicyError(f"策略非法：{message}")
 
 
-def _merge_local_whitelist(data: dict, local_path: str) -> None:
-    """ISS-0030 B：合并用户策略数据(仅 whitelist 键;墓碑撤回/覆盖/新增)。"""
+def _merge_local_whitelist(data: dict, local_path: str) -> set[str]:
+    """ISS-0030 B：合并用户策略数据(仅 whitelist 键;墓碑撤回/覆盖/新增)。
+
+    ISS-0072：墓碑不再只是 ``pop`` ——「撤回」这一人类裁决必须作为
+    **存在性**向上传递,返回撤回进程集合,由 ``load_policy`` 装入
+    ``Policy.revoked``;仅 ``pop`` 会让撤回态与"素未谋面"在强制层
+    不可区分,致人类否决被入白审批抹平。
+    """
     lp = Path(local_path)
+    revoked: set[str] = set()
     if not lp.is_file():
-        return                                   # 无用户数据=纯出厂形态
+        return revoked                           # 无用户数据=纯出厂形态
     try:
         local = yaml.safe_load(lp.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
@@ -82,11 +89,14 @@ def _merge_local_whitelist(data: dict, local_path: str) -> None:
         level = entry.get("max_level")
         if level is None:
             merged.pop(proc, None)               # 墓碑：撤回
+            revoked.add(proc)                    # ISS-0072：撤回事实留存
         elif level in ("L0", "L1", "L2"):
             merged[proc] = {"process": proc, "max_level": level}
+            revoked.discard(proc)                # 显式加回覆盖同名墓碑
         else:
             raise _fail(f"用户策略数据级别非法: {level!r}")
     data["whitelist"] = list(merged.values())
+    return revoked
 
 
 def migrate_whitelist(old_path: str, new_path: str, local_path: str,
@@ -219,8 +229,9 @@ def load_policy(path: str, local_path: str | None = None) -> Policy:
 
     # ISS-0032 B3:合并必须在 base 校验之后——坏 base 永远先炸,
     # 不得被 local 合并"修复"成空表绕过 fail-closed
+    revoked: set[str] = set()
     if local_path:
-        _merge_local_whitelist(data, local_path)
+        revoked = _merge_local_whitelist(data, local_path)
 
     whitelist = _load_whitelist(data["whitelist"])
     terminal_apps = _load_str_set(data["terminal_apps"], "terminal_apps")
@@ -306,9 +317,16 @@ def load_policy(path: str, local_path: str | None = None) -> Policy:
     if not audit_dir:
         raise _fail("audit_dir 不能为空")
 
+    # REQ-003 §3.3：检测权重目录(可选顶层键,不进 _REQUIRED_SECTIONS);
+    # 空串视为未配置(None)。锚定规矩与 audit_dir 同(装配期 resolve)
+    detector_weights_dir = data.get("detector_weights_dir")
+    if detector_weights_dir is not None:
+        detector_weights_dir = str(detector_weights_dir).strip() or None
+
     return Policy(
         whitelist=whitelist,
         terminal_apps=terminal_apps,
+        revoked=frozenset(revoked),             # ISS-0072：撤回集入只读视图
         l2_keys=l2_keys,
         l3_keys=l3_keys,
         input_scenario_keys=input_scenario_keys,
@@ -328,4 +346,5 @@ def load_policy(path: str, local_path: str | None = None) -> Policy:
         shots_max_bytes=int(shots_max_bytes),
         cleanup_grace_seconds=float(cleanup_grace_seconds),
         cleanup_interval_seconds=float(cleanup_interval_seconds),
+        detector_weights_dir=detector_weights_dir,
     )

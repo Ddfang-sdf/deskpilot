@@ -32,12 +32,13 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from ..errors import (ELEMENT_AMBIGUOUS, ELEMENT_DISABLED, ELEMENT_NOT_FOUND,
-                      ELEMENT_UNSUPPORTED, EMERGENCY_STOP, INTERNAL_ERROR,
-                      INVALID_PARAMS, OCR_AMBIGUOUS, OCR_TEXT_NOT_FOUND,
-                      OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE, WINDOW_OCCLUDED,
-                      ExecutorError, InvalidParamsError)
+from ..errors import (DETECTOR_UNAVAILABLE, ELEMENT_AMBIGUOUS, ELEMENT_DISABLED,
+                      ELEMENT_NOT_FOUND, ELEMENT_UNSUPPORTED, EMERGENCY_STOP,
+                      INTERNAL_ERROR, INVALID_PARAMS, OCR_AMBIGUOUS,
+                      OCR_TEXT_NOT_FOUND, OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE,
+                      WINDOW_OCCLUDED, ExecutorError, InvalidParamsError)
 from ..policy import normalize_key
+from .detector import resolve, screened, to_virtual, verify
 from .mousehold import MOUSE_BUTTONS, PressedTracker, WatchdogThread
 from .probe import DesktopProbe
 from .textclick import resolve_click, suggest_similar
@@ -45,6 +46,14 @@ from .textclick import resolve_click, suggest_similar
 _NOT_WIRED = {
     "get_clickable_map", "ocr", "template_match",
 }  # 驱动未包含在 M1 构建（OCR/模板匹配/SoM 见里程碑 M3）
+
+# REQ-003 D-20(2026-09-15 sdfang 裁定):去重判据集合排除**结构容器类**节点——
+# 容器是结构不是元素,字面全量会让整窗 Pane/画布 Group 把候选全灭(TC-INT-02
+# 实测暴露);禁用/零面积元素仍全量参与(D-17 五理由不动)。
+_DEDUP_EXCLUDE_TYPES = frozenset({
+    "WindowControl", "PaneControl", "GroupControl",
+    "ScrollBarControl", "TitleBarControl", "MenuBarControl",
+})
 
 _pyauto_key_alias = {"escape": "esc"}
 
@@ -55,7 +64,7 @@ class Executor:
     def __init__(self, estop, audit_dir: str, poll_interval: float = 0.5,
                  wait_timeout_max: float = 300.0, clock: Callable[[], float] = time.monotonic,
                  probe=None, element_source=None, shot_fn=None, ocr_engine=None,
-                 audit=None):
+                 audit=None, detector_weights_dir: str | None = None):
         self._probe = probe if probe is not None else DesktopProbe()
         self._estop = estop
         self._shots_dir = Path(audit_dir) / "shots"
@@ -67,6 +76,25 @@ class Executor:
         self._ocr_engine = ocr_engine           # OCR 引擎（可注入，测试接缝）
         self._audit = audit                     # 审计通道（可注入;无则安全网事件不落盘）
         self.ocr_factory = None                 # ISS-0008 §6：OCR 懒加载工厂（公开属性）
+        # REQ-003 §3.3：权重目录取值（policy.yml 顶层 detector_weights_dir 的值，
+        # 由 main 装配期传入）；相对路径的锚定交给 resolve()，此处不自行解析。
+        # 缺省 None = 生产未接线（P3 起由 main 传入 policy 取值）
+        self._weights_dir_configured = detector_weights_dir
+        # REQ-003 §3.7 / D-18：检测器工厂（公开装配位，与 ocr_factory 同处装配）；
+        # 缺省 None = 未装配 → detect=true 落 DETECTOR_UNAVAILABLE（§9.1）
+        self.detector_factory = None
+        # REQ-003 §3.2 / D-18：权重清单（公开装配位，与 detector_factory 平行）。
+        # 形态 = 扁平 {相对路径: sha256}(与 verify() 入参同形);缺省 = 出厂
+        # 空清单(D-12 未裁——空清单下 verify() 给 ok 是真实语义,但空清单 ≠
+        # 可用出厂形态,D-12 后必须回填);生产装配不赋值(§6 main 装配期)
+        self.weight_manifest: dict = {}
+        # FD-06:置信度门槛是**检测器装配参数**,不进 policy.yml;随装配固定
+        self.detector_threshold = 0.5
+        # REQ-003 §3.7:检测器懒装填状态(承 _ensure_ocr_engine 形态)
+        self._detector = None
+        self._detector_failed: str | None = None   # 失败记忆串(§8.1 口径)
+        self._detector_lock = threading.Lock()
+        self._detect_cache: dict[int, dict] = {}   # detect 编号表(§3.7,只诊断)
         self._ocr_lock = threading.Lock()       # ISS-0008 P2：懒初始化一次性锁
         self._ocr_failed: str | None = None     # ISS-0008 P2：初始化失败记忆化
         self._som_cache: dict[int, dict] = {}   # SoM 编号缓存（§9.9）
@@ -150,8 +178,8 @@ class Executor:
     # ---------- 感知（L0，tools 层直调） ----------
 
     def screenshot(self, scope: str, rect=None, window=None,
-                   ocr: bool = False) -> dict:
-        region = self._resolve_region(scope, rect, window)
+                   ocr: bool = False, screen=None) -> dict:
+        region = self._resolve_region(scope, rect, window, screen)
         path = self._save_shot(region, "sense")
         out = {"path": str(path), "width": region["width"],
                "height": region["height"]}
@@ -162,11 +190,22 @@ class Executor:
                                region["top"] + region["height"]]
         out["scale_x"] = 1.0
         out["scale_y"] = 1.0
-        if scope == "fullscreen":
+        # ISS-0083 ②:coverage = 本图面积 ÷ 虚拟桌面外接矩形面积——
+        # 各档统一携带,AI 可自见「这次只看到多少」;region 的用途定位
+        # 是精读/局部核对,全屏/按屏才是默认路径
+        from ..monitors import enum_monitors
+        mons = enum_monitors()
+        if mons:
+            bl = min(m["rect"][0] for m in mons)
+            bt = min(m["rect"][1] for m in mons)
+            br = max(m["rect"][2] for m in mons)
+            bb = max(m["rect"][3] for m in mons)
+            out["coverage"] = (region["width"] * region["height"]
+                               / ((br - bl) * (bb - bt)))
+        if scope in ("fullscreen", "screen"):
             # ISS-0007 C：坐标系声明 + 每屏边界列表
-            from ..monitors import enum_monitors
             out["coord_space"] = "virtual_desktop"
-            out["monitors"] = enum_monitors()
+            out["monitors"] = mons if mons else enum_monitors()
         # ISS-0037 A：盲眼自愈——调用方无法查看图像时的降级指引
         out["vision_note"] = (f"本响应附有截图图像内容块;若你无法查看"
                               f"图像,可改调 ocr(source={path}) 获取文字"
@@ -281,6 +320,80 @@ class Executor:
                 raise ExecutorError(INTERNAL_ERROR,
                                     f"OCR 引擎不可用: {e}") from e
 
+    def _ensure_detector(self):
+        """懒装填检测器（REQ-003 §9.1，承 `_ensure_ocr_engine` 形态）：
+        恰好一次；**记忆化口径 §8.1**——`未装配` 与 `装填失败` 记忆化
+        （重试无益），校验失败**不**记忆化（人类按指引放下权重后，下一次
+        调用必须立即可用），推理异常不记忆化（瞬态，在调用点归约）。
+
+        校验在工厂之前：缺权重时不进入后端加载路径，错误更早更准。
+        """
+        if self._detector is not None:
+            return self._detector
+        if self._detector_failed is not None:
+            raise ExecutorError(DETECTOR_UNAVAILABLE,
+                                f"检测器不可用: {self._detector_failed}")
+        with self._detector_lock:
+            # 锁内复检:多线程服务面下两个并发 detect=true 会同时通过首查
+            if self._detector is not None:
+                return self._detector
+            if self._detector_failed is not None:
+                raise ExecutorError(DETECTOR_UNAVAILABLE,
+                                    f"检测器不可用: {self._detector_failed}")
+            if self.detector_factory is None:
+                self._detector_failed = ("未装配 detector_factory"
+                                         "（检测器选型待 D-12 终裁）")
+                raise ExecutorError(
+                    DETECTOR_UNAVAILABLE,
+                    f"检测器不可用: {self._detector_failed}。"
+                    f"下一步: 等待出厂检测器落地,或由装配方注入 detector_factory")
+            configured = self._weights_dir_configured
+            manifest = self.weight_manifest or {}
+            if manifest:
+                # 清单非空才有权重可验;空清单(CV 线零权重,D-12 终裁)
+                # = 无权重可验,跳过目录解析与校验,直接装填(详设 §13
+                # 「空清单 = ok 是真实语义」的编排落点)
+                if not configured:
+                    # 有清单却未配置目录——**不记忆化**(配置补上后即应生效)
+                    raise ExecutorError(
+                        DETECTOR_UNAVAILABLE,
+                        "未配置检测权重目录（policy.yml 顶层 detector_weights_dir "
+                        "缺省）。下一步: 在 policy.yml 设置 detector_weights_dir, "
+                        "并把权重文件放入该目录")
+                wdir = resolve(configured)
+                report = verify(wdir, manifest)
+                conclusion = report["conclusion"]
+                if conclusion == "dir_missing":
+                    raise ExecutorError(
+                        DETECTOR_UNAVAILABLE,
+                        f"检测权重目录不存在: {report['dir']};期望文件清单: "
+                        f"{sorted(manifest)}。下一步: 创建该目录并按"
+                        f"清单放入权重文件（校验不记忆化,放下即可用）")
+                if conclusion == "file_missing":
+                    raise ExecutorError(
+                        DETECTOR_UNAVAILABLE,
+                        f"检测权重文件缺失: {report['missing']}（目录 "
+                        f"{report['dir']}）。下一步: 把缺失文件放入该目录后重试"
+                        f"（校验不记忆化,放下即可用）")
+                if conclusion == "hash_mismatch":
+                    detail = "; ".join(
+                        f"{m['name']} 实际 {m['actual']} ≠ 期望 {m['expected']}"
+                        for m in report["mismatched"])
+                    raise ExecutorError(
+                        DETECTOR_UNAVAILABLE,
+                        f"检测权重哈希不符（文件被改动或版本不符）: {detail}"
+                        f"（目录 {report['dir']}）。下一步: 重新获取与清单一致"
+                        f"的权重文件（校验不记忆化,放回即可用）")
+            try:
+                self._detector = self.detector_factory()
+            except Exception as e:
+                self._detector_failed = f"装填失败: {e}"
+                raise ExecutorError(
+                    DETECTOR_UNAVAILABLE,
+                    f"检测器装填失败: {e}。下一步: 按异常原文检查推理后端"
+                    f"与权重文件完整性") from e
+            return self._detector
+
     def template_match(self, template: str, scope, threshold: float = 0.8) -> dict:
         """模板匹配（§12.6）：在屏幕范围搜索模板，未达阈值如实返回最高置信度。"""
         tpl = cv2.imread(template, cv2.IMREAD_COLOR)
@@ -310,15 +423,24 @@ class Executor:
         return {"found": bool(matches), "best_confidence": best,
                 "matches": matches[:20]}
 
-    def get_clickable_map(self, window) -> dict:
+    def get_clickable_map(self, window, detect: bool = False) -> dict:
         """SoM 标注（§12.6）：可交互非零面积元素按阅读顺序编号入图，
-        对照表连同窗口句柄存入缓存（60 秒有效）。"""
+        对照表连同窗口句柄存入缓存（60 秒有效）。
+
+        REQ-003（详设 §6/§9.1）：`detect=True` 追加图形检测通道——懒装填
+        检测器（校验权重 → 建检测器 → 推理 → 坐标收口 → 去重）后把未被 UIA
+        枚举覆盖的候选并入编号空间。检测任一步失败 → DETECTOR_UNAVAILABLE
+        显式报错,**不落图、不返回 entries**(fail-closed,无"退回纯 UIA"
+        降级路径)。`detect=False`（缺省）走既有路径，除新增 `coord_space`
+        外零变化（DET-04）。
+        """
         hwnd = self._resolve_window(window)
         root = self._element_root(hwnd)
         wl, wt, wr, wb = self._probe.rect_of(hwnd)
         # ISS-0008 P4：每节点属性一次成型（同名属性不重复读 COM）
+        summaries = list(self._iter_summaries(root))
         interactable = []
-        for s in self._iter_summaries(root):
+        for s in summaries:
             if not s["enabled"]:
                 continue
             rect = s["rect"]
@@ -328,26 +450,95 @@ class Executor:
         interactable.sort(key=lambda s: (s["rect"][1], s["rect"][0]))
         img = self._capture({"left": wl, "top": wt,
                              "width": wr - wl, "height": wb - wt})
+        # REQ-003 §6:检测通道(仅 detect=True;失败面全部 fail-closed 上抛)
+        kept: list[dict] = []
+        if detect:
+            detector = self._ensure_detector()
+            try:
+                raw = detector(img)     # 契约(§2):入参内存图,出参恰两键
+            except Exception as e:
+                # 推理异常**不记忆化**(瞬态,§8.1);零落图零 entries
+                raise ExecutorError(
+                    DETECTOR_UNAVAILABLE,
+                    f"检测推理失败: {e}。下一步: 按异常原文排查;"
+                    f"若为瞬态可稍后重试") from e
+            origin = (wl, wt)           # 截图原点(§3.5):收口只在此处
+            cands = [{"rect": to_virtual(c["rect"], origin),
+                      "confidence": c["confidence"]} for c in raw]
+            # 判据集合 = UIA 枚举**全量减去结构容器**(D-17 全量含禁用/零面积,
+            # D-20 再减容器类——容器是结构不是元素,字面全量会毯式全灭候选)。
+            # D-20 补充(同日实测):**宿主型 CustomControl**(XAML 承载根,毯盖
+            # 后代,画图/Windows Terminal 的内容区都是它)同属结构容器;判据=
+            # 其矩形覆盖其它摘要中心点。叶子型 CustomControl(真自绘控件)保留
+            # ——其上检测框仍按 UIA 优先去重,防双编号。
+            uia_rects = []
+            for s in summaries:
+                rect = s["rect"]
+                if rect is None or s["control_type"] in _DEDUP_EXCLUDE_TYPES:
+                    continue
+                if s["control_type"] == "CustomControl":
+                    l, t, r, b = rect
+                    hosts = any(
+                        o is not s and o["rect"] is not None
+                        and l <= (o["rect"][0] + o["rect"][2]) / 2 <= r
+                        and t <= (o["rect"][1] + o["rect"][3]) / 2 <= b
+                        for o in summaries)
+                    if hosts:
+                        continue
+                uia_rects.append(rect)
+            kept = screened(cands, uia_rects, self.detector_threshold)
+            # 检测器输出顺序不承诺(§2);检测内部按同一坐标序排位(§9.6)
+            kept.sort(key=lambda c: (c["rect"][1], c["rect"][0]))
         draw = ImageDraw.Draw(img)
         entries: list[dict] = []
+        # ISS-0081：编号的生命周期是「单次取图」，缓存必须与之一致——
+        # 先构建局部新表，取图成功后再**整表替换**，不留任何旧编号。
+        # （逐键覆盖会残留上次清单里多出来的编号：AI 拿旧编号仍能点到东西并报 ok。）
+        fresh: dict[int, dict] = {}
+        fresh_detect: dict[int, dict] = {}
         now = self._clock()
         for i, s in enumerate(interactable, start=1):
             l, t, r, b = s["rect"]
             rel = [l - wl, t - wt, r - wl, b - wt]
             draw.rectangle(rel, outline=(255, 60, 60), width=3)
             draw.text((rel[0] + 2, max(0, rel[1] - 16)), str(i), fill=(255, 0, 0))
-            entries.append({"id": i, "name": s["name"],
-                            "control_type": s["control_type"],
-                            "automation_id": s["automation_id"],
-                            "rect": [l, t, r, b]})
-            self._som_cache[i] = {"hwnd": hwnd, "name": s["name"],
-                                  "automation_id": s["automation_id"],
-                                  "expires": now + 60.0}
+            entry = {"id": i, "name": s["name"],
+                     "control_type": s["control_type"],
+                     "automation_id": s["automation_id"],
+                     "rect": [l, t, r, b]}
+            if detect:
+                # SOM-02 统一键集(§5.2,七键不省略,FD-09):
+                # UIA 条目 source="uia"、confidence 恒 null
+                entry["source"] = "uia"
+                entry["confidence"] = None
+            entries.append(entry)
+            fresh[i] = {"hwnd": hwnd, "name": s["name"],
+                        "automation_id": s["automation_id"],
+                        "expires": now + 60.0}
+        # §9.6:检测区域追加在 UIA 之后,占 N+1..N+M;同一套画法(SOM-03)
+        for j, c in enumerate(kept, start=len(interactable) + 1):
+            l, t, r, b = c["rect"]
+            rel = [l - wl, t - wt, r - wl, b - wt]
+            draw.rectangle(rel, outline=(255, 60, 60), width=3)
+            draw.text((rel[0] + 2, max(0, rel[1] - 16)), str(j), fill=(255, 0, 0))
+            entries.append({"id": j, "source": "detect", "name": None,
+                            "control_type": None, "automation_id": None,
+                            "rect": [l, t, r, b],
+                            "confidence": c["confidence"]})
+            # detect 表仅存 {hwnd, expires}(FD-02):不可寻址,只供诊断分支
+            fresh_detect[j] = {"hwnd": hwnd, "expires": now + 60.0}
         out = self._shots_dir / time.strftime("%Y%m%d")
         out.mkdir(parents=True, exist_ok=True)
         path = out / f"{time.strftime('%H%M%S')}_som_{int(time.time()*1000)%100000}.png"
         img.save(path)
-        return {"path": str(path), "count": len(entries), "entries": entries}
+        # 取图成功后才换表：落盘失败则本次没有任何编号交到 AI 手上，
+        # 其手中的上一张图仍然有效，缓存须原样保留（fail-closed，不静默降级）。
+        self._som_cache = fresh
+        # §9.6:detect=False 时 detect 表**置空**而非保留——消除"上次开了检测、
+        # 这次没开,旧 detect 编号还能命中"的残留面
+        self._detect_cache = fresh_detect
+        return {"path": str(path), "count": len(entries), "entries": entries,
+                "coord_space": "virtual_desktop"}
 
     def capture_approval_shot(self, rect) -> str:
         """审批用目标窗口实拍（闸四）：按绑定矩形截图并落盘，返回路径。"""
@@ -565,16 +756,29 @@ class Executor:
                 "som_id 与 control_type 为两条寻址路径,不可同传")
         if som_id is not None:
             entry = self._som_cache.get(int(som_id))
-            if (entry is None or entry["hwnd"] != hwnd
-                    or self._clock() > entry["expires"]):
+            if (entry is not None and entry["hwnd"] == hwnd
+                    and self._clock() <= entry["expires"]):
+                root = self._element_root(hwnd)
+                element = self._resolve_unique_element(
+                    root, name=entry["name"] or None,
+                    automation_id=entry["automation_id"] or None)
+            else:
+                # REQ-003 §5.3:som 表未命中 → 查 detect 编号表(诊断分支)。
+                # **零点击保证**:本分支在 _element_root/_resolve_unique_element
+                # /_invoke_element 之前返回,物理上无点击可能
+                dentry = self._detect_cache.get(int(som_id))
+                if (dentry is not None and dentry["hwnd"] == hwnd
+                        and self._clock() <= dentry["expires"]):
+                    raise ExecutorError(
+                        ELEMENT_UNSUPPORTED,
+                        f"SoM 编号 {som_id} 是 source=\"detect\" 的检测图形"
+                        f"区域,不是 UIA 控件,无法经 click_element 寻址。"
+                        f"下一步: 取该条目的 rect,用 click 工具按其中心坐标"
+                        f"点击")
                 raise ExecutorError(
                     ELEMENT_NOT_FOUND,
                     "SoM 编号已失效或不属于当前绑定窗口，"
                     "请重新调用 get_clickable_map 取图")
-            root = self._element_root(hwnd)
-            element = self._resolve_unique_element(
-                root, name=entry["name"] or None,
-                automation_id=entry["automation_id"] or None)
         elif control_type:
             root = self._element_root(hwnd)
             element = self._resolve_typed_element(
@@ -1005,12 +1209,27 @@ class Executor:
             raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
         return hwnd
 
-    def _resolve_region(self, scope: str, rect, window) -> dict:
+    def _resolve_region(self, scope: str, rect, window, screen=None) -> dict:
         if scope == "fullscreen":
             with mss.MSS() as sct:
                 mon = sct.monitors[0]
             return {"left": mon["left"], "top": mon["top"],
                     "width": mon["width"], "height": mon["height"]}
+        if scope == "screen":
+            # ISS-0083 ①:按屏取图——AI 只报屏号(enum_monitors 列表序号,
+            # 与 fullscreen 返回的 monitors 同一清单),矩形由工具查,
+            # 不再让 AI 自己算偏移;越界 fail-closed,不静默回退
+            from ..monitors import enum_monitors
+            mons = enum_monitors()
+            if (screen is None or isinstance(screen, bool)
+                    or not isinstance(screen, int)
+                    or not (0 <= screen < len(mons))):
+                raise ExecutorError(
+                    INVALID_PARAMS,
+                    f"屏号非法或越界: {screen!r};当前共 {len(mons)} 屏"
+                    f"(屏号 0~{len(mons) - 1},即 fullscreen 返回的 monitors 序号)")
+            l, t, r, b = (int(v) for v in mons[screen]["rect"])
+            return {"left": l, "top": t, "width": r - l, "height": b - t}
         if scope == "region":
             return {"left": int(rect[0]), "top": int(rect[1]),
                     "width": int(rect[2]), "height": int(rect[3])}

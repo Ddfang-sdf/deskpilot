@@ -1,6 +1,7 @@
 """DeskPilot 错误码与异常定义。
 
-错误码与详细设计说明书附录 A 一致（19 个原因码）。
+错误码与详细设计说明书附录 A 登记册对应；本文件**不自述数量**——计数声明
+散落多处即漂移之源。附录 A 的全量回填与计数单源化见 ISS-0074。
 """
 
 # 参数与协议
@@ -10,6 +11,7 @@ NO_BINDING = "NO_BINDING"
 # 闸二 / 白名单
 NOT_WHITELISTED = "NOT_WHITELISTED"
 POLICY_VIOLATION = "POLICY_VIOLATION"
+REVOKED_BY_HUMAN = "REVOKED_BY_HUMAN"   # ISS-0072：人类撤回即永久否决，硬拒
 # 闸三 / 按键
 KEY_DENIED = "KEY_DENIED"
 KEY_UNKNOWN = "KEY_UNKNOWN"
@@ -37,6 +39,10 @@ TOOL_TIMEOUT = "TOOL_TIMEOUT"         # ISS-0009 §6：超时预算触发（处�
 # ISS-0021：click_text 文字寻址失败分类（fail-closed）
 OCR_TEXT_NOT_FOUND = "OCR_TEXT_NOT_FOUND"
 OCR_AMBIGUOUS = "OCR_AMBIGUOUS"
+# REQ-003：检测器通道不可用（未装配 / 权重校验不过 / 装填或推理失败）
+# 详尽设计 §5.3 §8：本码 fail-closed——不写图像、不产生条目。附录 A 登记
+# 义务见详设 §11/§12（登记册全量回填见 ISS-0074）
+DETECTOR_UNAVAILABLE = "DETECTOR_UNAVAILABLE"
 # 注（ISS-0029）：原 ALL_REASON_CODES 登记册为零消费死代码且漏登
 # TOOL_TIMEOUT,已按 sdfang 裁定删除;防复活守卫见 tests/test_errors_iss29.py
 

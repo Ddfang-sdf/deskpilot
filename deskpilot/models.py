@@ -55,6 +55,11 @@ TOOL_TIME_BUDGETS: Mapping[str, float] = {
 TOOL_BUDGET_OVERRIDES: Mapping[str, float] = {
     "ocr": 12.0,
     "screenshot": 12.0,
+    # REQ-003 GOV-03a:登记单源(覆盖优先于级别表)。R-04 实测(2026-09-15,
+    # D-12 终裁 CV 线后):cv-contour 零权重零装填,稳态推理 ~18ms@1920×1080,
+    # 全调用远低于 L0 档 5.0s——5.0 与 L0 同值,是**实测确认**而非猜测占位
+    # (TC-GOV-03b 集成用例断言「实测×2 ≤ 覆盖值」持续看守)
+    "get_clickable_map": 5.0,
 }
 
 # ISS-0023：TOOL_TIMEOUT 重试指引（单源常量，httpd 响应构造消费）。
@@ -69,6 +74,8 @@ class Policy:
 
     whitelist: Mapping[str, str]          # 进程名(小写) -> 级别上限 "L0"|"L1"|"L2"
     terminal_apps: frozenset[str]
+    revoked: frozenset[str]               # ISS-0072：被人类撤回的进程(墓碑),
+                                          # 「人类否决」须与"素未谋面"可区分
     l2_keys: frozenset[str]               # 规范化后的 L2 许可键
     l3_keys: frozenset[str]               # 规范化后的 L3 危险键
     input_scenario_keys: frozenset[str]   # 场景受限键（默认仅 backspace）
@@ -88,6 +95,9 @@ class Policy:
     shots_max_bytes: int = 471859200       # 截图空间上限字节 450MB（ISS-0031:2GB→450MB）
     cleanup_grace_seconds: float = 600.0   # 清理在场保护窗秒（ISS-0010）
     cleanup_interval_seconds: float = 3600.0  # 清理定时周期秒，0=仅启动时（ISS-0010）
+    # REQ-003 §3.3：检测权重目录（可选顶层键，不进 _REQUIRED_SECTIONS）；
+    # None = 未配置（detect=true 时显式 DETECTOR_UNAVAILABLE，fail-closed）
+    detector_weights_dir: str | None = None
 
 
 @dataclass

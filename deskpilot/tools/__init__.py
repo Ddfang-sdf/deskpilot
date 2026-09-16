@@ -72,7 +72,8 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
         if tool == "screenshot":
             result = ctx.executor.screenshot(params["scope"], params.get("rect"),
                                              params.get("window"),
-                                             ocr=params.get("ocr", False))
+                                             ocr=params.get("ocr", False),
+                                             screen=params.get("screen"))
         elif tool == "find_window":
             result = {"windows": ctx.executor.find_windows(
                 title=params.get("title"), process=params.get("process"))}
@@ -102,7 +103,9 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
                                                  params["scope"],
                                                  params.get("threshold", 0.8))
         elif tool == "get_clickable_map":
-            result = ctx.executor.get_clickable_map(params["window"])
+            # REQ-003:detect 开关透传(缺省 False 走既有路径,DET-04 零变化)
+            result = ctx.executor.get_clickable_map(
+                params["window"], params.get("detect", False))
         else:
             raise ExecutorError(INTERNAL_ERROR, f"工具 {tool} 未接线")
         _light_audit(ctx, tool, params, "ok", t0)
