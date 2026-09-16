@@ -108,20 +108,16 @@ class TestScope03Coverage:
         """ISS-0083 §5.3:错位双屏下 fullscreen 外接面积 > 任一单屏——证「外接
         矩形含虚空」是既有事实而非本单引入。
 
-        环境不变量(icons09 先例):fullscreen 的 virtual_rect 全真取自 mss
-        `monitors[0]`(虚拟桌面外接矩形),其跨环境恒真性质是**覆盖
-        enum_monitors 每一屏**;替身错位双屏下退化为「外接面积 > 任一单屏
-        面积」。不钉本机绝对几何(CI runner 为单屏)。"""
+        环境切分(icons09 先例):fullscreen 的 virtual_rect 全真取自 mss
+        `monitors[0]`(真虚拟桌面外接矩形),替身 enum_monitors 几何**进不了
+        该路径**——故替身声明的副屏(真机/CI 没有)不能进断言。fullscreen 只钉
+        mss 自洽不变量(right>left、bottom>top、面积>0);「fullscreen 外接
+        面积>单屏」的语义已由 test_screen_coverage_is_screen_share 在替身
+        双屏下钉死(coverage 精确比值,经替身几何),此处不重复钉几何。"""
         r_full = ex.screenshot("fullscreen")
         l, t, r, b = r_full["virtual_rect"]
-        for m in MONS:
-            ml, mt, mr, mb = m["rect"]
-            assert l <= ml and t <= mt and r >= mr and b >= mb, \
-                f"fullscreen 外接矩形须覆盖屏 {m['rect']},实得 {[l, t, r, b]}"
-        full_area = (r - l) * (b - t)
-        single_area = (MONS[1]["rect"][2] - MONS[1]["rect"][0]) * \
-                      (MONS[1]["rect"][3] - MONS[1]["rect"][1])
-        assert full_area > single_area  # 外接矩形 > 单屏(虚空存在)
+        assert r > l and b > t, "fullscreen 外接矩形须非退化(mss 自洽)"
+        assert (r - l) * (b - t) > 0
 
 
 class TestScope04SchemaShape:
@@ -152,14 +148,12 @@ class TestScope05Regression:
     """TC-SCOPE-05:fullscreen/window/region 原行为不变(既有键集与坐标)。"""
 
     def test_fullscreen_unchanged(self, ex):
-        """fullscreen 回归:virtual_rect 全真(mss `monitors[0]`),环境不变量=
-        覆盖 enum_monitors 每一屏;coord_space/monitors/vision_note 为
-        环境无关键。不钉本机绝对坐标(CI runner 为单屏)。"""
+        """fullscreen 回归:virtual_rect 全真(mss `monitors[0]`),替身几何进不了
+        该路径——只钉 mss 自洽不变量(非退化矩形);coord_space/monitors/
+        vision_note 为环境无关键。不钉本机绝对坐标,也不碰替身几何。"""
         r = ex.screenshot("fullscreen")
         l, t, rr, b = r["virtual_rect"]
-        for m in MONS:
-            ml, mt, mr, mb = m["rect"]
-            assert l <= ml and t <= mt and rr >= mr and b >= mb
+        assert rr > l and b > t, "fullscreen 外接矩形须非退化"
         assert r["coord_space"] == "virtual_desktop"
         assert len(r["monitors"]) == 2
         assert "vision_note" in r
