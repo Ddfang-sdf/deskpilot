@@ -109,19 +109,26 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
                         "screen": ["screen"]},
     },
     "ocr": {
-        "description": "识别 Windows 桌面/窗口图像中的文字:要精确文字清单或定位时用我;布局理解请直接看 screenshot 图像。source=图像路径或屏幕区域。优先局部实拍或路径直读——全屏识别系统繁忙时可能超时,按指引 500ms 重试。",
+        # ISS-0069 ②:描述收紧到真实形态(路径/[l,t,r,b] rect),剔除
+        # 「屏幕区域」假形态;全屏/窗口图指向 screenshot(ocr:true)组合
+        "description": "识别 Windows 桌面/窗口图像中的文字:要精确文字清单或定位时用我;布局理解看 screenshot 图像。source=图像路径或 [l,t,r,b] 区域 rect(全屏/窗口图请用 screenshot 的 ocr:true 同次附文字清单)。优先局部实拍或路径直读——全屏识别系统繁忙时可能超时,按指引 500ms 重试。",
         "required": {"source": ("any",)}, "optional": {}},
     "find_window": {
-        "description": "查找 Windows 桌面上的应用窗口(按标题/进程名),返回 hwnd/标题/进程/矩形;网页定位请用浏览器工具。操作任何应用前先调用它定位,再 attach 绑定、get_ui_tree 看内容。不要为此写临时脚本(uiautomation/mss)——窗口枚举已封装。",
+        # ISS-0065 ①:schema 补 hwnd(int) 与 probe 能力对齐(描述曾宣称
+        # 可按 hwnd 查找却被 at_least_one 拦截——提示与声明面矛盾)
+        "description": "查找 Windows 桌面上的应用窗口(按 title/process/hwnd 定位,至少给一项),返回 hwnd/标题/进程/矩形;网页定位请用浏览器工具。操作任何应用前先调用它定位,再 attach 绑定、get_ui_tree 看内容。不要写临时脚本(uiautomation/mss)——窗口枚举已封装。",
         "required": {},
-        "optional": {"title": ("str",), "process": ("str",)},
-        "at_least_one": ["title", "process"],
+        "optional": {"title": ("str",), "process": ("str",),
+                     "hwnd": ("int",)},
+        "at_least_one": ["title", "process", "hwnd"],
     },
     "get_ui_tree": {
         "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用浏览器工具。attach 绑定之后用它「看懂」窗口里有哪些按钮、输入框、列表。control_type=按控件类型过滤(如 CheckBox/Button/MenuItem,找无文字图形先用它)。返回 elements+coord_space。",
         "required": {"window": ("any",)}, "optional": {"control_type": ("str",)}},
     "get_clickable_map": {
-        "description": "给绑定的 Windows 窗口做 SoM 标注截图:把可点击元素编号画在图上。detect=true 追加图形检测,覆盖 UIA 看不见的图形控件;条目带 source(uia/detect)。source=uia 的编号传 click_element 的 som_id 点中;source=detect 的编号是图形区域,不可传 som_id,取其 rect 用 click 按坐标点击。",
+        # ISS-0066 ②:UIA 条目 id 与 som_id 双写同值(输出/入参命名对齐),
+        # id 标废弃日程;detect 编号仍不可寻址(只取 rect)
+        "description": "给绑定的 Windows 窗口做 SoM 标注截图:可点击元素编号画在图上,UIA 条目同带 som_id 与 id(同值,id 已废弃)。detect=true 追加图形检测,覆盖 UIA 看不见的控件。source=uia 编号传 click_element 的 som_id 点中;source=detect 编号是图形区域,取其 rect 用 click 按坐标点。",
         "required": {"window": ("any",)},
         "optional": {"detect": ("bool",)}},
     "list_desktop_icons": {
@@ -195,7 +202,9 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "at_least_one": ["name", "automation_id", "som_id", "control_type"],
     },
     "type_element": {
-        "description": "向绑定的 Windows 窗口内控件(输入框等)输入文本;网页表单请用浏览器工具。attach 绑定后使用。token+name/automation_id+text。",
+        # ISS-0070:描述写明「name/automation_id 至少一项」(空手撞
+        # INVALID_PARAMS 可自愈)
+        "description": "向绑定的 Windows 窗口内控件(输入框等)输入文本;网页表单请用浏览器工具。attach 绑定后使用。token+text 必填,name/automation_id 至少一项作定位(空手调用将被 INVALID_PARAMS 拒绝)。",
         "required": {"token": ("str",), "text": ("text",)},
         "optional": {"name": ("str",), "automation_id": ("str",)},
         "at_least_one": ["name", "automation_id"],

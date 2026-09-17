@@ -527,7 +527,9 @@ class Executor:
             rel = [l - wl, t - wt, r - wl, b - wt]
             draw.rectangle(rel, outline=(255, 60, 60), width=3)
             draw.text((rel[0] + 2, max(0, rel[1] - 16)), str(i), fill=(255, 0, 0))
-            entry = {"id": i, "name": s["name"],
+            # ISS-0066 ②:id 与 som_id 双写同值(输出↔click_element 入参
+            # 命名对齐;id 标废弃日程,下个大版本删)
+            entry = {"id": i, "som_id": i, "name": s["name"],
                      "control_type": s["control_type"],
                      "automation_id": s["automation_id"],
                      "rect": [l, t, r, b]}

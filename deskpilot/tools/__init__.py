@@ -103,7 +103,8 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
                                              screen=params.get("screen"))
         elif tool == "find_window":
             result = {"windows": ctx.executor.find_windows(
-                title=params.get("title"), process=params.get("process"))}
+                title=params.get("title"), process=params.get("process"),
+                hwnd=params.get("hwnd"))}     # ISS-0065 ①:hwnd 直查透传
             # ISS-0016 C：零命中给出下一步指引（改按进程名/句柄）
             if not result["windows"]:
                 return ToolResult(

@@ -382,13 +382,16 @@ class TestDET04DefaultZeroChange:
         assert detector.calls == 0, "detect 缺省时检测器零调用"
         assert calls["n"] == 0, "detect=False 不触权重校验(非「查了没报错」)"
         assert got["coord_space"] == "virtual_desktop", "本单补齐的坐标系声明"
-        # 返回结构除新增 coord_space 外与现状**逐键一致**(§5.1 DET-04):
-        # 顶层恰四键;UIA 条目仍现状五键(七键统一键集只在 detect=true 生效)
+        # 返回结构除新增 coord_space 与 ISS-0066 ②双写 som_id 外与现状
+        # **逐键一致**(§5.1 DET-04;契约修订备案见 ISS-0066 单据 v0.2):
+        # 顶层恰四键;UIA 条目恰六键(统一键集 detect=true 面见 SOM-02)
         assert set(got) == {"path", "count", "entries", "coord_space"}
         assert got["count"] == 1
         assert [e["name"] for e in got["entries"]] == ["A"]
-        assert set(got["entries"][0]) == {"id", "name", "control_type",
+        assert set(got["entries"][0]) == {"id", "som_id", "name",
+                                          "control_type",
                                           "automation_id", "rect"}
+        assert got["entries"][0]["som_id"] == got["entries"][0]["id"]
 
 
 # ---------- TC-DET-05a/05b:装填/推理失败 fail-closed ----------
@@ -583,10 +586,18 @@ class TestSOM01CoverageUnion:
 
 
 class TestSOM02UnifiedKeySet:
-    """每条键**恰好**为设计 §5.2 的七键;`id` 全局唯一连续;source 取值闭合。"""
+    """每条键**恰好**为设计 §5.2 的统一键集;`id` 全局唯一连续;source 取值闭合。
 
-    SEVEN_KEYS = {"id", "source", "name", "control_type",
-                  "automation_id", "rect", "confidence"}
+    ISS-0066 ②契约修订(设计授权,单据 v0.2 备案):UIA 条目双写 som_id
+    (与 id 同值,id 标废弃日程)→ UIA 恰**八**键;detect 条目编号不可寻址
+    (只取 rect 用 click),不携 som_id → 仍恰七键。键集精确性断言精神
+    不动(不多键、不缺键、按 source 分型钉死)。
+    """
+
+    UIA_KEYS = {"id", "som_id", "source", "name", "control_type",
+                "automation_id", "rect", "confidence"}
+    DETECT_KEYS = {"id", "source", "name", "control_type",
+                   "automation_id", "rect", "confidence"}
     DETECT_VIRTUAL = [[400, 400, 460, 440], [520, 460, 580, 500]]
 
     def test_entries_exactly_seven_keys_and_ids_contiguous(
@@ -599,8 +610,11 @@ class TestSOM02UnifiedKeySet:
 
         assert got["count"] == 5
         for e in got["entries"]:
-            assert set(e) == self.SEVEN_KEYS, f"键集不省略: {sorted(e)}"
             assert e["source"] in ("uia", "detect")
+            want = self.UIA_KEYS if e["source"] == "uia" else self.DETECT_KEYS
+            assert set(e) == want, f"键集不省略: {sorted(e)}"
+            if e["source"] == "uia":
+                assert e["som_id"] == e["id"]   # ISS-0066 ②:双写同值
         assert [e["id"] for e in got["entries"]] == [1, 2, 3, 4, 5]
         # UIA 恒 null confidence;detect 恒浮点
         for e in _uia_only_entries(got):
