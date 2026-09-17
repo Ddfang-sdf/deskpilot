@@ -58,6 +58,27 @@ _DEDUP_EXCLUDE_TYPES = frozenset({
 
 _pyauto_key_alias = {"escape": "esc"}
 
+# ISS-0088 方向①:UIA 树遍历深度上限**单源**——_walk(get_ui_tree)与
+# _iter_summaries(定位链/SoM 编号)/_iter_controls(读回校验)共用同一常量,
+# 消除「树上看得见、定位链点不到」的双口径(8 vs 10 曾致画图形状钮
+# depth9 可见不可点)。取较深者 10;800 条防爆炸上限(_walk)不动。
+_UI_TREE_MAX_DEPTH = 10
+
+
+def _strictly_inside(inner, outer) -> bool:
+    """矩形 inner 是否**严格**内含于 outer(四边内包且不全等)。
+
+    ISS-0088 嵌套同名歧义化解的几何判据:矩形缺失/相等(幽灵去重已滤)
+    保守返回 False(让位不发生,歧义保持)。
+    """
+    if not inner or not outer:
+        return False
+    l1, t1, r1, b1 = inner
+    l2, t2, r2, b2 = outer
+    if (l1, t1, r1, b1) == (l2, t2, r2, b2):
+        return False
+    return l2 <= l1 and t2 <= t1 and r1 <= r2 and b1 <= b2
+
 
 class Executor:
     """执行层公开入口。"""
@@ -691,8 +712,18 @@ class Executor:
             if key in seen:
                 continue
             seen.add(key)
-            matches.append(s["control"])
-        return matches
+            matches.append(s)
+        # ISS-0088(嵌套同名歧义化解,验收「同目标同结果」机制):深度加深后
+        # 嵌套同名链(如画图 ribbon ListItem⊃Button 同叫「矩形」)会多匹配——
+        # 若某匹配存在「矩形严格内含且深度更深」的子孙匹配,祖先让位
+        # (最内层=最精确目标,Invoke-first+像素兜底保证点击几何等价);
+        # 无内含关系的同名兄弟保持歧义报错不变(不过修)。
+        if len(matches) > 1:
+            matches = [s for s in matches if not any(
+                m is not s and m["depth"] > s["depth"]
+                and _strictly_inside(m["rect"], s["rect"])
+                for m in matches)]
+        return [s["control"] for s in matches]
 
     def _resolve_unique_element(self, root, *, name=None, automation_id=None,
                                 visible_only=False):
@@ -1338,7 +1369,7 @@ class Executor:
             return ""
 
     def _walk(self, control, nodes: list, depth: int) -> None:
-        if depth > 10 or len(nodes) >= 800:
+        if depth > _UI_TREE_MAX_DEPTH or len(nodes) >= 800:
             return
         try:
             rect = control.BoundingRectangle
@@ -1384,7 +1415,7 @@ class Executor:
             return None
 
     def _iter_controls(self, control, depth: int = 0):
-        if control is None or depth > 8:
+        if control is None or depth > _UI_TREE_MAX_DEPTH:
             return
         yield control
         try:
@@ -1400,8 +1431,10 @@ class Executor:
         uiautomation 包无 CacheRequest 批量协议，本方法在单次遍历中把
         每个节点的 Name/ControlTypeName/AutomationId/BoundingRectangle/IsEnabled
         各只读取一次并成dict复用，消除消费方的重复 COM 往返。
+
+        ISS-0088:深度上限单源化为 _UI_TREE_MAX_DEPTH(与 _walk 同口径)。
         """
-        if control is None or depth > 8:
+        if control is None or depth > _UI_TREE_MAX_DEPTH:
             return
         try:
             summary = {
