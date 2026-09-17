@@ -124,6 +124,15 @@ class _Win32Seam:
     def close_handle(self, h):
         _k32.CloseHandle(h)
 
+    def client_origin(self, hwnd):
+        """ISS-0075 方向①：客户区原点 → 屏幕（虚拟桌面）坐标
+        （ClientToScreen）。句柄失效返回 None——调用方 fail-closed
+        显式报错，禁止回退到未转换的 client 值（巧合不是契约）。"""
+        pt = wintypes.POINT(0, 0)
+        if not _u32.ClientToScreen(hwnd, ctypes.byref(pt)):
+            return None
+        return (pt.x, pt.y)
+
 
 class ListViewIconProvider:
     """跨进程读图形矩形(LVIR_ICON);远程内存单块复用;获取-释放配对。"""
@@ -145,6 +154,17 @@ class ListViewIconProvider:
         if not hproc:
             raise ExecutorError(
                 INTERNAL_ERROR, "桌面图形矩形读取失败(listview): 打开进程失败")
+        # ISS-0075 方向①：LVM_GETITEMRECT 返回 client 坐标,须按客户区
+        # 原点平移为虚拟桌面坐标(REQ-002 ICONS-01 契约)——桌面 ListView
+        # 恰压虚拟原点是环境巧合,不是代码保证;原点读不出=显式报错
+        # (fail-closed,禁止回退未转换值)
+        origin = self._os.client_origin(hwnd)
+        if origin is None:
+            self._os.close_handle(hproc)
+            raise ExecutorError(
+                INTERNAL_ERROR,
+                "桌面图形矩形读取失败(listview): 坐标原点转换失败(句柄失效)")
+        ox, oy = origin
         remote = None
         try:
             remote = self._os.virtual_alloc(hproc, ctypes.sizeof(_RECT) + 16)
@@ -161,7 +181,8 @@ class ListViewIconProvider:
                 back = _RECT()
                 self._os.read_mem(hproc, remote, ctypes.byref(back),
                                   ctypes.sizeof(back))
-                rects.append([back.left, back.top, back.right, back.bottom])
+                rects.append([back.left + ox, back.top + oy,
+                              back.right + ox, back.bottom + oy])
             return rects
         finally:
             if remote:

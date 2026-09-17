@@ -165,6 +165,9 @@ class TestAssemble:
             def close_handle(self, h):
                 calls["close"] += 1
 
+            def client_origin(self, hwnd):
+                return (0, 0)   # ISS-0075 接缝面扩展补齐(中性原点)
+
         p = ListViewIconProvider(os_seam=FakeOs())
         with pytest.raises(OSError):
             p.graphic_rects(778899, [0, 1])
