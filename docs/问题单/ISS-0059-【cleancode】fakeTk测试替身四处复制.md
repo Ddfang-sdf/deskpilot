@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0059 |
 | 标题 | 同一套 Tk 替身(W 基类 pack/place/bind/config/geometry… + Button/Label 记录器)在 test_batch_iss19 / test_sessionscope_iss43 / test_whitelist_iss12 / test_monitors_iss7 四个文件各抄一份;弹窗 API 增参数时四处同步,今天 ISS-0043/0053 已复制到第四份 |
 | 严重级 | 低(测试可维护性) |
-| 状态 | 建单待排期 |
+| 状态 | 建单待排期(2026-09-17 评估记录入单,处置见下) |
 | 提出 | 2026-09-10(cleancode 审查;grep winfo_screenwidth 四文件实证) |
 
 ## 现象与证据
@@ -18,3 +18,10 @@
 
 收编 `tests/faketk.py`(单一替身库:W/Btn/Lbl/Toplevel 工厂+文本与命令
 记录),四文件改导入;断言形态不变。约束:四个套件转绿即验收。
+
+## 评估记录(2026-09-17)
+
+| 项 | 内容 |
+|----|------|
+| 现状核对 | 仍成立且+1:今日 ISS-0071 的 test_dialoggeo_iss71.py 又新增一份 Tk 替身(认账:当时按 test_fastopen_iss12 先例就地复制)——共 5 处 |
+| 处置 | **保留排期**。建议:conftest 提供共享 fakeTk 工厂(记 geometry/title 等通用观测口),五个测试文件逐批收敛;顺带做,不独立占用窗口 |

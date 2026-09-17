@@ -8,9 +8,14 @@ approval_dialog._toast_placement 公式迁入公共家，审批/冻结/白名单
 
 from __future__ import annotations
 
+# ISS-0057:任务栏**避让边距**单源常量(语义=弹窗宁可多留,与物理高度
+# 脱钩);物理 work_area 由 _win32_info 真查(GetMonitorInfoW rcWork)
+TASKBAR_RESERVE = 48
+
 
 def toast_placement(screen: dict, width: int, height: int,
-                    margin: int = 16, taskbar: int = 48) -> tuple[int, int, int]:
+                    margin: int = 16,
+                    taskbar: int = TASKBAR_RESERVE) -> tuple[int, int, int]:
     """toast/弹窗在目标屏 work_area 右下角落位（ISS-0007 §6 公式单源）。
 
     入参 screen 为显示器 dict（含 rect/work_area）；返回 (x, y_start,
@@ -35,19 +40,33 @@ def enum_monitors() -> list[dict]:
         with mss.MSS() as sct:
             mons = sct.monitors[1:]           # [0] 为虚拟桌面聚合,跳过
             if mons:
-                return [_norm(m, i) for i, m in enumerate(mons)]
+                # ISS-0057:work_area/is_primary 不再猜——Win32 真查回填
+                info = _win32_info()
+                return [_norm(m, i, info) for i, m in enumerate(mons)]
     except Exception:
         pass
     return _enum_win32()
 
 
-def _norm(m: dict, idx: int) -> dict:
+def _norm(m: dict, idx: int, info: dict | None = None) -> dict:
     l, t = int(m["left"]), int(m["top"])
     r = l + int(m["width"])
     b = t + int(m["height"])
-    return {"rect": (l, t, r, b),
-            "work_area": (l, t, r, b - _taskbar_h(m)),
-            "is_primary": l == 0 and t == 0}
+    rect = (l, t, r, b)
+    hit = (info or {}).get(rect)
+    if hit is not None:
+        wa, primary = hit                    # 真查命中:准确工作区+主屏标记
+    else:
+        # 查不到才退旧猜法(主屏避让 TASKBAR_RESERVE、副屏 0;主屏=原点猜)
+        wa = (l, t, r, b - _taskbar_h(m))
+        primary = l == 0 and t == 0
+    return {"rect": rect, "work_area": wa, "is_primary": primary}
+
+
+def _win32_info() -> dict:
+    """GetMonitorInfoW 真查:rect → (work_area, is_primary)(ISS-0057)。"""
+    return {m["rect"]: (m["work_area"], m["is_primary"])
+            for m in _enum_win32()}
 
 
 def _taskbar_h(m: dict) -> int:

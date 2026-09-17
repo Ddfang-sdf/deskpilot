@@ -27,8 +27,8 @@ from .policy import DEFAULT_FREEZE_REMIND_INTERVAL
 STATE_FILE = "estop-state.json"
 REQ_FILE = "estop-reset.req"
 REQ_PREFIX = "estop-reset-"       # ISS-0006 §6：req 文件名 <REQ_PREFIX><seq>.req
-LOCK_FILE = "estop-dialog.lock"
-LOCK_MAX_AGE = 3.0          # 心跳龄超过 3s 视为弹窗已死，允许重新 spawn
+# ISS-0061:弹窗心跳锁两常量已删(孤儿死代码)——弹窗单例自 ISS-0046 B
+# 起收口到命名互斥体,锁文件机制整体退役,勿再引入
 
 
 class FreezeNotifier:

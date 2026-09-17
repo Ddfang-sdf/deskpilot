@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from .freeze_notify import STATE_FILE
+from .monitors import TASKBAR_RESERVE
 
 FRAME_MS = 16               # 动画帧间隔（约 60fps）
 SLIDE_MS = 240              # 滑入/滑出时长（对称原则：同长反向）
@@ -20,7 +21,7 @@ POLL_MS = 250               # 状态文件轮询间隔
 WIN_W = 440                 # 弹窗尺寸
 WIN_H = 210
 MARGIN_RIGHT = 16           # 落位：主屏右下角
-MARGIN_BOTTOM = 48          # 避开任务栏
+MARGIN_BOTTOM = TASKBAR_RESERVE  # 避开任务栏(ISS-0057:避让边距单源)
 
 # ---- 单例互斥（ISS-0006 §6）----
 SINGLETON_NAME = r"Local\DeskPilotFreezeDialog"

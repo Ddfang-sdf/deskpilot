@@ -65,6 +65,19 @@ _pyauto_key_alias = {"escape": "esc"}
 _UI_TREE_MAX_DEPTH = 10
 
 
+def _failsafe_guard(fn, *args, **kwargs):
+    """ISS-0056：pyautogui FAILSAFE → EMERGENCY_STOP 收敛单点
+    （ISS-0009 §6 C 三方异常收敛；原 7 处复制模板——复制一次多一处
+    漏接面，ISS-0052 move 裸逃成 500 即实证）。
+    错误消息语义不变（含 pyautogui 原文）；仅 FailSafeException 转换,
+    其余异常原样上抛。"""
+    try:
+        return fn(*args, **kwargs)
+    except pyautogui.FailSafeException as e:
+        raise ExecutorError(EMERGENCY_STOP,
+                            f"pyautogui FAILSAFE 触发: {e}") from e
+
+
 def _strictly_inside(inner, outer) -> bool:
     """矩形 inner 是否**严格**内含于 outer(四边内包且不全等)。
 
@@ -163,13 +176,11 @@ class Executor:
         no_shot = tool in ("mouse_down", "mouse_up")
         before = "" if no_shot else self._evidence_shot(tool, "before", rect)
         try:
-            result = self._dispatch(tool, params, hwnd)
+            # ISS-0056:FAILSAFE 收敛单点化(原模板副本删除)
+            result = _failsafe_guard(lambda: self._dispatch(tool, params,
+                                                            hwnd))
         except ExecutorError:
             raise
-        except pyautogui.FailSafeException as e:
-            # ISS-0009 §6 C：三方异常收敛（光标角落 FAILSAFE 语义即急停）
-            raise ExecutorError(EMERGENCY_STOP,
-                                f"pyautogui FAILSAFE 触发: {e}") from e
         except Exception as e:
             # ISS-0009 §6 C：未知异常不再裸抛（防 handler/进程断连）
             raise ExecutorError(INTERNAL_ERROR,
@@ -298,15 +309,11 @@ class Executor:
     def move(self, x: int, y: int) -> dict:
         """移动鼠标（L1，无写入）。
 
-        ISS-0052：FAILSAFE 收敛（与 execute :148 同族）——光标压角时
-        moveTo 抛 FailSafeException;不收敛则沿 L1 直调链裸逃成 500
-        （_run_sensing 只接 ExecutorError）。
+        ISS-0052：FAILSAFE 收敛（经 ISS-0056 单点 _failsafe_guard）——
+        光标压角时 moveTo 抛 FailSafeException;不收敛则沿 L1 直调链
+        裸逃成 500（_run_sensing 只接 ExecutorError）。
         """
-        try:
-            pyautogui.moveTo(x, y)
-        except pyautogui.FailSafeException as e:
-            raise ExecutorError(EMERGENCY_STOP,
-                                f"pyautogui FAILSAFE 触发: {e}") from e
+        _failsafe_guard(pyautogui.moveTo, x, y)
         return {"status": "ok"}
 
     def ocr(self, source) -> dict:
@@ -944,10 +951,7 @@ class Executor:
         self._pixel_click(x, y)
 
     def _pixel_click(self, x: int, y: int) -> None:
-        try:
-            pyautogui.click(x, y)
-        except pyautogui.FailSafeException as e:
-            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+        _failsafe_guard(pyautogui.click, x, y)
 
     def _type_element(self, params: dict, hwnd: int) -> dict:
         root = self._element_root(hwnd)
@@ -998,10 +1002,7 @@ class Executor:
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         self._check_occlusion(hwnd, x, y)     # ISS-0017 C：激活后再验遮挡
-        try:
-            pyautogui.click(x, y, button=button, clicks=clicks)
-        except pyautogui.FailSafeException as e:
-            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+        _failsafe_guard(pyautogui.click, x, y, button=button, clicks=clicks)
         return {"status": "ok"}
 
     # ---------- REQ-001 原语层:mouse_down/mouse_up/hold ----------
@@ -1114,10 +1115,7 @@ class Executor:
                 x, y = mx, by2 + distance
         self._check_point(hwnd, x, y)
         self._check_occlusion(hwnd, x, y)     # 与 click 同遮挡校验
-        try:
-            pyautogui.click(x, y, button=button, clicks=clicks)
-        except pyautogui.FailSafeException as e:
-            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+        _failsafe_guard(pyautogui.click, x, y, button=button, clicks=clicks)
         return {"status": "ok", "target": [x, y],
                 "matched": payload["matched"]}
 
@@ -1129,7 +1127,9 @@ class Executor:
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         self._check_occlusion(hwnd, *start)   # ISS-0017 C：激活后再验遮挡
-        try:
+        # ISS-0056:段级收敛——按下/移动/抬起序列整体经单点 guard,
+        # 内层 finally(抬键+核销)语义不变(FAILSAFE 触发也先抬键)
+        def _do_drag():
             pyautogui.moveTo(*start)
             # REQ-001:按下表对称登记/核销(任意 button;安全网覆盖一切物理按下)
             self._mouse.press(button)
@@ -1145,8 +1145,7 @@ class Executor:
             finally:
                 pyautogui.mouseUp(button=button)
                 self._mouse.release(button)
-        except pyautogui.FailSafeException as e:
-            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+        _failsafe_guard(_do_drag)
         return {"status": "ok"}
 
     def _scroll(self, direction: str, amount: int, hwnd: int) -> dict:
@@ -1168,13 +1167,12 @@ class Executor:
         parts = [_pyauto_key_alias.get(p, p) for p in norm.split("+")]
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
-        try:
+        def _send():
             if len(parts) == 1:
                 pyautogui.press(parts[0])
             else:
                 pyautogui.hotkey(*parts)
-        except pyautogui.FailSafeException as e:
-            raise ExecutorError(EMERGENCY_STOP, f"pyautogui FAILSAFE 触发: {e}") from e
+        _failsafe_guard(_send)                  # ISS-0056:收敛单点
         return {"status": "ok", "key": norm}
 
     def _type_text(self, text: str, hwnd: int) -> dict:

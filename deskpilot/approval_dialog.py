@@ -17,7 +17,9 @@ import tkinter as tk
 from pathlib import Path
 
 _WIDTH, _HEIGHT = 480, 216
-_TASKBAR = 48         # 任务栏预留（缺省主屏合成用）
+# ISS-0057:避让边距单源(monitors.TASKBAR_RESERVE);语义=宁可多留,
+# 与物理任务栏高度脱钩(物理高度由 monitors 真查)
+from .monitors import TASKBAR_RESERVE as _TASKBAR
 _SLIDE_STEPS = 10     # 滑入动画步数
 _SLIDE_MS = 12        # 每步毫秒
 
