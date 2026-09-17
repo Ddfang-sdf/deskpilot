@@ -296,8 +296,17 @@ class Executor:
         return {"items": items, "count": len(items)}
 
     def move(self, x: int, y: int) -> dict:
-        """移动鼠标（L1，无写入）。"""
-        pyautogui.moveTo(x, y)
+        """移动鼠标（L1，无写入）。
+
+        ISS-0052：FAILSAFE 收敛（与 execute :148 同族）——光标压角时
+        moveTo 抛 FailSafeException;不收敛则沿 L1 直调链裸逃成 500
+        （_run_sensing 只接 ExecutorError）。
+        """
+        try:
+            pyautogui.moveTo(x, y)
+        except pyautogui.FailSafeException as e:
+            raise ExecutorError(EMERGENCY_STOP,
+                                f"pyautogui FAILSAFE 触发: {e}") from e
         return {"status": "ok"}
 
     def ocr(self, source) -> dict:

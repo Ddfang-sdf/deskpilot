@@ -374,5 +374,12 @@ def remote_call(tool: str, raw: dict[str, Any], base_url: str,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # ISS-0052:HTTP 错误态的结构化错误体原样送达(AI-first:错误码/
+        # 消息不丢,AI 可据码自愈);体不可解析才显式报错
+        try:
+            return json.loads(e.read().decode("utf-8"))
+        except Exception:
+            raise RuntimeError(f"常驻服务返回 HTTP {e.code}: {e}") from e
     except OSError as e:
         raise RuntimeError(f"无法连接常驻服务 {base_url}: {e}") from e
