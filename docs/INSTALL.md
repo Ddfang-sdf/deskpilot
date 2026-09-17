@@ -27,7 +27,7 @@
 C:\tools\deskpilot\
 ├── deskpilot.exe
 ├── policy.yml             ← 出厂安全策略（升级时会被新版覆盖）
-└── policy.local.yml       ← 你的数据：永久入白记录（首次运行自动生成，升级保留）
+└── policy.local.yml       ← 你的数据：永久入白记录（首次永久入白时才创建，纯使用不产生；升级保留）
 ```
 
 > ⚠️ **`policy.yml` 必须和 `deskpilot.exe` 在同一个文件夹。** exe 启动时从同目录加载安全策略；缺失时启动直接报错（fail-closed），不会静默用默认策略跑。

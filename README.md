@@ -77,7 +77,7 @@ AI 想操作白名单之外的新软件？它会先弹**入白审批**——拒�
 
 **第一步：下载。** 下载 [最新 Release](https://github.com/Ddfang-sdf/deskpilot/releases/latest) 的 `deskpilot-vX.Y.Z-windows-x64.zip`（附 `.sha256` 校验值），解压到固定目录，例如 `C:\tools\deskpilot\`。
 
-> ⚠️ 解压后**保持 `policy.yml` 和 `deskpilot.exe` 在同一个文件夹**，不要分开。（`policy.local.yml` 是首次运行自动生成的用户数据文件，里面保存你的永久入白记录，升级不会丢。）
+> ⚠️ 解压后**保持 `policy.yml` 和 `deskpilot.exe` 在同一个文件夹**，不要分开。（`policy.local.yml` 是你的永久入白记录文件：**首次点「永久加入」时才会自动创建**，纯使用不会产生它——首次运行后没看到这个文件是正常的，不是安装失败；升级不会丢。）
 
 **第二步：接入你的 AI 客户端。**
 
