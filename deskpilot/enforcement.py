@@ -85,6 +85,29 @@ def _truncate_show(text: str, limit: int) -> str:
     return f"{t[:limit]}…(共 {len(t)} 字)"
 
 
+def _truncate_path_mid(path: str, limit: int = 80) -> str:
+    """ISS-0073 T1：超长 exe 路径中段省略——保盘符前缀与文件名结尾,
+    中段以 … 省略,磁盘位置可辨（弹窗单行容量 80;单据 §3 B 硬要求:
+    不得只留尾段致磁盘位置不可辨）。"""
+    if len(path) <= limit:
+        return path
+    return f"{path[:3]}…{path[-(limit - 4):]}"
+
+
+def _show_window_adaptive(hwnd: int) -> bool:
+    """ISS-0041 语义的状态自适应显示（ISS-0073 E″:取证兜底分支归位,
+    不再硬编码 SW_RESTORE）：最小化→还原;最大化→保持最大化;
+    其余→普通显示。返回 True=已发出显示命令。"""
+    u32 = ctypes.windll.user32
+    if u32.IsIconic(hwnd):
+        u32.ShowWindow(hwnd, 9)              # SW_RESTORE
+    elif u32.IsZoomed(hwnd):
+        u32.ShowWindow(hwnd, 3)              # SW_SHOWMAXIMIZED（保持最大化）
+    else:
+        u32.ShowWindow(hwnd, 5)              # SW_SHOW
+    return True
+
+
 class Enforcement:
     """四道闸裁决器。"""
 
@@ -161,9 +184,12 @@ class Enforcement:
         if cap is None and proc:
             # 审批入白：人类三态裁决（本次允许=会话 / 永久加入=落盘 / 拒绝）
             fp = compute_fingerprint(tool, self._fingerprint_params(request))
+            # ISS-0073：先取证(产生本次来源标注)再生成描述——原次序颠倒
+            # (先描述后取证),描述读到的是上一次审批的残留标注
+            image_path = self._capture_target(binding, request)
             desc = self._describe_enroll(request, binding, proc)
             decision = self._approvals.request_enroll(
-                proc, desc, fp, image_path=self._capture_target(binding, request),
+                proc, desc, fp, image_path=image_path,
                 target_rect=binding.window_rect if binding else None)
             if decision == "approve_always":
                 self._admin.add_permanent(proc, L2)
@@ -348,38 +374,57 @@ class Enforcement:
 
     def _capture_target(self, binding: BindingRecord | None,
                         request: OperationRequest | None = None) -> str | None:
-        """闸四配套：实拍目标窗口供审批弹窗展示。
+        """闸四/闸二配套：实拍目标窗口供审批弹窗展示。
 
         ISS-0020 C：无绑定时按请求目标进程反查窗口实拍;反查不到不给图
         （底注明示,fail-closed——全屏退化会截到无关窗口,实盘误判）。
         ISS-0020 D：取图失败写审计事件"审批取图失败"（不再静默）；
         失败不阻断审批流。
+        ISS-0073 D′/Q3：隐藏窗不取证、不还原、不置前（人类看不到的窗口
+        不进人类裁决面——原「还原隐藏窗再拍」分支删除）；可见性以
+        IsWindowVisible 实测为准（枚举层 visible 字段恒真=既有缺陷 T2
+        待查，取证链不再采信该字段）；窗口级明细只入审计、不进弹窗
+        （§2.1b 审计面与裁决面分离）。
         """
         self._capture_note = ""
         try:
             if binding is not None:
                 return self._executor.capture_approval_shot(binding.window_rect)
-            # 无绑定:按请求目标进程反查窗口(含隐藏窗;可见在屏优先,
-            # 否则还原隐藏窗;前置+无遮挡校验通过才拍)
+            # 无绑定:按请求目标进程反查窗口(含隐藏枚举;可见性实测过滤;
+            # 前置+五点可辨认度采样通过才拍)
             proc = str(request.params.get("process", "")) if request else ""
             if proc:
                 all_cands = self._executor.find_windows(
                     process=proc, include_hidden=True)
                 onscreen = [w for w in all_cands
-                            if w.get("visible", True)
+                            if self._is_visible_hwnd(w.get("hwnd"))
                             and (w["rect"][2] - w["rect"][0]) > 50
                             and (w["rect"][3] - w["rect"][1]) > 50
                             and w["rect"][2] > 0 and w["rect"][3] > 0]
+                if all_cands:
+                    # ISS-0073 §2.1b：窗口级明细(含隐藏窗)入审计供事后回溯
+                    try:
+                        detail = "; ".join(
+                            f"hwnd={w.get('hwnd')} "
+                            f"可见={self._is_visible_hwnd(w.get('hwnd'))} "
+                            f"标题={str(w.get('title', ''))[:30]}"
+                            for w in all_cands[:10])
+                        self._audit.record_event("入白取证窗口明细",
+                                                 f"proc={proc}: {detail}")
+                    except Exception:
+                        pass
                 if onscreen:
-                    self._capture_note = f"（实拍来源：目标进程 {proc}）"
+                    self._capture_note = (f"（实拍来源：目标软件 {proc} 的"
+                                          f"可见窗口）")
                     return self._shot_verified(onscreen[0])
                 if all_cands:
-                    # ISS-0020 补:目标隐藏到托盘/最小化时先还原再拍
-                    ctypes.windll.user32.ShowWindow(all_cands[0]["hwnd"], 9)
-                    self._capture_note = f"（实拍来源：目标进程 {proc}，已还原窗口）"
-                    return self._shot_verified(all_cands[0])
+                    # D′：无可见窗如实陈述——不把隐藏窗拽出来拍照求背书
+                    self._capture_note = ("（该软件当前无可见窗口，未截图；"
+                                          "本次无实拍，请谨慎裁决）")
+                    return None
             # 反查不到:不给错图,明示(禁止全屏退化静默误导)
-            self._capture_note = "（未找到目标窗口，未截图）"
+            self._capture_note = ("（未找到目标软件的窗口，未截图；"
+                                  "本次无实拍，请谨慎裁决）")
             return None
         except Exception as e:
             try:
@@ -389,32 +434,77 @@ class Enforcement:
             return None
 
     def _shot_verified(self, cand: dict) -> str | None:
-        """审批实拍（用户钦定四步）:前置→验证最前→验证无遮挡→才截图。
+        """审批实拍（ISS-0073 Q1/Q2/E′/E″ 重写）：
+        置前（状态自适应,返回值必读） → 五点可辨认度采样 → 才截图。
 
-        任何一步失败:返回 None 并在底注明示(不给错图,fail-closed)。
+        - Q1：四角（内缩 max(4,边长/8)）+ 中心五点采样,归属自身过半(≥3)
+          即出图;不论通过与否底注如实标注命中数（A′ 挂账:五点采样是
+          「可辨认度」的廉价代理,非真实可见面积测量）;
+        - E′：_activate_if_needed 返回值必须消费——「置前失败」与「置前
+          成功但被遮挡」如实区分(原实现丢弃返回值=消费者撕毁生产者
+          fail-closed 契约,伪告警「目标无法前置」的一半根源);
+        - E″：executor 缺激活方法的兜底归位 ISS-0041 状态自适应
+          (_show_window_adaptive),不再硬编码 SW_RESTORE;
+        - Q2：置前不恢复(定案),置前/遮挡状态如实入底注;
+        - fail-closed 不动:采样不过半仍不给图(宁可无图,不给错图)。
         """
         hwnd = cand["hwnd"]
         rect = tuple(cand["rect"])
+        activated = False
+        hits = 0
         for _attempt in range(2):
             activate = getattr(self._executor, "_activate_if_needed", None)
             if callable(activate):
-                activate(hwnd)
+                ok = bool(activate(hwnd))            # E′：返回值必读
             else:
-                ctypes.windll.user32.ShowWindow(hwnd, 9)
-            # 验证无遮挡:中心点顶层==目标或其子窗口
-            if self._center_belongs(rect, hwnd):
-                self._capture_note += "（已前置实拍）"
+                ok = _show_window_adaptive(hwnd)     # E″：状态自适应兜底
+            activated = activated or ok
+            hits = self._visibility_hits(rect, hwnd)
+            if hits >= 3:                            # 五点过半=基本可辨认
+                note = ("已置前取证" if activated
+                        else "未能置前，就当前画面取证")
+                self._capture_note += f"（{note}，可见性采样 {hits}/5）"
                 return self._executor.capture_approval_shot(rect)
-        # 两次仍无法到顶层:不给错图,明示
-        self._capture_note += "（实拍存疑：目标无法前置，未截图）"
+        # 两次仍不过:如实区分置前失败与遮挡,不给错图(fail-closed)
+        if not activated:
+            self._capture_note += (f"（未能置前目标软件窗口，可见性采样 "
+                                   f"{hits}/5，未截图；本次无实拍，请谨慎裁决）")
+        else:
+            self._capture_note += (f"（目标软件窗口被遮挡，可见性采样 "
+                                   f"{hits}/5 未达过半，未截图；"
+                                   f"本次无实拍，请谨慎裁决）")
         return None
 
-    def _center_belongs(self, rect: tuple, hwnd: int) -> bool:
+    def _visibility_hits(self, rect: tuple, hwnd: int) -> int:
+        """五点采样可辨认度（ISS-0073 Q1）：四角（内缩）+中心,
+        归属自身(或其子窗口)计数,0~5 直出。"""
+        l, t, r, b = rect
+        ix = max(4, (r - l) // 8)
+        iy = max(4, (b - t) // 8)
+        pts = [((l + r) // 2, (t + b) // 2),
+               (l + ix, t + iy), (r - ix, t + iy),
+               (l + ix, b - iy), (r - ix, b - iy)]
+        return sum(1 for x, y in pts if self._point_belongs(x, y, hwnd))
+
+    def _point_belongs(self, x: int, y: int, hwnd: int) -> bool:
         from ctypes import wintypes
-        pt = wintypes.POINT((rect[0] + rect[2]) // 2,
-                            (rect[1] + rect[3]) // 2)
+        pt = wintypes.POINT(x, y)
         top = ctypes.windll.user32.WindowFromPoint(pt)
         return top == hwnd or bool(ctypes.windll.user32.IsChild(hwnd, top))
+
+    def _center_belongs(self, rect: tuple, hwnd: int) -> bool:
+        """中心点归属（单点判据保留，五点采样内部复用——单据交叉面约定）。"""
+        return self._point_belongs((rect[0] + rect[2]) // 2,
+                                   (rect[1] + rect[3]) // 2, hwnd)
+
+    @staticmethod
+    def _is_visible_hwnd(hwnd: int) -> bool:
+        """窗口可见性实测（ISS-0073 D′：枚举层 visible 字段恒真不可采信,
+        取证链直接问系统;读不出按不可见,fail-closed）。"""
+        try:
+            return bool(ctypes.windll.user32.IsWindowVisible(hwnd))
+        except Exception:
+            return False
 
     def _describe(self, request: OperationRequest,
                   binding: BindingRecord | None) -> str:
@@ -481,32 +571,33 @@ class Enforcement:
 
     def _describe_enroll(self, request: OperationRequest,
                          binding: BindingRecord | None, proc: str) -> str:
-        """入白审批描述（ISS-0012 A+F）：主标题显示名，底注进程名+三态含义。
-
-        F 补丁：显示名三级解析——attach 用窗口实况标题、launch 读版本信息
-        FileDescription、全失败回退进程名（"我都不知道这是个啥软件"教训）。
+        """入白审批描述（ISS-0012 A+F;ISS-0073 Q4/B/G 重写）：
+        主标题显示名按证据强度序（版本信息→窗口标题→进程名）；
+        底注=进程名+显示名来源+自报诚实标注+exe 程序路径（软件级定位
+        底牌;窗口级标识不进人类裁决面,§2.1b）+三态含义。
         """
-        from .appnames import app_display_name
+        from .appnames import _resolve_exe, resolve_display_name
         title = self._live_title(binding) if binding is not None else ""
         if not title and request is not None:
-            # ISS-0020 补:入白无绑定时,用反查窗口的标题做显示名
-            # (西柚「西柚加速器」标题就在眼前却曾显示 seeyou.exe)
+            # ISS-0020 补:入白无绑定时,反查窗口标题作辅助识别线索
+            # （ISS-0073 Q4:标题降为辅助线索保留,不再作为首要依据）
             proc0 = str(request.params.get("process", ""))
             if proc0:
                 cands = self._executor.find_windows(process=proc0,
                                                     include_hidden=True)
                 if cands and cands[0].get("title"):
                     title = cands[0]["title"]
-        display = app_display_name(proc, title)
-        if title:
-            src = "窗口标题"
-        elif display != proc:
-            src = "版本信息"
-        else:
-            src = "进程名"
+        display, src = resolve_display_name(proc, title)
+        exe = _resolve_exe(proc)
+        # T1:exe 全路径给人看(文件系统锚定,目标改不了);超长中段省略
+        exe_txt = _truncate_path_mid(exe) if exe else "未取得"
+        aux = (f"；窗口标题「{title}」供辅助识别"
+               if title and title != display else "")
         headline = f"AI 请求操作新应用「{display}」"
-        tech = (f"进程 {proc}（显示名来源：{src}）当前未经本地授权"
+        tech = (f"进程 {proc}（显示名来源：{src}——由目标软件自报，"
+                f"未经系统核验{aux}）当前未经本地授权"
                 f"（请求动作 {request.tool}）。"
+                f"程序路径：{exe_txt}。"
                 f"本次会话允许 = 重启前有效（会话级，不落盘）；"
                 f"永久加入 = 写入白名单长期有效，可随时在白名单管理中移出")
         note = getattr(self, "_capture_note", "")

@@ -1,13 +1,16 @@
-"""应用显示名解析（ISS-0012 整改项 F / F2 本地化 / F3 不自维护国际化）。
+"""应用显示名解析（ISS-0012 整改项 F / F2 本地化 / F3 不自维护国际化 /
+ISS-0073 Q4 证据强度重排）。
 
-app_display_name：进程 → 用户可读显示名（纯函数），解析序：
-① window_title 非空原样返回（attach 路径，最贴近实况）；
-② 用户界面语言的 MUI 资源描述（如 zh-CN\\notepad.exe.mui 的"记事本"）；
-③ UWP 包资源显示名（注册表包仓库 → AppxManifest.xml 按 Executable 匹配 →
-   ms-resource 经 SHLoadIndirectString 按界面语言解析，与窗口标题同源）；
-④ exe 版本信息 FileDescription（多为英文基名，如 "Windows Calculator"）；
+resolve_display_name：进程 → (显示名, 来源标签)，解析序（ISS-0073 Q4
+定案③，证据强度序）：
+① exe 版本信息 FileDescription（编译期写入、运行期不可改）；
+② 用户界面语言的 MUI 资源描述（同档安装期数据的本地化形态）；
+③ UWP 包资源显示名（注册表包仓库 → AppxManifest.xml → ms-resource
+   经 SHLoadIndirectString 按界面语言解析）；
+④ 窗口标题（目标运行期可任意设置——降为后备，审批描述里作辅助线索）；
 ⑤ 全部失败返回进程名本身（文案 fail-closed，不失信息）。
-中文（②③）与英文基名（④）皆有且不同 → 中英并列「计算器（Windows Calculator）」。
+app_display_name = resolve_display_name 的名字部分（兼容包装）。
+ISS-0073 Q4 起「中英并列」形态退役（宁可措辞生涩，不可证据虚假）。
 显示名全部来自 OS/厂商数据，本模块不自维护任何翻译（F3，sdfang 批示）。
 ctypes GetFileVersionInfoW / SHLoadIndirectString，零第三方依赖。
 """
@@ -32,20 +35,38 @@ _APPX_CACHE: dict[str, str | None] = {}
 
 
 def app_display_name(process: str, window_title: str = "") -> str:
-    """ISS-0012 §6：进程 → 用户可读显示名（纯函数；本地化优先，中英并列）。"""
-    if window_title:
-        return window_title
+    """ISS-0012 §6：进程 → 用户可读显示名（纯函数）。
+
+    ISS-0073 Q4 定案③：解析序重排为证据强度序（详见
+    resolve_display_name）；中英并列形态随之退役（宁可措辞生涩，
+    不可证据虚假——sdfang 定案,代价已确认接受）。
+    """
+    return resolve_display_name(process, window_title)[0]
+
+
+def resolve_display_name(process: str, window_title: str = "") -> tuple[str, str]:
+    """ISS-0073 Q4:进程 → (显示名, 来源标签),按证据强度排序。
+
+    FileDescription（exe 版本信息,编译期写入、运行期不可改) →
+    MUI 本地化版本资源/AppX 包清单（安装期数据,同属版本信息档) →
+    窗口标题（目标运行期可任意设置,降为后备) → 进程名兜底。
+    来源标签 ∈ {版本信息, 窗口标题, 进程名}。
+    """
     proc = str(process).strip()
     if not proc:
-        return str(process)
+        return str(process), "进程名"
     path = _resolve_exe(proc)
     eng = _file_string(path, "FileDescription") if path else None
+    if eng:
+        return eng, "版本信息"
     local = (_mui_description(path) if path else None) \
         or _name_from_startapps(proc, eng) \
         or _appx_display_name(proc, eng)
-    if local and eng and local.lower() != eng.lower():
-        return f"{local}（{eng}）"
-    return local or eng or proc
+    if local:
+        return local, "版本信息"
+    if window_title:
+        return window_title, "窗口标题"
+    return proc, "进程名"
 
 
 def app_description(process: str) -> str:

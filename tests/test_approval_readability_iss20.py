@@ -64,13 +64,17 @@ class TestCaptureReverseLookup:
 
     def test_read06_reverse_lookup_returns_shot(self, enforcement, executor,
                                                 monkeypatch):
-        """TC-READ-06:反查命中可见窗 → 先前置后截图(顺序直出),返回实拍路径。"""
+        """TC-READ-06:反查命中可见窗 → 先置前后截图(顺序直出),返回实拍路径。
+        ISS-0073 适配:可见性改 IsWindowVisible 实测,假 hwnd 须打缝
+        (单元层读数原语;真实可见性由 test_enrollshot_iss73 集成层覆盖)。"""
         import deskpilot.enforcement as enf_mod
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "x.exe", "rect": (0, 0, 100, 100),
                                   "visible": True}]
+        monkeypatch.setattr(enforcement, "_is_visible_hwnd",
+                            lambda hwnd: True)            # 假 hwnd 可见性缝
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
-                            lambda pt: 424242)            # 中心点顶层=目标
+                            lambda pt: 424242)            # 采样点顶层=目标
         orig_shot = executor.capture_approval_shot
 
         def shot(rect):
@@ -82,37 +86,47 @@ class TestCaptureReverseLookup:
             None, OperationRequest("attach", {"process": "x.exe"}, None))
         assert p == executor.approval_shot_path
         assert executor.approval_shot_rects == [(0, 0, 100, 100)]
-        assert "已前置实拍" in enforcement._capture_note
+        # ISS-0073 E(设计授权契约变更):报账措辞「已前置实拍」→「已置前取证」
+        # +五点采样命中数标注(Q1③);前置先于截图的顺序断言不变(上行)
+        assert "已置前取证" in enforcement._capture_note
+        assert "可见性采样 5/5" in enforcement._capture_note
 
     def test_read06b_hidden_window_restored_then_shot(self, enforcement,
                                                       executor, monkeypatch):
-        """TC-READ-06b:候选隐藏时先 SW_RESTORE 还原,再前置+校验+拍。"""
+        """TC-READ-06b(ISS-0073 D′ 反转重写):隐藏窗候选**不再还原**——
+        人类看不到的窗不进人类裁决面(Q3 定案,原「还原再拍」行为被显式
+        撤销);如实陈述「无可见窗口」+不给图。本用例由「还原+前置+拍」
+        反转为「不还原/不前置/不拍」,钉死 D′ 防复活。"""
         import deskpilot.enforcement as enf_mod
         calls = []
+        monkeypatch.setattr(enforcement, "_is_visible_hwnd",
+                            lambda hwnd: False)           # 隐藏前提(假 hwnd 缝)
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "ShowWindow",
                             lambda h, s: calls.append((h, s)))
-        monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
-                            lambda pt: 424242)
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "x.exe",
                                   "rect": (10, 10, 200, 200),
                                   "visible": False}]
         p = enforcement._capture_target(
             None, OperationRequest("attach", {"process": "x.exe"}, None))
-        assert calls == [(424242, 9)]                     # 还原(直出)
-        assert executor.activate_calls == [424242]        # 前置(直出)
-        assert p == executor.approval_shot_path           # 拍到目标而非全屏
-        assert "已还原窗口" in enforcement._capture_note
-        assert "已前置实拍" in enforcement._capture_note
+        assert calls == []                                # 零还原(直出)
+        assert executor.activate_calls == []              # 零前置(直出)
+        assert executor.approval_shot_rects == []         # 零取图(直出)
+        assert p is None                                  # 不给图(直出)
+        assert "无可见窗口" in enforcement._capture_note  # 如实陈述(直出)
 
     def test_read06c_never_foreground_no_image(self, enforcement,
                                                executor, monkeypatch):
-        """TC-READ-06c:两次前置后中心点仍为他人 → 不截图,返回 None+存疑。"""
+        """TC-READ-06c:两次后置前采样归属全败 → 不截图,返回 None+如实
+        遮挡陈述。ISS-0073 C/Q1(设计授权契约变更):伪归因「目标无法前置」
+        族措辞退役,改「被遮挡+采样命中数+本次无实拍」如实陈述。"""
         import deskpilot.enforcement as enf_mod
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "x.exe",
                                   "rect": (10, 10, 210, 210),
                                   "visible": True}]
+        monkeypatch.setattr(enforcement, "_is_visible_hwnd",
+                            lambda hwnd: True)            # 假 hwnd 可见性缝
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
                             lambda pt: 999999)            # 恒为他人
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "IsChild",
@@ -122,16 +136,18 @@ class TestCaptureReverseLookup:
         assert executor.activate_calls == [424242, 424242]  # 重试一次(直出)
         assert executor.approval_shot_rects == []         # 从未截图(直出)
         assert p is None                                  # 不给错图(直出)
-        assert "存疑" in enforcement._capture_note        # 不静默(直出)
+        assert "遮挡" in enforcement._capture_note        # 如实遮挡态(直出)
+        assert "本次无实拍" in enforcement._capture_note  # 显著明示(直出)
 
     def test_read06d_no_candidate_no_fullscreen(self, enforcement, executor):
-        """TC-READ-06d:反查不到窗口 → None+明示,禁止全屏退化误导。"""
+        """TC-READ-06d:反查不到窗口 → None+明示,禁止全屏退化误导。
+        ISS-0073 C′(设计授权):措辞主体归位软件(「目标窗口」→「目标软件」)。"""
         executor.live_windows = []                        # 进程无窗口
         p = enforcement._capture_target(
             None, OperationRequest("attach", {"process": "x.exe"}, None))
         assert p is None
         assert executor.approval_shot_rects == []         # 无全屏退化(直出)
-        assert "未找到目标窗口" in enforcement._capture_note
+        assert "未找到目标软件" in enforcement._capture_note
 
     def test_read07_capture_failure_audited(self, enforcement, executor,
                                             audit_log, tmp_path):

@@ -173,8 +173,11 @@ class TestEnrollAtGate2:
         executor.live_windows = [{"hwnd": 424242, "title": "目标",
                                   "process": "excel.exe",
                                   "rect": (0, 0, 100, 100), "visible": True}]
+        # ISS-0073 适配:可见性改 IsWindowVisible 实测,假 hwnd 须打缝
+        # (单元层读数原语;真实可见性由 test_enrollshot_iss73 集成层覆盖)
+        monkeypatch.setattr(enf, "_is_visible_hwnd", lambda hwnd: True)
         monkeypatch.setattr(enf_mod.ctypes.windll.user32, "WindowFromPoint",
-                            lambda pt: 424242)            # 中心点顶层=目标
+                            lambda pt: 424242)            # 采样点顶层=目标
         approver.decision = "approve"
         d = enf.submit(OperationRequest("attach", {"process": "excel.exe"}, None))
         assert d.allowed is True
