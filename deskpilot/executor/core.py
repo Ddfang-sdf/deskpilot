@@ -33,7 +33,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..errors import (DETECTOR_UNAVAILABLE, ELEMENT_AMBIGUOUS, ELEMENT_DISABLED,
-                      ELEMENT_NOT_FOUND, ELEMENT_UNSUPPORTED, EMERGENCY_STOP,
+                      ELEMENT_NOT_FOUND, ELEMENT_RECT_DEGENERATE,
+                      ELEMENT_UNSUPPORTED, EMERGENCY_STOP,
                       INTERNAL_ERROR, INVALID_PARAMS, OCR_AMBIGUOUS,
                       OCR_TEXT_NOT_FOUND, OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE,
                       WINDOW_OCCLUDED, ExecutorError, InvalidParamsError)
@@ -648,18 +649,25 @@ class Executor:
         local.inited = True
 
     def _find_elements(self, root, *, name=None, automation_id=None,
-                       control_type=None) -> list:
+                       control_type=None, visible_only=False) -> list:
         """按名称/自动化标识/控件类型在绑定窗口树内查找（§14.7 定位条件）。
 
         ISS-0044 G-01:control_type 子串+大小写不敏感过滤;与 name 同传时
         取交集(名称子串∧类型子串)。
         WinUI 树存在幽灵重复（同名同型同矩形可见/离屏两份）——按
         名称+自动化标识+矩形三元组去重，视为同一元素。
+        ISS-0091 整改③:visible_only=True 仅点击路径传入，过滤
+        IsOffscreen=True 候选（不可见元素点击=盲射，常见于折叠菜单/
+        隐藏标签页）。注意**不过滤退化矩形元素**——Invoke-first 对折叠
+        控件仍有效，过滤=过修回归（单据 v0.2 裁定 Option A）；退化防护
+        由 _invoke_element 守卫在像素兜底时刻（唯一动鼠标处）fail-closed。
         """
         matches = []
         seen: set[tuple] = set()
         needle_type = control_type.strip().casefold() if control_type else None
         for s in self._iter_summaries(root):           # ISS-0008 P4：摘要复用
+            if visible_only and s.get("offscreen"):
+                continue
             if control_type is not None and name is not None:
                 hit = (needle_type in s["control_type"].casefold()
                        and name in s["name"])
@@ -683,13 +691,24 @@ class Executor:
             matches.append(s["control"])
         return matches
 
-    def _resolve_unique_element(self, root, *, name=None, automation_id=None):
-        """唯一性解析：不存在 / 多匹配 / 禁用逐级显式报错（§14.7 流程）。"""
-        matches = self._find_elements(root, name=name, automation_id=automation_id)
+    def _resolve_unique_element(self, root, *, name=None, automation_id=None,
+                                visible_only=False):
+        """唯一性解析：不存在 / 多匹配 / 禁用逐级显式报错（§14.7 流程）。
+
+        ISS-0091 整改③:visible_only 仅点击路径传 True；无匹配时经
+        _hidden_hint 区分「元素消失」vs「元素不可见」，AI 可据码自愈。
+        """
+        matches = self._find_elements(root, name=name,
+                                      automation_id=automation_id,
+                                      visible_only=visible_only)
         if not matches:
+            hint = (self._hidden_hint(root, name=name,
+                                      automation_id=automation_id)
+                    if visible_only else "")
             raise ExecutorError(
                 ELEMENT_NOT_FOUND,
                 f"元素不存在（条件 name={name!r}, automation_id={automation_id!r}）。"
+                f"{hint}"
                 f"候选元素: {self._candidate_names(root)}")
         if len(matches) > 1:
             raise ExecutorError(
@@ -701,6 +720,21 @@ class Executor:
             raise ExecutorError(ELEMENT_DISABLED,
                                 f"元素 {element.Name or automation_id} 处于禁用态")
         return element
+
+    def _hidden_hint(self, root, *, name=None, automation_id=None,
+                     control_type=None) -> str:
+        """ISS-0091 整改③（AI 友好）:visible_only 无匹配时重跑不过滤查询。
+
+        命中=元素存在但 IsOffscreen=True——为 NOT_FOUND 消息追加自愈指引，
+        免得 AI 在「元素消失」vs「元素不可见」之间瞎猜（两者处置不同）。
+        """
+        if not self._find_elements(root, name=name, automation_id=automation_id,
+                                   control_type=control_type):
+            return ""
+        return ("提示: 该元素存在但当前不可见（IsOffscreen=True，常见于折叠"
+                "菜单/未展开面板/隐藏标签页），点击路径已拒绝以防误点。"
+                "下一步: 先展开其所属容器后重新取树，或改用键盘路径"
+                "（key/type_text），或 get_ui_tree 确认可见性。")
 
     def _candidate_names(self, root) -> str:
         names: list[str] = []
@@ -761,7 +795,8 @@ class Executor:
                 root = self._element_root(hwnd)
                 element = self._resolve_unique_element(
                     root, name=entry["name"] or None,
-                    automation_id=entry["automation_id"] or None)
+                    automation_id=entry["automation_id"] or None,
+                    visible_only=True)       # ISS-0091 整改③:点击路径
             else:
                 # REQ-003 §5.3:som 表未命中 → 查 detect 编号表(诊断分支)。
                 # **零点击保证**:本分支在 _element_root/_resolve_unique_element
@@ -783,25 +818,32 @@ class Executor:
             root = self._element_root(hwnd)
             element = self._resolve_typed_element(
                 root, control_type=control_type, name=params.get("name"),
-                index=params.get("index"))
+                index=params.get("index"),
+                visible_only=True)           # ISS-0091 整改③:点击路径
         else:
             root = self._element_root(hwnd)
             element = self._resolve_unique_element(
                 root, name=params.get("name"),
-                automation_id=params.get("automation_id"))
+                automation_id=params.get("automation_id"),
+                visible_only=True)           # ISS-0091 整改③:点击路径
         self._invoke_element(element, hwnd)
         return {"status": "ok", "element": self._element_summary(element)}
 
     def _resolve_typed_element(self, root, *, control_type, name=None,
-                               index=None):
+                               index=None, visible_only=False):
         """ISS-0044 G-01:类型+序号寻址——类型过滤(可与 name 交集)后按序取。"""
         matches = self._find_elements(root, name=name,
-                                      control_type=control_type)
+                                      control_type=control_type,
+                                      visible_only=visible_only)
         if not matches:
+            hint = (self._hidden_hint(root, name=name,
+                                      control_type=control_type)
+                    if visible_only else "")
             raise ExecutorError(
                 ELEMENT_NOT_FOUND,
                 f"元素不存在（类型 {control_type!r}"
                 f"{f', 名称 {name!r}' if name else ''}）。"
+                f"{hint}"
                 f"候选元素: {self._candidate_names(root)}")
         i = index if index is not None else 0
         if isinstance(i, bool) or not isinstance(i, int) or i < 0:
@@ -815,7 +857,16 @@ class Executor:
 
     def _invoke_element(self, element, hwnd: int | None = None) -> None:
         """元素激活：Invoke 优先，SelectionItem 选择模式次之，像素点击兜底。
-        像素兜底前必须成功前置绑定窗口（fail-closed 防误射）。"""
+
+        ISS-0091 整改①②:兜底路径 fail-closed 强化——
+        ①退化矩形守卫:宽/高≤0 时中心计算退化为屏幕原点 (0,0)，恰为甩角
+          判定点（estop.py corner_hold），真实点击可诱发误冻结；守卫必须
+          在 _check_point **之前**——否则 (0,0) 先吃 OUT_OF_BOUNDS，错误码
+          失真（AI 无法据码自愈）；
+        ②校验链接入:镜像 _click 的 ISS-0017 C 次序——check_point →
+          激活 → check_occlusion；旧实现兜底零校验，窗口移位/被遮挡时
+          照样误点。像素兜底前必须成功前置绑定窗口（防误射）。
+        """
         try:
             element.Invoke()
             return
@@ -830,9 +881,22 @@ class Executor:
         if rect is None:
             raise ExecutorError(INTERNAL_ERROR,
                                 "元素无 Invoke 与选择模式，且无矩形可定位，无法点击")
-        if hwnd is not None and not self._activate_if_needed(hwnd):
-            raise ExecutorError(WINDOW_GONE, "窗口无法前置，元素点击中止（防误射）")
-        self._pixel_click((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+        w, h = rect[2] - rect[0], rect[3] - rect[1]
+        if w <= 0 or h <= 0:
+            raise ExecutorError(
+                ELEMENT_RECT_DEGENERATE,
+                f"元素无 Invoke 与选择模式，且矩形退化（rect={tuple(rect)}，"
+                f"宽 {w}px × 高 {h}px ≤0），像素兜底无法计算可靠落点，"
+                f"已拒绝点击（防误点屏幕原点诱发冻结）。该元素可能是折叠/"
+                f"隐藏容器的占位符。下一步: 先展开其所属容器后重新取树，"
+                f"或改用键盘路径（key/type_text）")
+        x, y = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+        if hwnd is not None:
+            self._check_point(hwnd, x, y)
+            if not self._activate_if_needed(hwnd):
+                raise ExecutorError(WINDOW_GONE, "窗口无法前置，元素点击中止（防误射）")
+            self._check_occlusion(hwnd, x, y)
+        self._pixel_click(x, y)
 
     def _pixel_click(self, x: int, y: int) -> None:
         try:
@@ -1348,6 +1412,12 @@ class Executor:
             }
         except Exception:
             return
+        # ISS-0091 整改③:IsOffscreen 独立防御读取——该属性 COM 波动不
+        # 拖垮整条摘要；替身/旧驱动缺该属性时默认 False，既有行为零变化。
+        try:
+            summary["offscreen"] = bool(getattr(control, "IsOffscreen", False))
+        except Exception:
+            summary["offscreen"] = False
         yield summary
         try:
             children = control.GetChildren()

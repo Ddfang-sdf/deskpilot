@@ -129,7 +129,9 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台;最大化窗口保持最大化不被打回)。token=attach 返回令牌。窗口最大化/移动/缩放等几何变化后,既有截图与坐标即作废,请先重新感知再操作。",
         "required": {"token": ("str",)}, "optional": {}},
     "click_element": {
-        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定的 Windows 窗口内控件(UIA 优先,比像素稳);网页元素请用浏览器工具。先 get_ui_tree 找控件再点。无文字图形用 control_type=类型+index=第几个;som_id 与 control_type 互斥;som_id 只点 UIA 编号,detect 图形编号取其 rect 用 click。",
+        # ISS-0091 整改④:拒绝语义入描述(退化矩形/遮挡);受 ISS-0015 描述
+        # 长度闸门(≤200)约束,错误码全称由拒绝时的错误消息承载(附自愈指引)
+        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定的 Windows 窗口内控件(UIA 优先);网页元素请用浏览器工具。先 get_ui_tree 找控件。无文字图形用 control_type+index;som_id 只点 UIA 编号,与 control_type 互斥;detect 编号取 rect 用 click。拒绝零鼠标动作:不可见/退化矩形/遮挡→错误码+自愈指引。",
         "required": {"token": ("str",)},
         "optional": {"name": ("str",), "automation_id": ("str",), "som_id": ("int",),
                      "control_type": ("str",), "index": ("int",)},

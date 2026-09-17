@@ -409,6 +409,10 @@ class TestInvokeFallback:
         ex = self._executor(estop, tmp_path, clock, fake_probe)
         ex._element_source = lambda hwnd: FakeElement(children=[item])
         ex._pixel_click = lambda x, y: clicked.append((x, y))
+        # ISS-0091 整改②契约变更适配:兜底现走校验链(镜像 _click),
+        # _check_occlusion 为真实 ctypes 调用,单元层必须打桩;
+        # 「兜底确实调用遮挡校验」由 test_clickguard_iss91.py cg02 专测
+        ex._check_occlusion = lambda *a, **k: None
         r = ex.execute({"tool": "click_element", "params": {"name": "形状项"},
                         "binding_hwnd": FIXTURE_HWND})
         assert r["status"] == "ok"
