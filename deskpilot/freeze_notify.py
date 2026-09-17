@@ -1,12 +1,15 @@
-"""冻结通知 owner 侧（详细设计 §11.6，ISS-0004 / ISS-0006）。
+"""冻结通知 owner 侧（详细设计 §11.6，ISS-0004 / ISS-0006 / ISS-0092）。
 
 estop 持有进程（daemon / 本地直跑）装配本类：
-- on_state_change：seq 共享单调自增，随 estop 置位/复位原子重写状态文件；
+- on_state_change：seq 共享单调自增，随 estop 置位/复位原子重写状态文件
+  （ISS-0092 ②：经 _write_shared_state 有限重试，终败审计不上抛）；
   置位时拉起弹窗（不做存活猜测，单例由子进程命名互斥体兜底）；
 - check_reset_request：由甩角轮询线程 50ms tick 兼任调用，按 ISS-0006 §6
-  协议（先验后删）消费弹窗的"立即解冻"请求；
+  协议（先验后删；ISS-0092 ③：复位成功才删，失败保留下轮重试）消费弹窗的
+  "立即解冻"请求；
 - sync_local_with_shared_state：本地 frozen ∧ 共享 frozen=false 时本地复位
-  （解冻全局生效）。
+  （解冻全局生效）；ISS-0092 ④反向对账：本地未冻 ∧ 共享 frozen=true →
+  以本地内存态为权威修复共享 frozen=false（禁止反向灌回=绕过人类解冻通道）。
 """
 
 from __future__ import annotations
@@ -33,12 +36,13 @@ class FreezeNotifier:
 
     def __init__(self, audit_dir: str, clock=time.monotonic, spawn=None,
                  remind_interval: float = DEFAULT_FREEZE_REMIND_INTERVAL,
-                 dialog_service=None):
+                 dialog_service=None, audit=None):
         self._dir = Path(audit_dir)
         self._clock = clock
         self._spawn = spawn or self._default_spawn
         self._remind = remind_interval
         self._dialog_service = dialog_service   # ISS-0008 P6：线程弹窗（可选）
+        self._audit = audit          # ISS-0092 ⑤：写失败/对账修复审计（可选）
         self._seq = 0
         self._state_cache: dict | None = None    # ISS-0008 P7：读缓存（仅读时更新）
         self._state_mtime: float | None = None
@@ -56,13 +60,16 @@ class FreezeNotifier:
 
     def on_state_change(self, frozen: bool, source: str) -> None:
         """estop 状态变化回调：seq 共享单调自增，原子重写状态文件；
-        置位时拉起弹窗（owner 不做存活猜测，单例由子进程互斥兜底，ISS-0006）。"""
+        置位时拉起弹窗（owner 不做存活猜测，单例由子进程互斥兜底，ISS-0006）。
+
+        ISS-0092 ②：写回经 _write_shared_state 有限重试；终败只留审计
+        不上抛（调用线程不许死）；frozen 边沿弹窗照拉（fail-safe：
+        写失败不吞冻结通知，人类必须看得见冻结）。
+        """
         self._seq = self._read_shared_seq() + 1
         state = {"frozen": frozen, "seq": self._seq, "source": source,
                  "ts": datetime.now().astimezone().isoformat()}
-        tmp = self._dir / (STATE_FILE + ".tmp")
-        tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, self._dir / STATE_FILE)      # 原子重写，防读半截
+        self._write_shared_state(state)
         if frozen:
             self._spawn(str(self._dir))
 
@@ -70,7 +77,10 @@ class FreezeNotifier:
         """50ms tick：消费弹窗解冻请求（ISS-0006 §6 协议，先验后删）。
 
         设共享 seq 为 S、req 序号为 N：
-        N<S → 删除（陈旧清理）；N=S ∧ estop 已冻结 → 复位并删除；
+        N<S → 删除（陈旧清理）；N=S ∧ estop 已冻结 → 复位成功才删除
+        （ISS-0092 ③：先复位后删——复位失败 req 保留下轮重试，_reset
+        未冻结时 no-op 幂等，estop.py 复位语义；失败审计「解冻请求复位
+        失败」，异常不上抛：调用线程不许死）；
         N=S ∧ estop 未冻结 ∧ 共享 frozen=false → 删除（请求作废）；
         N=S ∧ estop 未冻结 ∧ 共享 frozen=true → 保留（留给冻结中的 owner）；
         N>S → 保留（异常时序，不得删除）。
@@ -90,8 +100,15 @@ class FreezeNotifier:
                 req.unlink(missing_ok=True)
             elif n == s:
                 if estop.is_frozen():
+                    try:
+                        estop.dialog_reset()
+                    except Exception as e:                    # noqa: BLE001
+                        if self._audit is not None:
+                            self._audit.record_event(
+                                "解冻请求复位失败",
+                                f"req={req.name}: {e!r}（保留待下轮重试）")
+                        continue
                     req.unlink(missing_ok=True)
-                    estop.dialog_reset()
                 elif not shared_frozen:
                     req.unlink(missing_ok=True)
                 # else: 共享仍冻结而本进程未冻结 → 保留给冻结中的 owner
@@ -99,15 +116,65 @@ class FreezeNotifier:
 
     def sync_local_with_shared_state(self, estop) -> bool:
         """解冻全局同步（ISS-0006 §6）：本地 frozen ∧ 共享 frozen=false
-        → 调 estop.shared_sync_reset() 并返回 True；否则 False。"""
+        → 调 estop.shared_sync_reset() 并返回 True。
+
+        ISS-0092 ④双向对账：本地未冻结 ∧ 共享 frozen=true → 以本地内存态
+        为权威（owner 协议单属主，ISS-0084）重写共享 frozen=false 并审计
+        「共享状态对账修复」，返回 True（写失败则 False 下轮再试）。
+        **禁止反向**：共享 true 灌回本地 = 绕过人类解冻通道（fail-closed
+        方向性，解冻仅人类通道：热键/CLI/弹窗）。
+        """
         shared = self._read_shared_state()
         if (estop.is_frozen() and shared is not None
                 and shared.get("frozen") is False):
             estop.shared_sync_reset()
             return True
+        if (not estop.is_frozen() and shared is not None
+                and shared.get("frozen") is True):
+            self._seq = int(shared.get("seq", 0)) + 1
+            state = {"frozen": False, "seq": self._seq,
+                     "source": "共享状态对账修复",
+                     "ts": datetime.now().astimezone().isoformat()}
+            if not self._write_shared_state(state):
+                return False
+            if self._audit is not None:
+                self._audit.record_event(
+                    "共享状态对账修复",
+                    f"本地未冻结而共享 frozen=true（原 seq="
+                    f"{shared.get('seq')},源={shared.get('source')}），"
+                    f"已重写 frozen=false seq={self._seq}")
+            return True
         return False
 
     # ---- 内部 ----
+
+    def _write_shared_state(self, state: dict) -> bool:
+        """共享状态原子重写（ISS-0092 ②）：os.replace 失败有限重试
+        （退避 0.05/0.15/0.45s），每轮先预清同名旧 tmp；终败审计
+        「共享状态写失败」+ 清孤儿 tmp，返回 False 不上抛——
+        写回失败不得杀死调用线程（实机事故：异常曾沿甩角线程致死）。
+        """
+        tmp = self._dir / (STATE_FILE + ".tmp")
+        payload = json.dumps(state, ensure_ascii=False)
+        last: OSError | None = None
+        for attempt, backoff in enumerate((0.05, 0.15, 0.45), start=1):
+            try:
+                tmp.unlink(missing_ok=True)      # 预清同名旧 tmp（孤儿残留）
+                tmp.write_text(payload, encoding="utf-8")
+                os.replace(tmp, self._dir / STATE_FILE)  # 原子重写，防读半截
+            except OSError as e:
+                last = e
+                time.sleep(backoff)
+                continue
+            self._state_mtime = None             # 写后显式使读缓存失效
+            self._state_cache = None
+            return True
+        if self._audit is not None:
+            self._audit.record_event(
+                "共享状态写失败",
+                f"重试 {attempt} 次仍失败: {last!r}; seq={state.get('seq')}")
+        tmp.unlink(missing_ok=True)              # 清孤儿 tmp
+        return False
 
     def _read_shared_seq(self) -> int:
         """共享 seq 读取（方案 C）：状态文件缺失/非法按 0 计（跨进程不回退）。"""

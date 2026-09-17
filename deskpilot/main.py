@@ -138,24 +138,72 @@ def _hotkey_loop(estop: EstopMonitor, audit: AuditLogger,
         audit.record_event("急停热键注册",
                            "Ctrl+Shift+F12 触发 / Ctrl+Shift+F11 复位")
     msg = wintypes.MSG()
+    msg_failed_rounds = 0
     while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
         if msg.message == _WM_HOTKEY:
-            if msg.wParam == 1:
-                estop.on_trigger_hotkey()
-            elif msg.wParam == 2:
-                estop.on_reset_hotkey()
+            # ISS-0092 ①:热键处理异常不杀消息循环(同甩角守卫,
+            # 审计归同一「甩角轮询异常」类型=单据 §5 四类审计之一,
+            # detail 前缀区分来源循环;节流:仅记首败+恢复一条)
+            try:
+                if msg.wParam == 1:
+                    estop.on_trigger_hotkey()
+                elif msg.wParam == 2:
+                    estop.on_reset_hotkey()
+            except Exception as e:                          # noqa: BLE001
+                msg_failed_rounds += 1
+                if msg_failed_rounds == 1:
+                    audit.record_event(
+                        "甩角轮询异常",
+                        f"热键消息循环: {e!r}(节流:仅记首败,恢复时另记一条)")
+                print(f"热键处理异常（消息循环继续）: {e!r}", file=sys.stderr)
+            else:
+                if msg_failed_rounds:
+                    audit.record_event(
+                        "甩角轮询异常",
+                        f"热键消息循环恢复:连续异常 {msg_failed_rounds} 轮后"
+                        f"恢复正常")
+                    msg_failed_rounds = 0
 
 
-def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier) -> None:
+def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier,
+                 audit: AuditLogger | None = None,
+                 sleep: Callable[[float], None] = time.sleep,
+                 stop: Callable[[], bool] | None = None) -> None:
     """鼠标甩角轮询线程（50ms）；兼任弹窗解冻请求消费（ISS-0004）与
-    解冻全局同步（ISS-0006：共享 frozen=false → 本地立即复位）。"""
+    解冻全局同步（ISS-0006：共享 frozen=false → 本地立即复位）。
+
+    ISS-0092 ①线程异常守卫：循环体 try/except，单轮异常不杀线程
+    （写回失败异常曾沿此链打死甩角线程→冻结卡死+解冻消费死）；
+    节流审计「甩角轮询异常」（仅记首败，恢复时记一条含失败轮数，
+    镜像 _hotkey_loop ISS-0084 ②模式），stderr 每轮照打。
+    sleep/stop 为测试接缝（详设 §11.6 sleep 注入先例）；stop 置位
+    即收口退出，供测试与未来的优雅停机用。
+    """
     import pyautogui
+    failed_rounds = 0
     while True:
-        pos = pyautogui.position()
-        estop.check_corner(pos.x, pos.y)
-        notifier.check_reset_request(estop)
-        notifier.sync_local_with_shared_state(estop)
-        time.sleep(0.05)
+        if stop is not None and stop():
+            return
+        try:
+            pos = pyautogui.position()
+            estop.check_corner(pos.x, pos.y)
+            notifier.check_reset_request(estop)
+            notifier.sync_local_with_shared_state(estop)
+        except Exception as e:                              # noqa: BLE001
+            failed_rounds += 1
+            if failed_rounds == 1 and audit is not None:
+                audit.record_event(
+                    "甩角轮询异常", f"{e!r}（节流:仅记首败,恢复时另记一条）")
+            print(f"甩角轮询异常（已容错,继续轮询）: {e!r}", file=sys.stderr)
+        else:
+            if failed_rounds:
+                if audit is not None:
+                    audit.record_event(
+                        "甩角轮询异常",
+                        f"恢复:连续异常 {failed_rounds} 轮后恢复正常")
+                failed_rounds = 0
+        finally:
+            sleep(0.05)
 
 
 def _open_manager_for(port: int):
@@ -183,7 +231,7 @@ def _start_estop_listeners(estop: EstopMonitor, audit: AuditLogger,
     notifier.on_state_change(False, "服务启动")
     threading.Thread(target=_hotkey_loop, args=(estop, audit), daemon=True).start()
     threading.Thread(target=_corner_loop, args=(estop, notifier),
-                     daemon=True).start()
+                     kwargs={"audit": audit}, daemon=True).start()
 
 
 def _cli_reset() -> int:
@@ -449,7 +497,7 @@ def main() -> int:
                            or str(Path.home())) / "DeskPilot")
     notifier = FreezeNotifier(_shared_dir,
                               remind_interval=policy.freeze_remind_interval,
-                              dialog_service=dialog_service)
+                              dialog_service=dialog_service, audit=audit)
     estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
                          on_state_change=notifier.on_state_change)
     install_last_will(audit, "daemon" if "--daemon" in sys.argv else "stdio")
