@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0084 |
 | 标题 | daemon(白名单撤回落盘/弹窗属主)静默死亡,全程零留痕;死亡后各 stdio 实例各自升为 full owner,争抢系统级单持有的急停热键,审计被「急停热键注册失败」刷屏;白名单撤销链(管理窗口/撤回落盘,ISS-0012 口径「落盘由 daemon 原子完成」)随 daemon 死亡整体不可用 |
 | 严重级 | **高**(安全通道属主偏离设计 + 白名单撤销链断;触发条件是 daemon 死亡这一不受控事件) |
-| 状态 | **评审通过:①②③④⑤⑥全做**(sdfang 2026-09-15);实现走 SDD 排期,与日后的侦察/需求线并行 |
+| 状态 | **P3 完成待验收**(①②③⑤⑥已随 v0.3.7 落地,commit b875b03,见 §6 v0.6;2026-09-17 复验 13 绿+全量回归 784 绿;④死因排查为非代码项,随运行观察——ISS-0092 实机事故中 owner.lock/heartbeat 已实证观测面有效) |
 | 提出 | 2026-09-14 sdfang 报障:「白名单撤销的守护进程噶了?」 |
 
 ## 1. 现象与证据(2026-09-14 实测)
@@ -111,3 +111,4 @@ daemon 启动时向 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 冪等�
 
 **R7 核对**:TC-OWN-04 的让位必须由「daemon 心跳新鲜」引起(替身心跳文件内容控制),不得借锁释放借道;TC-OWN-09/10 的 HTTP 断言必须真起真应(port 0 自由端口,避开本机 9420 现役 daemon)。
 | v0.6 | 2026-09-15 | **整改落地(SDD)**:新模块 `ownership.py`(OwnerLock 文件锁/HeartbeatWriter/遗嘱/ensure_autostart/RoleSupervisor) + main.py 装配面重写(daemon 持锁重试;stdio 无 daemon 时试持锁升属主:9420+热键+托盘,daemon 复出让位回迁;死亡告警=审计+托盘气泡+stderr;开机自启冪等注册)+ 热键争抢节流(只记首败+恢复)。**落地期自决记账(实现细节)**:①属主面文件与**急停邮箱**锚定 `%LOCALAPPDATA%\DeskPilot`(跨形态共享——审计目录分离曾致双邮箱,v0.2;estop-state.json 随之迁锚);②supervisor 心跳**先于**持锁(daemon 复出信号须先于锁);③tick 含非属主自愈接管(死亡放锁→重持);④告警通道=审计+托盘气泡(TrayIcon.notify 新增 NIIF_WARNING)+stderr;⑤自启注册仅冻结形态(源码形态=开发不自启)。测试 13 条全绿(TC-OWN-01~10+节流回归);msvcrt 锁纪律实测入注释(空文件锁后写 PermissionError/锁随句柄当前位置)。④死因排查随①落地后观察 |
+| v0.7 | 2026-09-17 | **状态翻页补记(无代码变更)**:v0.6 落地已随 b875b03(v0.3.7)入库,但状态行滞留「评审通过…排期」未翻页,致后续排期误判为待实施。今日复验:tests/test_ownership_iss84.py 13 passed;全量回归 784 passed/24 skipped/0 failed 含其回归。④死因排查为非代码项随运行观察;ISS-0092(2026-09-16 内网事故)取证中 owner.lock/daemon-heartbeat 的 pid/role/心跳新鲜度成为定位铁证——①观测面在真实事故中已实证有效 |
