@@ -17,8 +17,7 @@ import tkinter as tk
 from pathlib import Path
 
 _WIDTH, _HEIGHT = 480, 216
-_MARGIN = 16          # 距屏幕右/下边缘
-_TASKBAR = 48         # 任务栏预留
+_TASKBAR = 48         # 任务栏预留（缺省主屏合成用）
 _SLIDE_STEPS = 10     # 滑入动画步数
 _SLIDE_MS = 12        # 每步毫秒
 
@@ -38,12 +37,12 @@ def _toast_placement(screen: dict, width: int = _WIDTH, height: int = _HEIGHT):
 
     入参 screen 为显示器 dict（含 rect/work_area）；返回 (x, y_start, y_final)，
     y_start 在该屏底缘外侧供滑入。单屏时与旧主屏语义一致。
+
+    ISS-0071：公式单源迁入 monitors.toast_placement（白名单浮窗共用）；
+    本函数为兼容委托，行为逐像素不变（test_m3 精确值钉守）。
     """
-    _, _, sr, rb = screen["rect"]
-    _, _, _, wb = screen["work_area"]
-    x = sr - width - _MARGIN
-    y_final = wb - height - _TASKBAR - _MARGIN
-    return x, rb, y_final
+    from .monitors import toast_placement
+    return toast_placement(screen, width, height)
 
 
 def _hover(btn: tk.Button, base: str, hover: str) -> None:

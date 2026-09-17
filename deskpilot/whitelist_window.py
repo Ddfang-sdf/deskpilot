@@ -19,6 +19,8 @@ from typing import Any, Callable
 
 import tkinter as tk
 
+from .monitors import enum_monitors, toast_placement
+
 _TITLE_FONT = ("Microsoft YaHei", 11, "bold")
 _TEXT_FONT = ("Microsoft YaHei", 10)
 _HINT_FONT = ("Microsoft YaHei", 8)
@@ -522,11 +524,36 @@ _ACTION_BLUE = "#8AB4F8"          # Material dark snackbar 动作色
 _CONFIRM_GREEN = "#81C995"
 
 
-def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
+def _resolve_geo(width: int, height: int,
+                 target_screen: dict | None = None) -> str:
+    """ISS-0071：白名单浮窗统一落位几何——目标屏 work_area 右下角
+    （与审批弹窗同公式，单源 monitors.toast_placement）。
+
+    target_screen=None → 主屏（is_primary，缺则首屏）；枚举全空（理论
+    不到）→ 合成 1920×1080 主屏兜底。不再用「主屏宽度求右缘」的旧公式
+    （主屏非原点/纵向堆叠布局下算错，单据 §1.2）。
+    """
+    screen = target_screen
+    if screen is None:
+        mons = enum_monitors()
+        screen = next((m for m in mons if m.get("is_primary")),
+                      mons[0] if mons else None)
+        if screen is None:
+            screen = {"rect": (0, 0, 1920, 1080),
+                      "work_area": (0, 0, 1920, 1080)}
+    x, _y_start, y_final = toast_placement(screen, width, height)
+    return f"{width}x{height}+{x}+{y_final}"
+
+
+def build_enroll_notice(parent, process: str, on_undo: Callable[[], None],
+                        target_screen: dict | None = None):
     """ISS-0012 §6 E4 v2（Gmail/Material 模式，TC-UNDO-01~06）。
 
     深色卡片；8s 自动消失；× 立即关闭；「撤销」为亮蓝文字动作按钮；
     点撤销 → 执行 on_undo + 切绿色确认态「✓ 已撤销」1.5s 后自动消失。
+
+    ISS-0071：回执 toast 与撤回确认窗同屏同锚点（右下角,_resolve_geo;
+    人刚在此屏做的裁决,回执就在此屏出现）。
     """
     win = tk.Toplevel(parent)
     win.title("DeskPilot")
@@ -573,17 +600,20 @@ def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
                          cursor="hand2", command=_undo)
     undo_btn.pack(side="right", padx=(12, 0))
 
-    win.geometry(f"{_WIDTH}x48+{win.winfo_screenwidth() - _WIDTH - 16}+40")
+    win.geometry(_resolve_geo(_WIDTH, 48, target_screen))
     win.after(8000, _dismiss)                    # 8s 自动消失（业界 4~10s 档）
     return win
 
 
 # ---------- E3 撤回确认窗与通道 ----------
 
-def build_revoke_confirm(parent, process: str, result_path, timeout_s: float):
+def build_revoke_confirm(parent, process: str, result_path, timeout_s: float,
+                         target_screen: dict | None = None):
     """ISS-0012 §6 E3：撤回确认窗——[移出]/[保留]，倒计时默认保留。
 
     裁决写结果文件："remove" / "keep" / "timeout"。
+    ISS-0071：落位统一为目标屏右下角（_resolve_geo；target_screen=
+    被裁决对象所在屏，None 退主屏——单据 §3：人类裁决面跟随被裁决对象）。
     """
     result_path = Path(result_path)
     win = tk.Toplevel(parent)
@@ -639,7 +669,7 @@ def build_revoke_confirm(parent, process: str, result_path, timeout_s: float):
         timer_label.config(text=f"{remaining[0]} 秒后默认保留")
         win.after(1000, tick)
 
-    win.geometry(f"{_WIDTH}x130+{win.winfo_screenwidth() - _WIDTH - 16}+40")
+    win.geometry(_resolve_geo(_WIDTH, 130, target_screen))
     win.after(1000, tick)
     return win
 
@@ -655,11 +685,13 @@ class DialogRevokeChannel:
 
     def __init__(self, dialog_service, timeout: float = 15.0,
                  clock: Callable[[], float] = time.monotonic,
-                 result_root: str | None = None, audit_paths=None):
+                 result_root: str | None = None, audit_paths=None,
+                 resolve_screen: Callable[[str], dict | None] | None = None):
         self._ds = dialog_service
         self._timeout = timeout
         self._clock = clock
         self._audit_paths = audit_paths
+        self._resolve_screen = resolve_screen  # ISS-0071:被裁决对象所在屏解析
         self._result_root = Path(result_root) if result_root else Path(
             sys.executable).parent.parent
         self.last_request: dict[str, str] | None = None   # 测试观测口
@@ -670,10 +702,17 @@ class DialogRevokeChannel:
                     else self._result_root)
         result_path = base_dir / f"deskpilot-revoke-{request_id}.result"
         self.last_request = {"process": process, "result_path": str(result_path)}
+        screen = None
+        if self._resolve_screen is not None:
+            try:
+                screen = self._resolve_screen(process)
+            except Exception:
+                screen = None            # 解析失败退主屏(builder 端回退)
         try:
             self._ds.show("revoke", {"process": process,
                                      "result_path": str(result_path),
-                                     "timeout_s": self._timeout})
+                                     "timeout_s": self._timeout,
+                                     "target_screen": screen})
         except Exception:
             return "keep"
         deadline = self._clock() + self._timeout + 1.0

@@ -116,14 +116,18 @@ class DialogService:
                          target_screen=payload.get("target_screen"))
         elif kind == "enroll_notice":
             # ISS-0012 E4：入白确认 toast（[撤销] 回调由装配侧注入）
+            # ISS-0071：target_screen 透传(落位跟随被裁决对象所在屏)
             from .whitelist_window import build_enroll_notice
             build_enroll_notice(self._tk_root, payload["process"],
-                                on_undo=payload["on_undo"])
+                                on_undo=payload["on_undo"],
+                                target_screen=payload.get("target_screen"))
         elif kind == "revoke":
             # ISS-0012 E3：AI 请求撤回的人类确认窗
+            # ISS-0071：target_screen 透传(同上)
             from .whitelist_window import build_revoke_confirm
             build_revoke_confirm(self._tk_root, payload["process"],
-                                 payload["result_path"], payload["timeout_s"])
+                                 payload["result_path"], payload["timeout_s"],
+                                 target_screen=payload.get("target_screen"))
         else:
             raise ValueError(f"未知弹窗类型: {kind}")
 

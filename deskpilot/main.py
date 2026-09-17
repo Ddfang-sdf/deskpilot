@@ -547,12 +547,25 @@ def main() -> int:
     enforcement = Enforcement(policy, bindings, approvals, estop, executor,
                               audit, whitelist_admin=whitelist_admin)
     # ISS-0012 E3/E4：撤回确认通道与入白撤销 toast 接线
+    # ISS-0071：白名单浮窗跟随「被裁决对象所在屏」(能定位进程窗口则跟随,
+    # 不能定位退主屏右下角——builder 端回退,单据 §3 语义)
+    def _screen_of_process(proc: str):
+        try:
+            wins = probe.find_windows(process=proc)
+            if wins:
+                from .monitors import enum_monitors, screen_of_rect
+                return screen_of_rect(enum_monitors(), wins[0]["rect"])
+        except Exception:
+            pass
+        return None
+
     from .whitelist_window import DialogRevokeChannel
     revoke_channel = DialogRevokeChannel(dialog_service,
-                                         audit_paths=audit_paths)
+                                         audit_paths=audit_paths,
+                                         resolve_screen=_screen_of_process)
     whitelist_admin.notify_permanent = lambda proc: dialog_service.show(
         "enroll_notice",
-        {"process": proc,
+        {"process": proc, "target_screen": _screen_of_process(proc),
          "on_undo": lambda p=proc: whitelist_admin.remove(p)})
     ctx = ToolContext(policy=policy, enforcement=enforcement, bindings=bindings,
                       executor=executor, audit=audit,

@@ -2,9 +2,26 @@
 
 enum_monitors：枚举显示器（rect/work_area/is_primary，mss 优先、Win32 兜底，含负坐标）。
 screen_of_point / screen_of_rect：点/矩形归属屏判定（矩形取交集面积最大者）。
+toast_placement：toast/弹窗目标屏右下角统一落位（ISS-0071 单源化——原
+approval_dialog._toast_placement 公式迁入公共家，审批/冻结/白名单浮窗共用）。
 """
 
 from __future__ import annotations
+
+
+def toast_placement(screen: dict, width: int, height: int,
+                    margin: int = 16, taskbar: int = 48) -> tuple[int, int, int]:
+    """toast/弹窗在目标屏 work_area 右下角落位（ISS-0007 §6 公式单源）。
+
+    入参 screen 为显示器 dict（含 rect/work_area）；返回 (x, y_start,
+    y_final)，y_start 在该屏底缘外侧供滑入动画，静态窗直接用 (x, y_final)。
+    单屏时与旧主屏语义一致。
+    """
+    _, _, sr, rb = screen["rect"]
+    _, _, _, wb = screen["work_area"]
+    x = sr - width - margin
+    y_final = wb - height - taskbar - margin
+    return x, rb, y_final
 
 
 def enum_monitors() -> list[dict]:
