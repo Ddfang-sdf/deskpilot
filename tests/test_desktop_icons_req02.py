@@ -81,8 +81,10 @@ G_B = [76, 5, 152, 57]
 class TestAssemble:
     """TC-ICONS-01/03/04/05/06/08:合并/序对齐/fail-closed。断言:直出。"""
 
-    def test_icons01_merge_by_index(self):
-        """TC-ICONS-01:归并主路径(ISS-0054 起=按名;序一致时与按索引同果)。"""
+    def test_icons01_merge_by_name(self):
+        """TC-ICONS-01:归并主路径——三路按**名**归并(ISS-0054 机制;
+        ISS-0078 用例名由 merge_by_index 正名为 merge_by_name。
+        序一致时与按索引同果;序分叉的机制区分回归由 TC-54-01 承接)。"""
         a = _assembler(_FakeUia([("微信", CELL_A), ("回收站", CELL_B)]),
                        _FakeListView([G_A, G_B]),
                        _FakeShellView([r"C:\D\微信.lnk", None]))
