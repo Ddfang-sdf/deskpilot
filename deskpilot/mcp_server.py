@@ -8,13 +8,67 @@ stdio 服务循环留待后续迭代。
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 
 from .enforcement import _truncate_show     # ISS-0027：参数回显截断复用
 from .errors import InvalidParamsError  # noqa: F401  （供调用方捕获）
 from .httpd import client_timeout           # ISS-0033 A2：客户端超时由策略推导
 from .models import Policy
+
+# ISS-0089 方向A：客户端图像处理上限（Claude Code 发送前 resize,长边超
+# 2000px 即整张拒收——Anthropic vision 文档:>20 图时上限 2000x2000;
+# Claude Code #53170 未修复)。screenshot 内联图源头等比降采样阈值,
+# 单源常量（是否 policy 可配留作后续,本单先常量避免扩面,单据 §5）。
+INLINE_MAX_PX = 2000
+
+
+def _downscale_inline(png_bytes: bytes,
+                      max_px: int = INLINE_MAX_PX) -> tuple[bytes, float]:
+    """screenshot 内联图源头等比降采样（ISS-0089 方向A）。
+
+    契约（单据 §6.1）：入原 PNG 字节；长边 >max_px → 等比缩到长边 ≤max_px
+    重编码 PNG，返回 (新字节, f=缩放比)；长边 ≤max_px → (原字节, 1.0)
+    同一对象零重编码（零损失回归）。等比=整幅内容全保留,非裁剪;
+    落盘原图不动（A2）。用项目既有依赖 PIL，不引新库（单据 §5）。
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.open(BytesIO(png_bytes))
+    w, h = img.size
+    long_edge = max(w, h)
+    if long_edge <= max_px:
+        return png_bytes, 1.0
+    f = max_px / long_edge
+    new_size = (max(1, round(w * f)), max(1, round(h * f)))
+    resized = img.resize(new_size, Image.Resampling.LANCZOS)
+    buf = BytesIO()
+    resized.save(buf, format="PNG")
+    return buf.getvalue(), f
+
+
+def _screenshot_inline_b64(data: dict) -> str | None:
+    """screenshot 内联装配（ISS-0089 A1/A3，http/local 两 backend 共用）：
+    读 path 全分辨率字节 → _downscale_inline → base64；f<1 时同步
+    data["scale_x"]=data["scale_y"]=f（坐标契约：虚拟坐标 = virtual_rect
+    原点 + 内联像素 / scale）；path/virtual_rect 不动（A2 落盘保真）。
+
+    注意：必须在 payload(json.dumps)之前调用,scale 改写才进文本载荷。
+    读盘/解码失败返回 None（沿用原 OSError 容错语义：不内联不阻断）。
+    """
+    try:
+        raw = Path(data["path"]).read_bytes()
+        inline, f = _downscale_inline(raw)
+        b64 = base64.b64encode(inline).decode()
+    except OSError:
+        return None
+    if f < 1.0:
+        data["scale_x"] = data["scale_y"] = f
+    return b64
 
 # 参数类型标签：str / int / num / coord / rect / text / any
 # text 受 policy.limits.input_max_chars 长度约束；coord/rect 为坐标结构。
@@ -44,7 +98,10 @@ async def call_with_progress(work: Awaitable, report: Callable[[], None],
 TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     # ---- L0 感知类（详细设计 §12.4）----
     "screenshot": {
-        "description": "拍 Windows 桌面/应用窗口图像,返回可查看内容;浏览器页面请用浏览器工具。scope:fullscreen=整个虚拟桌面、screen=按屏(screen=屏号,即 fullscreen 的 monitors 序号)、window=绑定窗口、region=rect(精读/局部核对用,含 coverage 占比)。图像不可见时改调 ocr;ocr:true 同次附文字清单。",
+        # ISS-0089 A3 + ISS-0090 #5:降采样/scale/path 语义入描述
+        # (受 ISS-0015 长度闸门 ≤200 + ISS-0037 sv06「图像不可见」子串约束,
+        # 实测 198)
+        "description": "拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=按屏号、window=绑定窗口、region=rect(精读/局部,含 coverage)。内联图长边>2000 等比缩:scale=缩放比,图坐标须 /scale 还原;path 为全分辨率原图,细节用 path 回读。图像不可见改调 ocr;ocr:true 附文字清单。",
         "required": {"scope": ("enum", ["fullscreen", "screen", "region", "window"])},
         "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",),
                      "screen": ("int",)},
@@ -352,17 +409,17 @@ def build_server(ctx, backend: str = "local", daemon_url: str = ""):
                 asyncio.to_thread(remote_call, name, raw, daemon_url,
                                   client_timeout(ctx.policy)),
                 _progress_reporter, interval_s=5.0)
+            data = result_dict.get("data") or {}
+            # ISS-0089 A1/A3:内联降采样+scale 同步须在 payload dump 之前
+            b64 = None
+            if (name == "screenshot" and result_dict.get("ok")
+                    and data.get("path")):
+                b64 = _screenshot_inline_b64(data)
             payload = json.dumps(result_dict, ensure_ascii=False, default=str)
             contents: list = [types.TextContent(type="text", text=payload)]
-            data = result_dict.get("data") or {}
-            if name == "screenshot" and result_dict.get("ok") and data.get("path"):
-                try:
-                    b64 = base64.b64encode(
-                        Path(data["path"]).read_bytes()).decode()
-                    contents.append(types.ImageContent(type="image", data=b64,
-                                                       mimeType="image/png"))
-                except OSError:
-                    pass
+            if b64 is not None:
+                contents.append(types.ImageContent(type="image", data=b64,
+                                                   mimeType="image/png"))
             return contents
         if name == "attach":
             result = tools_layer.attach(ctx, title=raw.get("title"),
@@ -372,19 +429,19 @@ def build_server(ctx, backend: str = "local", daemon_url: str = ""):
             result = tools_layer.detach(ctx, token=raw.get("token", ""))
         else:
             result = tools_layer.call_tool(ctx, name, raw)
+        # ISS-0089 A1/A3:内联降采样+scale 同步须在 payload dump 之前
+        b64 = None
+        if (name == "screenshot" and result.ok and result.data
+                and result.data.get("path")):
+            b64 = _screenshot_inline_b64(result.data)
         payload = json.dumps(
             {"ok": result.ok, "error_code": result.error_code,
              "message": result.message, "data": result.data},
             ensure_ascii=False, default=str)
         contents: list = [types.TextContent(type="text", text=payload)]
-        if name == "screenshot" and result.ok and result.data and result.data.get("path"):
-            try:
-                b64 = base64.b64encode(
-                    Path(result.data["path"]).read_bytes()).decode()
-                contents.append(types.ImageContent(type="image", data=b64,
-                                                   mimeType="image/png"))
-            except OSError:
-                pass
+        if b64 is not None:
+            contents.append(types.ImageContent(type="image", data=b64,
+                                               mimeType="image/png"))
         return contents
 
     return server

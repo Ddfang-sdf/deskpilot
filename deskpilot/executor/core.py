@@ -185,7 +185,10 @@ class Executor:
         out = {"path": str(path), "width": region["width"],
                "height": region["height"]}
         # ISS-0021 C：坐标系元数据——像素→虚拟桌面坐标换算全要素
-        # （截图为区域原样抓取,scale 恒 1.0;virtual_rect 给出偏移基准）
+        # （落盘原图 scale 恒 1.0;virtual_rect 给出偏移基准。
+        # ISS-0089 A3 契约修订:MCP 内联预览图长边 >2000 时等比降采样,
+        # 届时 mcp_server 把 scale_x/scale_y 改写为缩放比 f<1——
+        # 虚拟坐标 = virtual_rect 原点 + 内联像素 / scale;f=1 退化原语义）
         out["virtual_rect"] = [region["left"], region["top"],
                                region["left"] + region["width"],
                                region["top"] + region["height"]]
