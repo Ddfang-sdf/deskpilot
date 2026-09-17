@@ -81,6 +81,7 @@ from .freeze_notify import FreezeNotifier
 from .httpd import DEFAULT_HOST, DEFAULT_PORT, probe_daemon
 from .mcp_server import serve
 from .policy import load_policy
+from .secure_desktop import SecureDesktopGuard
 from .tools import ToolContext
 
 _WM_HOTKEY = 0x0312
@@ -556,7 +557,8 @@ def main() -> int:
     ctx = ToolContext(policy=policy, enforcement=enforcement, bindings=bindings,
                       executor=executor, audit=audit,
                       whitelist_admin=whitelist_admin,
-                      revoke_channel=revoke_channel)
+                      revoke_channel=revoke_channel,
+                      secure_guard=SecureDesktopGuard(audit=audit))
 
     # ---------- ISS-0084 属主权装配(①②③⑤⑥) ----------
     supervisor: "RoleSupervisor | None" = None

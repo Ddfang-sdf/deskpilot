@@ -15,16 +15,28 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from ..enforcement import Enforcement
-from ..errors import (AMBIGUOUS_TARGET, INTERNAL_ERROR, TARGET_NOT_FOUND,
-                      ExecutorError, InvalidParamsError)
+from ..errors import (AMBIGUOUS_TARGET, INTERNAL_ERROR, SECURE_DESKTOP,
+                      TARGET_NOT_FOUND, ExecutorError, InvalidParamsError)
 from ..mcp_server import validate_call
 from ..models import (BINDING_REQUIRED_TOOLS, L2, TOOL_LEVELS, AuditEntry,
                       OperationRequest, Policy, ToolResult)
+from ..secure_desktop import SecureDesktopGuard
 
 _L0_DIRECT = {"screenshot", "find_window", "get_ui_tree", "get_cursor",
               "get_clipboard", "ocr", "template_match", "get_clickable_map",
               "list_desktop_icons"}
 _L1_DIRECT = {"move", "wait_for_window"}
+
+_DEFAULT_GUARD: SecureDesktopGuard | None = None
+
+
+def _default_guard() -> SecureDesktopGuard:
+    """缺省安全桌面守卫（真 Win32 检测,无审计）——ctx 未显式装配时的
+    fail-closed 兜底,禁止「忘了装配=静默放行」。"""
+    global _DEFAULT_GUARD
+    if _DEFAULT_GUARD is None:
+        _DEFAULT_GUARD = SecureDesktopGuard()
+    return _DEFAULT_GUARD
 
 
 @dataclass(frozen=True)
@@ -38,10 +50,25 @@ class ToolContext:
     audit: Any = None
     whitelist_admin: Any = None     # ISS-0012 E2/E3：白名单运行期管理
     revoke_channel: Any = None      # ISS-0012 E3：AI 请求撤回的人类确认通道
+    secure_guard: Any = None        # ISS-0087：安全桌面守卫(缺省=真检测默认守卫)
 
 
 def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> ToolResult:
     """工具统一调度：规整 → 按级别路由 → 包装结果。"""
+    # ISS-0087 ②：安全桌面态全禁一切 AI 操作（含 L0 感知/attach/写）——
+    # 人类不可视=AI 不可动;退出安全桌面自动恢复（区别于甩角冻结须人工
+    # 复位）;检测失效 fail-closed 按激活处理
+    guard = ctx.secure_guard if ctx.secure_guard is not None else _default_guard()
+    if guard.check():
+        if ctx.audit is not None:
+            try:
+                ctx.audit.record_event("安全桌面拒绝", f"tool={tool}")
+            except Exception:
+                pass                    # 拒绝本身即安全向,审计失败不改变拒绝
+        return ToolResult(
+            ok=False, error_code=SECURE_DESKTOP,
+            message="安全桌面激活（锁屏/UAC 裁决中）：人类不可视，一切操作"
+                    "（含截屏/读取）已禁止；人类回到桌面后自动恢复，请稍后重试")
     try:
         params = validate_call(tool, raw_params, ctx.policy)
     except InvalidParamsError as e:
