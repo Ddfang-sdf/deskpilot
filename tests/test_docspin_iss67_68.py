@@ -19,9 +19,11 @@ class TestLazyCreateWording:
     """ISS-0067:policy.local.yml 惰性创建措辞(ISS-0031 语义:首写才落盘)。"""
 
     def test_p67a_readme_lazy_wording(self):
-        """p67a:README 不再称「首次运行自动生成」,改述「首次永久入白
-        才创建,纯使用不产生」。红态:现文含假措辞。"""
-        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        """p67a:中文版不再称「首次运行自动生成」,改述「首次永久入白
+        才创建,纯使用不产生」。REQ-006 适配(设计授权的结构变更):
+        双语化后中文措辞在平行页 README.zh-CN.md(原 README.md 已成
+        英文默认页,钉测试随之迁移)。红态:现文含假措辞。"""
+        text = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
         assert "首次运行自动生成" not in text          # 假措辞剔除(原文直读)
         assert "首次" in text and "永久入白" in text    # 惰性语义在
 

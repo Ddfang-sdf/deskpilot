@@ -5,8 +5,13 @@
 <h1 align="center">DeskPilot</h1>
 
 <p align="center">
-  <strong>让 AI 安全地替你操作 Windows 桌面。</strong><br>
-  微信、Excel、老式 ERP、内部系统……凡是没留 API 的软件，AI 都能直接上手。
+  <strong>The safety cockpit for AI-driven Windows desktops.</strong><br>
+  Let AI operate any Windows software — WeChat, Excel, legacy ERPs, internal systems —<br>
+  with hard safety rails: four fail-closed gates, local approval for dangerous ops, and a human-only emergency stop.
+</p>
+
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -14,117 +19,128 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Ddfang-sdf/deskpilot" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="Platform">
   <img src="https://img.shields.io/badge/MCP-stdio-6E56CF" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-536%20passed-2DA44E" alt="Tests">
+  <a href="https://github.com/Ddfang-sdf/deskpilot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/Ddfang-sdf/deskpilot/release.yml" alt="CI"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Ddfang-sdf/deskpilot/releases/latest"><strong>⬇️ 下载最新 exe</strong></a> ·
-  <a href="#-30-秒上手">快速开始</a> ·
-  <a href="docs/INSTALL.md">安装指导书</a> ·
-  <a href="docs/DESIGN.md">设计文档</a> ·
-  <a href="README_EN.md">English</a>
+  <a href="https://github.com/Ddfang-sdf/deskpilot/releases/latest"><strong>⬇️ Download the latest exe</strong></a> ·
+  <a href="#-quick-start">Quick Start</a> ·
+  <a href="docs/INSTALL.md">Install Guide</a> ·
+  <a href="docs/DESIGN.md">Design Docs</a>
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="DeskPilot 实机演示：AI 操作记事本 → 关闭窗口触发人工审批 → 批准后才执行" width="880"><br>
-  <em>实机演示：AI 通过 MCP 输入文字 → 发起"关闭窗口"危险操作 → 本地审批窗弹出（带目标实拍缩略图）→ 人类批准后才真正执行</em>
+  <img src="assets/demo.gif" alt="DeskPilot live demo: AI types into Notepad via MCP → closing the window triggers local approval → executes only after the human approves" width="880"><br>
+  <em>Live demo: AI types via MCP → requests a dangerous op (close window) → local approval toast with a live thumbnail of the target → executes only after the human approves</em>
 </p>
 
 ---
 
-## 看得见的安心
+## Safety you can see
 
-危险操作必须经过你本人点头——AI 发起，程序弹窗，你批准才执行，AI 拿不到绕过审批的任何凭证：
-
-<p align="center">
-  <img src="assets/screenshot-approval-toast.png" alt="危险操作本地审批" width="520"><br>
-  <em>关闭窗口等危险操作：本地审批窗带目标窗口实拍缩略图与倒计时，超时自动拒绝</em>
-</p>
-
-AI 想操作白名单之外的新软件？它会先弹**入白审批**——拒绝、只允许本次会话（重启失效）、或点「永久加入」长期可用，超时一律自动拒绝：
+Dangerous operations require your explicit approval — the AI requests, the program prompts, and nothing executes until you click. The AI never sees a token it could reuse to bypass you:
 
 <p align="center">
-  <img src="assets/screenshot-enroll.png" alt="入白审批弹窗" width="520"><br>
-  <em>入白审批：三选一（拒绝 / 本次会话允许 / 永久加入），未经人类裁决超时自动拒绝</em>
+  <img src="assets/screenshot-approval-toast.png" alt="Local approval for dangerous operations" width="520"><br>
+  <em>Dangerous ops (e.g. closing a window): local approval toast with a live thumbnail of the target window and a countdown — auto-denied on timeout</em>
 </p>
 
-所有授权都摆在明面上：系统托盘 →「白名单管理」，永久白名单与会话允许两本账一目了然，一键移出（移出即墓碑，AI 不会反复弹窗求入白）：
+AI wants to drive software outside the whitelist? It must first survive an **enrollment prompt** — deny, allow for this session only (expires on restart), or "add permanently" — and every prompt auto-denies on timeout:
 
 <p align="center">
-  <img src="assets/screenshot-whitelist.png" alt="白名单管理窗口" width="520"><br>
-  <em>白名单管理：永久白名单（写入本机文件，升级不丢）与本次会话允许（重启清空）</em>
+  <img src="assets/screenshot-enroll.png" alt="Enrollment approval dialog" width="520"><br>
+  <em>Enrollment: pick one of three (deny / allow this session / add permanently) — auto-deny unless a human decides</em>
 </p>
 
-任何时候觉得不对劲，<code>Ctrl+Shift+F12</code> 一键熔断（或把鼠标甩到主屏左上角按住；多显示器时触发角固定为主屏左上角），冻结事实会主动弹窗告知，而不是等你发现 AI 不动了：
+All grants stay visible: system tray → "Whitelist Manager" shows both ledgers (permanent + this-session) at a glance, with one-click removal (removal is a tombstone — the AI won't pester you again):
 
 <p align="center">
-  <img src="assets/screenshot-freeze-card.png" alt="急停冻结通知" width="440"><br>
-  <em>冻结即时通知：立即解冻 / 稍后提醒，热键解冻后自动消失</em>
+  <img src="assets/screenshot-whitelist.png" alt="Whitelist manager window" width="520"><br>
+  <em>Whitelist manager: permanent entries (persisted on disk, survive upgrades) and session-only grants (cleared on restart)</em>
 </p>
 
-<!-- 演示 GIF：assets/demo.gif（实机录制：记事本输入 → alt+f4 触发审批 → 批准执行）。重录方法见 release/RELEASE_NOTES.md -->
+If anything feels wrong, hit <code>Ctrl+Shift+F12</code> to freeze all write operations instantly (or flick your mouse into the top-left corner of the primary screen and hold). The freeze tells you itself — no more discovering a silent AI hours later:
 
-## 为什么选择 DeskPilot
+<p align="center">
+  <img src="assets/screenshot-freeze-card.png" alt="Emergency-stop freeze notification" width="440"><br>
+  <em>Freeze notification: unfreeze now / remind me later — and it dismisses itself when you unfreeze via hotkey</em>
+</p>
 
-- 🛡️ **安全不靠 AI 自觉** —— 每一次点击、每一次按键都要过一道硬校验层（绑定校验 / 进程白名单 / 按键许可 / 危险操作本地审批，四道闸 fail-closed）；批准权只属于坐在电脑前的你
-- 🗂️ **加白自己管** —— 入白审批三选一（拒绝 / 本次会话 / 永久加入），托盘「白名单管理」两本账一目了然，移出即墓碑；永久入白写入独立用户文件，升级不丢
-- 🔌 **即插即用** —— 标准 MCP 协议，Claude Code、Claude Desktop、Cursor 等客户端配上就能用
-- 👁️ **不挑模型** —— 没有视觉能力的纯文本模型也能用：屏幕内容会被翻译成元素清单和文字（UIA 元素树 + OCR 双通道）
-- 🛑 **急停有感知** —— 热键/甩角熔断一切写操作，冻结主动弹窗告知，一键解冻
-- 📼 **全程留痕** —— 每步操作前后自动截图 + JSONL 审计，出了错能回放复盘
+During lock screen or UAC prompts (the secure desktop), every AI operation — **including screenshots and other read-only sensing** — is refused with a structured `SECURE_DESKTOP` error and resumes automatically when you're back. If a human can't see it, AI can't touch it.
 
-## 🚀 30 秒上手
+<!-- Demo GIF: assets/demo.gif (live recording: typing into Notepad → alt+f4 triggers approval → approved → executed). See release/RELEASE_NOTES.md for how to re-record. -->
 
-**第一步：下载。** 下载 [最新 Release](https://github.com/Ddfang-sdf/deskpilot/releases/latest) 的 `deskpilot-vX.Y.Z-windows-x64.zip`（附 `.sha256` 校验值），解压到固定目录，例如 `C:\tools\deskpilot\`。
+## Why DeskPilot
 
-> ⚠️ 解压后**保持 `policy.yml` 和 `deskpilot.exe` 在同一个文件夹**，不要分开。（`policy.local.yml` 是你的永久入白记录文件：**首次点「永久加入」时才会自动创建**，纯使用不会产生它——首次运行后没看到这个文件是正常的，不是安装失败；升级不会丢。）
+- 🛡️ **Safety by enforcement, not by prompt** — every click and keystroke passes a hard verification layer (binding check / process whitelist / key permit / local approval for dangerous ops — four fail-closed gates). Approval belongs to the human at the keyboard, period.
+- 🗂️ **Whitelist self-service** — enroll new software with a three-way local prompt; permanent grants go to a separate user file (`policy.local.yml`) that upgrades never touch; removal is immediate and final.
+- 🔌 **Plug & play** — standard MCP (stdio). Works with Claude Code, Claude Desktop, Cursor, and any MCP client.
+- 👁️ **No vision model required** — screen content is translated into an element list plus text (UIA tree + OCR dual channel), so text-only models can drive the UI.
+- 🛑 **Emergency stop with feedback** — hotkey or corner-flick freezes all writes; a toast confirms the freeze and offers one-click unfreeze. Unfreezing is a human-only action by design.
+- 🖥️ **Multi-monitor native** — dialogs follow the screen you're working on; screenshots and UI trees are in virtual-desktop coordinates (negative values included); per-screen capture by deterministic screen number (0 = primary, rest left-to-right).
+- 📼 **Full audit trail** — automatic before/after screenshots plus JSONL audit logs for every action.
 
-**第二步：接入你的 AI 客户端。**
+## 🚀 Quick Start
 
-Claude Code（命令行）:
+**Step 1: Download.** Grab the latest `deskpilot-vX.Y.Z-windows-x64.zip` from [Releases](https://github.com/Ddfang-sdf/deskpilot/releases) (with `.sha256` for verification) and extract to a fixed folder, e.g. `C:\tools\deskpilot\`.
+
+> ⚠️ Keep `policy.yml` and `deskpilot.exe` in the **same folder** — the security policy is loaded from beside the exe. (`policy.local.yml` holds your permanent grants and is created on your first "add permanently" click — pure usage never creates it; upgrades keep it.)
+
+**Step 2: Hook up your AI client.**
+
+Claude Code (CLI):
 
 ```powershell
 claude mcp add deskpilot -- "C:\tools\deskpilot\deskpilot.exe"
 ```
 
-Claude Desktop / Cursor / 通用 stdio 客户端配置样例见[安装指导书](docs/INSTALL.md)。
+Claude Desktop — edit `%APPDATA%\Claude\claude_desktop_config.json`:
 
-**第三步：重启客户端，验证。** 对 AI 说一句:「**用 deskpilot 截个屏**」。能看到截图回来，就装好了。
+```json
+{
+  "mcpServers": {
+    "deskpilot": { "command": "C:\\tools\\deskpilot\\deskpilot.exe" }
+  }
+}
+```
 
-> 📖 生产使用请开**常驻 daemon**（单次调用约 1.2s、绑定跨调用保持）：启动、开机自启、policy.yml 定制、升级、内网分发与常见问题，全在 **[docs/INSTALL.md](docs/INSTALL.md)**；一键安装脚本见 `scripts/install.ps1`。
+Cursor — edit `%USERPROFILE%\.cursor\mcp.json` (or Settings → MCP), same content. Any MCP client that supports stdio works: point `command` at `deskpilot.exe`.
 
-## 工作原理
+**Step 3: Restart the client and verify.** Tell your AI: "**take a screenshot with deskpilot**". If a screenshot comes back, you're set.
+
+> 📖 For production use, run the **resident daemon** (~1.2s per call, bindings survive across calls): startup, autostart, policy.yml customization, upgrades, intranet distribution and FAQ — all in the **[Install Guide](docs/INSTALL.md)**; one-click installer at `scripts/install.ps1`.
+
+## How it works
 
 ```
-AI 客户端 ──MCP(stdio)──▶ deskpilot ──四道闸硬校验──▶ Windows 桌面
+AI client ──MCP(stdio)──▶ deskpilot ──4 fail-closed gates──▶ Windows desktop
                               │
-                              ├─ 危险操作 → 本地审批窗（你点头才执行）
-                              ├─ 急停熔断 → 冻结通知弹窗（一键解冻）
-                              └─ 全程审计 → 截图 + JSONL 留痕
+                              ├─ dangerous op → local approval toast (executes only if you approve)
+                              ├─ emergency stop → freeze notification card (human-only unfreeze)
+                              └─ everything → screenshot + JSONL audit trail
 ```
 
-25 个 MCP 工具（截图 / OCR / 按文字点击 / 元素树 / 点击 / 输入 / 窗口管理……）。安全模型、四道闸细节、协议设计的完整文档在 [docs/](docs/DESIGN.md)。
+29 MCP tools (screenshot / OCR / click-by-text / element tree / click / type / window management…). The full security model, gate internals, and protocol design live in [docs/](docs/DESIGN.md) (Chinese).
 
-## 安全说明
+## Security notes
 
-- 默认只能操作白名单里的日常软件（记事本、画图、资源管理器、PowerPoint），其他程序 AI 碰不到；想让 AI 操作新软件，它发起请求时**你在入白审批弹窗里点一下「永久加入」即可**，不用改任何文件；系统托盘图标可随时打开「白名单管理」查看和移出
-- 白名单分两本账：基础白名单随包分发（`policy.yml`），你点「永久加入」的条目写入独立用户文件（`policy.local.yml`）——升级不丢、移出即墓碑（不会因旧配置回流而复弹）
-- 危险操作（关窗口、删除等）一律弹本地审批窗，超时自动拒绝；审批令牌不经 AI 之手
-- 任何时候觉得不对劲：**`Ctrl+Shift+F12` 立即熔断**一切操作，`Ctrl+Shift+F11` 恢复；或者把鼠标甩到主屏左上角按住不放（多显示器时触发角固定为主屏左上角）
+- By default only whitelisted everyday apps (Notepad, Paint, Explorer, PowerPoint) are operable; everything else is unreachable. When AI asks to drive new software, **you click "add permanently" in the enrollment prompt** — no file editing needed; the tray's Whitelist Manager lets you review and remove anytime.
+- The whitelist keeps two ledgers: the bundled base list (`policy.yml`) and your permanent grants in a separate user file (`policy.local.yml`) — upgrades never lose them, removal is a tombstone (no re-prompting loops).
+- Dangerous operations (closing windows, deletion, etc.) always require local approval and are auto-denied on timeout. Approval tokens never pass through the AI.
+- Freeze everything anytime with **`Ctrl+Shift+F12`**; resume with `Ctrl+Shift+F11` — or flick the mouse into the top-left corner of the primary screen and hold to freeze.
+- Lock screen / UAC prompt active → **all** AI operations (reads included) are refused as `SECURE_DESKTOP` until you're back — no action while you can't see.
 
-## 客户端超时建议
+## Client timeout tip
 
-危险操作的本地审批默认最长等待 90 秒。Claude Code 的默认工具执行超时可能短于该值，
-建议在客户端环境中配置（毫秒）：
+Local approval for dangerous ops waits up to 90 seconds by default. Claude Code's default tool timeout may be shorter — raise it if needed (milliseconds):
 
 ```powershell
-$env:MCP_TOOL_TIMEOUT = "120000"   # 单次工具调用上限放宽到 120s
+$env:MCP_TOOL_TIMEOUT = "120000"   # allow up to 120s per tool call
 ```
 
-daemon 断链后无需任何手工恢复：状态（绑定/急停/SoM 缓存）全部保存在常驻进程里，
-客户端进程重开会自动续接。
+After a daemon disconnect, no manual recovery is needed: state (bindings / estop / SoM cache) lives in the resident process, and a restarted client picks up right where it left off.
 
-## 开发者：从源码运行
+## Develop from source
 
 ```powershell
 git clone https://github.com/Ddfang-sdf/deskpilot.git
@@ -133,20 +149,20 @@ pip install -e .
 python -m deskpilot
 ```
 
-要求 Windows 10/11 + Python ≥ 3.12。运行测试：`python -m pytest tests/ -q`（默认零副作用：不开真实窗口、不读生产目录）。真机集成用例（会开启真实记事本窗口）需显式 `--run-integration`，CI 全量执行。自行打包：`pip install pyinstaller && pyinstaller deskpilot.spec`。
+Requires Windows 10/11 + Python ≥ 3.12. Run tests: `python -m pytest tests/ -q` (zero side effects by default: no real windows, no production directories). Real-machine integration cases (they open real Notepad windows) need an explicit `--run-integration`; CI runs them all. Build the exe yourself: `pip install pyinstaller && pyinstaller deskpilot.spec`.
 
-## 路线图
+## Roadmap
 
-- [x] M1 安全核心：四道闸强制层、审计留痕、急停熔断
-- [x] M2 元素级操作：UIA 优先、零像素坐标的点击/输入
-- [x] M3 SoM 标注截图 + 本地审批通道
-- [x] 冻结人类感知：冻结通知弹窗、审批同步阻塞执行
-- [ ] 多显示器支持
-- [ ] 更多客户端的一键配置向导
+- [x] M1 security core: four-gate enforcement layer, audit trail, emergency stop
+- [x] M2 element-level operations: UIA-first, zero pixel-coordinate clicking/typing
+- [x] M3 SoM annotated screenshots + local approval channel
+- [x] Human-aware freeze: notification card, synchronous approve-then-execute
+- [x] Multi-monitor support (per-screen capture, dialogs follow the target screen)
+- [ ] One-click setup wizards for more clients
 
-## 贡献
+## Contributing
 
-Issue 和 PR 都欢迎。安全相关改动请连同 `docs/` 里的设计说明书一起更新——这个项目的设计文档与代码同库同评审。
+Issues and PRs are welcome. For security-related changes, please update the design docs in `docs/` together with the code — in this project, design documents are reviewed in the same repo as the code.
 
 ## Star History
 

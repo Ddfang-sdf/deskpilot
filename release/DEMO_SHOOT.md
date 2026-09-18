@@ -51,7 +51,7 @@ curl -X POST http://127.0.0.1:9420/call -H "Content-Type: application/json" `
 ## 拍完收尾
 
 1. 自查 gif(帧数/时长/体积/内容)——我先看,人再看
-2. README.md / README_EN.md 演示描述行同步更新(加"撤回/加白"字样)
+2. README.md / README.zh-CN.md 演示描述行同步更新(加"撤回/加白"字样)
 3. `release/RELEASE_NOTES.md` 注释里"重录方法"补一句指向本文件(现注释悬空)
 4. 提交 + 请示推送(资产替换不进 Release,无需发版)
 
