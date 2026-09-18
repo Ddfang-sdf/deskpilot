@@ -107,10 +107,12 @@ class TestIntReq03:
             # 顶层 = 旧三键 ∪ {coord_space}(DET-04/§5.1)
             assert set(data) == {"path", "count", "entries", "coord_space"}
             assert data["coord_space"] == "virtual_desktop"
-            # 条目 = 现状五键(detect=false 不加 source/confidence)
+            # 条目 = 六键(ISS-0066 ②设计授权:双写 som_id 与 id 同值,
+            # id 标废弃日程;detect=false 不加 source/confidence 不动)
             for e in data["entries"]:
-                assert set(e) == {"id", "name", "control_type",
+                assert set(e) == {"id", "som_id", "name", "control_type",
                                   "automation_id", "rect"}
+                assert e["som_id"] == e["id"]
             assert [e["id"] for e in data["entries"]] == \
                 list(range(1, len(data["entries"]) + 1))
         finally:

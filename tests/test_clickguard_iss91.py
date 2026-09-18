@@ -224,7 +224,7 @@ class TestDegenerateRectRealNotepad:
             try:
                 hwnd = new[0]["hwnd"]
                 token = self._attach(d.port, hwnd)
-                tree = self._call(d.port, "get_ui_tree", {"window": token})
+                tree = self._call(d.port, "get_ui_tree", {"window": hwnd})
                 assert tree["ok"] is True, tree
                 cands = []
                 for el in tree["data"]["elements"]:
@@ -293,7 +293,7 @@ class TestDegenerateRectRealNotepad:
                 hwnd = new[0]["hwnd"]
                 wr = new[0]["rect"]
                 token = self._attach(d.port, hwnd)
-                tree = self._call(d.port, "get_ui_tree", {"window": token})
+                tree = self._call(d.port, "get_ui_tree", {"window": hwnd})
                 assert tree["ok"] is True, tree
 
                 def _addressable(el):
