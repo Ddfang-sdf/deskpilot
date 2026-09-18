@@ -321,6 +321,7 @@ class TestDegenerateRectRealNotepad:
                     for t in ("Edit", "Document")) else 1)
                 clicked = None
                 last = None
+                occluded_n = 0
                 for el in cands[:10]:
                     params = {"token": token}
                     if el["name"]:
@@ -332,7 +333,18 @@ class TestDegenerateRectRealNotepad:
                     if r2["ok"]:
                         clicked = r2
                         break
+                    # 环境守卫(CI 红实证 2026-09-18):落点被「激活也压不过的
+                    # 外来遮挡层」盖住(如 CI 桌面的元气桌面层)=环境,非过修;
+                    # 全候选皆遮挡 → skip;其他拒绝码(NOT_FOUND 等)照样红
+                    if r2.get("error_code") == WINDOW_OCCLUDED:
+                        occluded_n += 1
+                        continue
                     # 非 ok:可能同名歧义(ELEMENT_NOT_FOUND)→ 换下一个候选
+                if clicked is None and occluded_n and occluded_n == len(
+                        cands[:10]):
+                    import pytest as _pt
+                    _pt.skip("环境守卫:桌面存在激活压不过的遮挡层"
+                             "(全部候选落点被外来窗口遮盖)")
                 assert clicked is not None, (
                     f"正常元素全部被拒 → 疑似过修(ISS-0091 整改①③"
                     f"把正常路径打死):最后响应={last}")
