@@ -1,0 +1,249 @@
+estop-state：
+
+{"frozen": true, "seq": 15, "source": "鼠标甩角", "ts": "2026-09-16T14:39:50.377763+08:00"}
+
+---
+
+estop-reset-15.req：
+
+{"seq": 15}
+
+---
+estop-state.json.tmp：
+
+{"frozen": false, "seq": 16, "source": "冻结提示弹窗", "ts": "2026-09-16T14:41:04.926418+08:00"}
+---
+owner.lock：
+{"pid": 50960, "role": "stdio", "ts": 1789530805.6072028}
+
+---
+daemon-heartbeat
+{"pid": 50960, "role": "stdio", "ts": 1789548912.4155445, "version": "0.3.7"}
+
+
+---
+9月8号审计日志：
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 123, "timestamp": "2026-09-08T09:06:42.675520+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 124, "timestamp": "2026-09-08T09:28:52.328952+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 125, "timestamp": "2026-09-08T10:16:02.766969+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:01.673610+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:01.674146+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:01.675149+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:01.677157+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:04.164909+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:04.163908+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:04.165909+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:04.169422+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:05.254195+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:05.263649+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:05.270673+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:05.284801+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:28:06.510126+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:29:44.251452+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:29:44.265991+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:29:44.728125+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:25.607645+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:29.146773+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:29.155765+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:29.551217+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:31.032466+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:34.119131+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:34.132145+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:34.604847+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:36.015383+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:36.876345+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:36.890256+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:37.349279+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:38.863854+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:41.728951+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:41.739503+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:42.118705+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:43.558151+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:43.649967+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:43.661481+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:44.032815+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:46.574934+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:49.987679+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:49.997992+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:50.360210+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:32:51.887477+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:32:54.533638+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:32:54.545643+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:32:54.938191+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:33:06.849189+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:33:06.860195+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:33:07.257944+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:33:39.488340+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:33:42.967894+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:33:42.979013+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:33:43.365029+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:34:17.678548+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:34:21.138408+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:34:21.150456+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:34:21.511613+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:34:58.247472+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:35:01.954462+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:35:01.966031+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:35:02.458249+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:35:33.186881+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:35:36.689037+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:35:36.699908+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:35:37.048419+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-08T10:55:37.835473+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-08T10:55:41.561247+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-08T10:55:41.573506+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-08T10:55:41.992764+08:00"}
+
+---
+9月7号审计日志：
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 107, "timestamp": "2026-09-07T08:49:23.572317+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 108, "timestamp": "2026-09-07T09:37:28.675441+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 109, "timestamp": "2026-09-07T10:11:10.571966+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 110, "timestamp": "2026-09-07T11:37:15.658993+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 111, "timestamp": "2026-09-07T11:42:03.292431+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 112, "timestamp": "2026-09-07T12:18:07.314825+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 113, "timestamp": "2026-09-07T12:18:11.867955+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 114, "timestamp": "2026-09-07T12:33:28.638633+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 115, "timestamp": "2026-09-07T14:04:55.878390+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 116, "timestamp": "2026-09-07T14:24:43.429846+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 117, "timestamp": "2026-09-07T17:22:46.202417+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 118, "timestamp": "2026-09-07T17:47:08.410052+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 119, "timestamp": "2026-09-07T18:55:47.996734+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:33:56.312588+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:33:56.323495+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:33:56.848376+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:35:06.446266+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:35:10.402541+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:35:10.414529+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:35:10.958804+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:35:12.430309+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:35:15.283115+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:35:15.295467+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:35:15.803982+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:35:17.579870+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:35:17.591969+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:35:18.018619+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:35:19.736567+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:35:23.872087+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:35:23.886173+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:35:24.523475+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:35:28.862778+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:35:32.340712+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:35:32.352471+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:35:32.849690+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:35:48.922841+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:35:52.784046+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:35:52.797284+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:35:53.185712+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:36:29.156643+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:36:32.516589+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:36:32.527058+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:36:32.994470+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:37:03.931948+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:37:07.391520+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:37:07.404063+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:37:07.834896+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:37:40.975320+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:37:44.407260+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:37:44.420352+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:37:44.810317+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:38:17.370658+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:38:21.826265+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:38:21.837817+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:38:22.264266+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:54:55.782718+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:54:59.925615+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:54:59.936057+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:55:00.332878+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:55:02.029381+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:55:04.813751+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:55:04.829761+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:55:05.372436+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:55:07.142025+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:55:07.154124+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:55:07.669090+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:55:09.275065+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:55:13.504549+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:55:13.515057+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:55:13.896880+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:55:17.505277+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:55:20.977422+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:55:20.991327+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:55:21.500612+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:55:37.715791+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:55:41.366990+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:55:41.380015+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:55:41.855297+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:56:17.788694+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:56:21.210972+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:56:21.221946+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:56:21.601117+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:56:51.527677+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:56:54.935645+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:56:54.946156+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:56:55.309970+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:57:25.771635+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:57:29.214443+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:57:29.225978+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:57:29.687110+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T19:58:00.288510+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T19:58:04.179647+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T19:58:04.190936+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T19:58:04.621895+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 120, "timestamp": "2026-09-07T20:35:06.221711+08:00"}
+{"event": "急停复位", "detail": "冻结提示弹窗", "seq": 121, "timestamp": "2026-09-07T20:39:33.553129+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:05.032819+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:08.893240+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:08.905449+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:09.350888+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:10.997412+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:14.168417+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:14.178429+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:14.700424+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:16.345613+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:16.505851+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:16.517637+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:17.055320+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:18.688182+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:21.827214+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:21.839231+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:21.841230+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:21.852555+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:22.294387+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:22.295393+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:25.780152+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:25.791936+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:25.806265+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:25.909529+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:26.378393+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:28.107250+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:31.260736+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:31.273817+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:31.869784+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:33.413007+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:33.468952+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:33.481973+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:33.999780+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:38.200497+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:38.213076+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:38.707710+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:40.035580+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:40.048245+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:40.610052+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:42.015304+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:45.391541+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:45.403776+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:45.854928+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:47.145746+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:47.158209+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:47.698092+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:48.994870+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:43:49.326045+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:43:53.195367+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:43:53.207377+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:43:53.602314+08:00"}
+{"event": "服务停止", "detail": "stdio 关闭", "seq": 4, "timestamp": "2026-09-07T20:44:23.724247+08:00"}
+{"event": "策略加载", "detail": "policy: C:\\tools\\deskpilot\\policy.yml", "seq": 1, "timestamp": "2026-09-07T20:44:27.354095+08:00"}
+{"event": "瘦代理跳过热键注册", "detail": "daemon 在线；急停热键与甩角监听归 daemon 持有", "seq": 2, "timestamp": "2026-09-07T20:44:27.367564+08:00"}
+{"event": "服务启动", "detail": "MCP stdio 就绪", "seq": 3, "timestamp": "2026-09-07T20:44:27.831678+08:00"}
+{"event": "急停触发", "detail": "鼠标甩角", "seq": 122, "timestamp": "2026-09-07T21:10:02.874969+08:00"}
