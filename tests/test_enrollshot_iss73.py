@@ -70,9 +70,11 @@ def _register_class() -> None:
 
 
 def _make_window(title: str, left: int, top: int, width: int, height: int,
-                 *, topmost: bool = False, visible: bool = True,
+                 *, topmost: bool = True, visible: bool = True,
                  zoomed: bool = False) -> int:
-    """自建顶层窗(本进程=python.exe;WS_EX_TOPMOST 可选)。"""
+    """自建顶层窗(本进程=python.exe;默认 WS_EX_TOPMOST——发布门实证:
+    用户桌面窗口(终端/浏览器)任意遮盖测试区会污染采样前提,测试窗
+    置顶后前提与环境脱钩;遮挡片同为置顶且后建,仍压目标)。"""
     _register_class()
     exstyle = 0x00000008 if topmost else 0        # WS_EX_TOPMOST
     hwnd = user32.CreateWindowExW(
@@ -422,7 +424,11 @@ class TestRealWindowCapture:
         遮挡片 49×49(短边 <50):恰好压采样点又不入取证候选池
         (生产语义:微小窗不作软件证据面),目标仍是 onscreen[0]。"""
         ctx, appr, _ex = _real_ctx(tmp_path, policy, audit_log)
-        target = _make_window("ISS73-TC02", 300, 300, 420, 320)
+        # 目标置顶(对抗环境:用户 Chrome 置顶窗实测覆盖底角);遮挡片同置顶
+        # 且后建→压中心不动。诚实注记:置前取证(Q2)可能重排置顶组,
+        # 本用例断言「部分遮挡不吞图」的终效应;过半判据的零命中边界由
+        # tc09 守住(目标不置顶,激活不翻身)
+        target = _make_window("ISS73-TC02", 300, 300, 420, 320, topmost=True)
         # 中心点 (510,460);topmost 遮挡片只压中心(激活目标后仍压顶)
         occ = _make_window("ISS73-TC02-OCC", 486, 436, 49, 49, topmost=True)
         try:
@@ -444,7 +450,8 @@ class TestRealWindowCapture:
         max(4,边长/8)+中心,与判据公式同前提;遮挡片因微小尺寸不入
         取证候选池)。"""
         ctx, appr, _ex = _real_ctx(tmp_path, policy, audit_log)
-        target = _make_window("ISS73-TC09", 300, 300, 420, 320)
+        # 目标不置顶(同 tc02:置顶会在置前取证时压过遮挡片,毁掉五点全败前提)
+        target = _make_window("ISS73-TC09", 300, 300, 420, 320, topmost=False)
         # 采样点:中心(510,460);四角内缩 ix=52/iy=40 → (352,340)(668,340)
         # (352,580)(668,580)
         pts = [(510, 460), (352, 340), (668, 340), (352, 580), (668, 580)]
