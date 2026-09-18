@@ -293,6 +293,11 @@ class TestDegenerateRectRealNotepad:
                 hwnd = new[0]["hwnd"]
                 wr = new[0]["rect"]
                 token = self._attach(d.port, hwnd)
+                # CI 红实证(2026-09-18 v0.4.1 流水线):CI 桌面前台行为不同,
+                # 记事本不前置则落点被其他窗口遮挡(WINDOW_OCCLUDED)——
+                # 生产语义本就要求写操作前先前置目标窗口
+                act = self._call(d.port, "activate_window", {"token": token})
+                assert act["ok"] is True, act
                 tree = self._call(d.port, "get_ui_tree", {"window": hwnd})
                 assert tree["ok"] is True, tree
 
