@@ -36,3 +36,7 @@ policy.local.yml
 
 # REQ-003 侦察权重(大文件,不入库;来源+sha256 记于侦察方案)
 docs/需求/REQ-003-侦察/weights/
+
+# 构建/发布产物(本地构建输出)
+build-new/
+dist-new/
