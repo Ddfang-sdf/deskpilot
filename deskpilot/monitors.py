@@ -34,18 +34,26 @@ def enum_monitors() -> list[dict]:
 
     返回 [{"rect": (l,t,r,b), "work_area": (l,t,r,b), "is_primary": bool}]。
     优先 mss（自带每屏几何）；失败回退 Win32 EnumDisplayMonitors。
+
+    ISS-0096：返回前**确定性重排**——主屏(is_primary)第一,其余按 rect
+    左缘从左到右(同左缘按上缘)。屏号语义可预知:0=主屏,余左到右
+    (AI 不再靠猜; fullscreen 的 monitors 字段同序=同一清单)。
     """
+    mons = None
     try:
         import mss
         with mss.MSS() as sct:
-            mons = sct.monitors[1:]           # [0] 为虚拟桌面聚合,跳过
-            if mons:
+            ms = sct.monitors[1:]           # [0] 为虚拟桌面聚合,跳过
+            if ms:
                 # ISS-0057:work_area/is_primary 不再猜——Win32 真查回填
                 info = _win32_info()
-                return [_norm(m, i, info) for i, m in enumerate(mons)]
+                mons = [_norm(m, i, info) for i, m in enumerate(ms)]
     except Exception:
-        pass
-    return _enum_win32()
+        mons = None
+    if mons is None:
+        mons = _enum_win32()
+    return sorted(mons, key=lambda m: (0 if m.get("is_primary") else 1,
+                                       m["rect"][0], m["rect"][1]))
 
 
 def _norm(m: dict, idx: int, info: dict | None = None) -> dict:

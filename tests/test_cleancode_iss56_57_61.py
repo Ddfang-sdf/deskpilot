@@ -74,10 +74,13 @@ class TestTaskbarReserveSingleSource:
             (-1920, 0, 0, 1080): ((-1920, 0, 0, 1080), True),  # 主屏在左副屏位
         }, raising=False)
         out = mon.enum_monitors()
-        assert out[0]["work_area"] == (0, 0, 1920, 1032)   # 真查回填(直出)
-        assert out[0]["is_primary"] is False               # 原点≠主屏(真查)
-        assert out[1]["work_area"] == (-1920, 0, 0, 1080)  # 副屏真查(直出)
-        assert out[1]["is_primary"] is True
+        by_rect = {m["rect"]: m for m in out}       # ISS-0096 排序后按 rect 查
+        assert by_rect[(0, 0, 1920, 1080)]["work_area"] == (0, 0, 1920, 1032)
+        assert by_rect[(0, 0, 1920, 1080)]["is_primary"] is False
+        assert by_rect[(-1920, 0, 0, 1080)]["work_area"] == (-1920, 0, 0, 1080)
+        assert by_rect[(-1920, 0, 0, 1080)]["is_primary"] is True
+        # ISS-0096 顺带钉:主屏(is_primary)排第一
+        assert out[0]["is_primary"] is True
 
 
 class TestHeartbeatLockDeadCodeGone:

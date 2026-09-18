@@ -99,9 +99,9 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     # ---- L0 感知类（详细设计 §12.4）----
     "screenshot": {
         # ISS-0089 A3 + ISS-0090 #5:降采样/scale/path 语义入描述
-        # (受 ISS-0015 长度闸门 ≤200 + ISS-0037 sv06「图像不可见」子串约束,
-        # 实测 198)
-        "description": "拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=按屏号、window=绑定窗口、region=rect(精读/局部,含 coverage)。内联图长边>2000 等比缩:scale=缩放比,图坐标须 /scale 还原;path 为全分辨率原图,细节用 path 回读。图像不可见改调 ocr;ocr:true 附文字清单。",
+        # (受 ISS-0015 长度闸门 ≤200 + ISS-0037 sv06「图像不可见」子串约束)
+        # ISS-0096:屏号语义入描述(0=主屏,余左到右)——AI 不再靠猜
+        "description": "拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=屏号(0=主屏,余左到右)、window=绑定窗口、region=rect(精读/局部,含 coverage)。长边>2000 等比缩:scale=缩放比,图坐标 /scale 还原;path 为全分辨率原图供回读。图像不可见改调 ocr;ocr:true 附文字清单。",
         "required": {"scope": ("enum", ["fullscreen", "screen", "region", "window"])},
         "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",),
                      "screen": ("int",)},
