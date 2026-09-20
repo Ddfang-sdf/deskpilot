@@ -227,11 +227,9 @@ class FreezeNotifier:
 
     @staticmethod
     def _mouse_screen() -> dict | None:
-        """ISS-0007 B：鼠标所在屏（冻结落位屏）。"""
-        try:
-            import pyautogui
-            from .monitors import enum_monitors, screen_of_point
-            pos = pyautogui.position()
-            return screen_of_point(enum_monitors(), pos.x, pos.y)
-        except Exception:
-            return None
+        """ISS-0097 裁定(2026-09-20 sdfang):冻结弹窗一律主屏——废止
+        ISS-0007 B 的鼠标所在屏跟随(方法名留兼容,语义已改)。"""
+        from .monitors import enum_monitors
+        mons = enum_monitors()
+        return next((m for m in mons if m.get("is_primary")),
+                    mons[0] if mons else None)

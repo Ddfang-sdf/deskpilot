@@ -78,23 +78,25 @@ class TestBuilderGeometry:
 
     def test_g04_revoke_confirm_follows_target_screen(self, monkeypatch,
                                                       tmp_path):
-        """g04(TC-71-01/02 行为面):撤回确认窗(人类裁决面)落目标屏右下。
-        红态(现状):build_revoke_confirm 无 target_screen 形参 → TypeError;
-        且公式为主屏右上角硬编码。"""
+        """g04(裁定更新为 ISS-0097):撤回确认窗(人类裁决面)**一律主屏
+        右下**——ISS-0071 的跟随被裁决对象屏语义被 ISS-0097 废止
+        (2026-09-20 sdfang:「弹框一律在主屏右下角弹出,不要额外判断」)。
+        枚举含副屏+主屏(乱序给)也恒落主屏。"""
+        monkeypatch.setattr(ww, "enum_monitors",
+                            lambda: [SECOND, PRIMARY])  # 主屏不在首项
         rec: list[str] = []
         self._stub_tk(monkeypatch, rec)
-        ww.build_revoke_confirm(object(), "x.exe", tmp_path / "r.result", 15,
-                                target_screen=SECOND)
-        assert rec[-1] == "420x130+3404+837"    # 替身记录直出(副屏右下)
+        ww.build_revoke_confirm(object(), "x.exe", tmp_path / "r.result", 15)
+        assert rec[-1] == "420x130+1484+886"    # 主屏右下(替身记录直出)
 
     def test_g05_enroll_notice_same_anchor(self, monkeypatch):
-        """g05(TC-71-03):入白回执 toast 与确认窗同屏同锚点(右下角)。
-        红态(现状):无 target_screen 形参+主屏右上角硬编码。"""
+        """g05(ISS-0097 同上):入白回执 toast 同落主屏右下。"""
+        monkeypatch.setattr(ww, "enum_monitors",
+                            lambda: [SECOND, PRIMARY])
         rec: list[str] = []
         self._stub_tk(monkeypatch, rec)
-        ww.build_enroll_notice(object(), "x.exe", on_undo=lambda: None,
-                               target_screen=SECOND)
-        assert rec[-1] == "420x48+3404+919"     # 替身记录直出(副屏右下)
+        ww.build_enroll_notice(object(), "x.exe", on_undo=lambda: None)
+        assert rec[-1] == "420x48+1484+968"     # 主屏右下(替身记录直出)
 
 
 class TestFallbackAndForm:
@@ -118,21 +120,21 @@ class TestFallbackAndForm:
 class TestChannelCarriesScreen:
     """g08:撤回通道把「被裁决对象所在屏」解析进弹窗载荷。"""
 
-    def test_g08_channel_resolves_target_screen(self, tmp_path):
-        """g08(单元,§3 跟随语义数据源):DialogRevokeChannel 装配
-        resolve_screen 后,show 载荷带 target_screen;解析失败回 None
-        (builder 端退主屏)。超时默认保留语义不变(既有)。
-        红态(现状):channel 无 resolve_screen 形参 → TypeError。"""
+    def test_g08_channel_carries_screen(self, tmp_path):
+        """g08(裁定更新为 ISS-0097):跟随机制已撤除——通道不再有
+        resolve_screen 形参(构造传之即 TypeError),载荷不带
+        target_screen;超时默认保留语义不变。契约钉(直出)。
+        红态(ISS-0071 旧态):通道曾携带屏解析。"""
         class _DS:
             def __init__(self): self.shows = []
             def show(self, kind, payload): self.shows.append((kind, payload))
 
         ds = _DS()
-        ch = ww.DialogRevokeChannel(ds, timeout=0.2,
-                                    result_root=str(tmp_path),
-                                    resolve_screen=lambda proc: SECOND)
+        with pytest.raises(TypeError):          # 形参已撤(直出)
+            ww.DialogRevokeChannel(ds, timeout=0.2, result_root=str(tmp_path),
+                                   resolve_screen=lambda proc: SECOND)
+        ch = ww.DialogRevokeChannel(ds, timeout=0.2, result_root=str(tmp_path))
         r = ch.request("x.exe")
         assert r == "keep"                      # 超时默认保留(既有语义直出)
-        kind, payload = ds.shows[0]
-        assert kind == "revoke"
-        assert payload["target_screen"] == SECOND   # 载荷直出
+        _kind, payload = ds.shows[0]
+        assert "target_screen" not in payload   # 载荷无屏字段(直出)

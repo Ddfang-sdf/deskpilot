@@ -121,15 +121,10 @@ class TkApprovalChannel:
 
     @staticmethod
     def _screen_of_target(target_rect: tuple | None) -> dict | None:
-        """ISS-0007 B：审批落位屏——目标窗口所在屏；无绑定回退鼠标所在屏。"""
-        from .monitors import enum_monitors, screen_of_point, screen_of_rect
-        if target_rect is not None:
-            mon = screen_of_rect(enum_monitors(), target_rect)
-            if mon is not None:
-                return mon
-        try:
-            import pyautogui
-            pos = pyautogui.position()
-            return screen_of_point(enum_monitors(), pos.x, pos.y)
-        except Exception:
-            return None
+        """ISS-0097 裁定(2026-09-20 sdfang):一律主屏——「弹框一律在主屏
+        右下角弹出,不要额外判断」。废止 ISS-0007 B 的跟随目标屏/鼠标屏
+        (快照陈旧曾致跟错屏)。签名与返回值形态保留(调用点不动)。"""
+        from .monitors import enum_monitors
+        mons = enum_monitors()
+        return next((m for m in mons if m.get("is_primary")),
+                    mons[0] if mons else None)
