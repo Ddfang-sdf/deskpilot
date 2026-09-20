@@ -11,7 +11,7 @@ en:
   approval.btn.permanent: "Permanent"
   approval.btn.batch: "Similar"
   approval.btn.deny: "Deny"
-  approval.batch.hint: "\"Similar\" lasts this session only: same-window same-kind ops skip re-approval; restart or new window requires a fresh approval"
+  approval.batch.hint: "\"Similar\": session only; new window/restart re-asks"
   approval.readfail: "(failed to read the approval description)"
 
   freeze.title: "DeskPilot E-Stop"
