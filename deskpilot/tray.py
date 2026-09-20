@@ -12,6 +12,8 @@ import threading
 from ctypes import wintypes
 from typing import Callable
 
+from .i18n import tr
+
 _WM_APP = 0x8000
 _WM_TRAY = _WM_APP + 1
 _WM_RBUTTONUP = 0x0205
@@ -87,7 +89,7 @@ def menu_items() -> tuple[tuple[str, str], ...]:
     仅保留管理入口：半成品"运行状态"弹框按用户指令撤除
     （"要搞监控就好好搞，不搞就别给自己找麻烦"）。
     """
-    return (("manage", "白名单管理…"),)
+    return (("manage", tr("tray.menu.manage")),)
 
 
 def _load_tray_icon():

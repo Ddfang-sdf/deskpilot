@@ -16,6 +16,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from .i18n import tr
+
 _DIALOG_TIMEOUT_SECONDS = 60.0
 _POLL_INTERVAL = 0.1
 
@@ -93,7 +95,7 @@ class TkApprovalChannel:
                 description = desc_path.read_text(encoding="utf-8",
                                                   errors="replace")
             except OSError:
-                description = "(审批描述读取失败)"
+                description = tr("approval.readfail")
             self._dialog_service.show("approval", {
                 "description": description, "result_path": str(result_path),
                 "timeout_s": self._timeout, "image_path": image_path,

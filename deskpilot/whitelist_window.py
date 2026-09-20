@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 import tkinter as tk
 
+from .i18n import tr
 from .monitors import enum_monitors, toast_placement
 
 _TITLE_FONT = ("Microsoft YaHei", 11, "bold")
@@ -312,8 +313,8 @@ class _Tooltip:
 class _ManagerUI:
     """白名单管理窗口控制器：搜索过滤 + 两区分立滚动 + 更多/收起。"""
 
-    _SECTIONS = (("static", "已永久加入（写入白名单文件）"),
-                 ("session", "本次会话临时允许（重启失效）"))
+    _SECTIONS = (("static", tr("wl.group.static")),
+                 ("session", tr("wl.group.session")))
 
     def __init__(self, win, entries: dict, on_remove, on_clear_session,
                  display_map: dict | None = None):
@@ -326,14 +327,14 @@ class _ManagerUI:
 
         header = tk.Frame(win, bg=_BG)
         header.pack(fill="x", padx=16, pady=(14, 6))
-        tk.Label(header, text="白名单管理", bg=_BG, fg=_TITLE_FG,
+        tk.Label(header, text=tr("wl.header"), bg=_BG, fg=_TITLE_FG,
                  font=("Microsoft YaHei", 13, "bold"),
                  anchor="w").pack(side="left")
         self._search = tk.Entry(header, width=18, relief="solid", bd=1,
                                 font=("Microsoft YaHei", 9))
         self._search.pack(side="right")
         self._search.bind("<KeyRelease>", self._on_search)
-        tk.Label(header, text="搜索", bg=_BG, fg=_HINT_FG,
+        tk.Label(header, text=tr("wl.search"), bg=_BG, fg=_HINT_FG,
                  font=("Microsoft YaHei", 9)).pack(side="right", padx=(0, 6))
 
         for key, title in self._SECTIONS:
@@ -341,7 +342,8 @@ class _ManagerUI:
 
         bar = tk.Frame(win, bg=_BG)
         bar.pack(fill="x", padx=16, pady=(0, 14))
-        clear = tk.Button(bar, text="全部清空", width=10, relief="flat",
+        clear = tk.Button(bar, text=tr("wl.clear_session"), width=10,
+                          relief="flat",
                           bg=_BTN_BG, fg=_REMOVE_FG, font=_TEXT_FONT,
                           cursor="hand2", command=on_clear_session)
         clear.pack(side="right")
@@ -352,10 +354,10 @@ class _ManagerUI:
     # ---- 骨架 ----
 
     _EMPTY_TEXT = {
-        "static": ("暂无永久加入的软件",
-                   "AI 请求新应用时，在弹窗选「永久加入」即可出现在这里"),
-        "session": ("本次会话暂无临时允许",
-                    "「本次会话允许」的应用会列在这里，重启后自动清空"),
+        "static": (tr("wl.empty.static"),
+                   tr("wl.empty.static.hint")),
+        "session": (tr("wl.empty.session"),
+                    tr("wl.empty.session.hint")),
     }
 
     def _build_block(self, win, title: str) -> dict:
@@ -477,7 +479,7 @@ def build_window(parent, entries: dict, on_remove: Callable[[str], None],
     控制器挂 win._manager（测试观测口）。
     """
     win = tk.Toplevel(parent)
-    win.title("DeskPilot 白名单管理")
+    win.title(tr("wl.title"))
     win.geometry("560x560")
     win.minsize(460, 420)
     win.configure(bg=_BG)
@@ -505,7 +507,7 @@ def _row(parent, proc: str, level: str, display: str, on_remove,
     if desc:                                    # 空描述省略第三行(TC-DESC-03)
         tk.Label(left, text=_truncate(desc), bg=_BG, fg=_HINT_FG,
                  font=("Microsoft YaHei", 8), anchor="w").pack(fill="x")
-    btn = _IconButton(row, action="remove", tooltip="移出白名单",
+    btn = _IconButton(row, action="remove", tooltip=tr("wl.remove.tip"),
                       command=lambda p=proc: on_remove(p))
     btn.pack(side="right", padx=(10, 0))
     tk.Frame(parent, bg=_SEP, height=1).pack(fill="x", pady=(4, 0))
@@ -562,7 +564,8 @@ def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
     body = tk.Frame(card, bg=_DARK)
     body.pack(fill="both", expand=True, padx=14, pady=10)
 
-    msg = tk.Label(body, text=f"已加入白名单：{process}", bg=_DARK,
+    msg = tk.Label(body, text=tr("wl.notice.added", process=process),
+                   bg=_DARK,
                    fg="#FFFFFF", font=("Microsoft YaHei", 10), anchor="w")
     msg.pack(side="left")
 
@@ -573,7 +576,7 @@ def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
             pass
 
     def _confirm_then_dismiss() -> None:
-        msg.configure(text="✓ 已撤销，已移出白名单", fg=_CONFIRM_GREEN)
+        msg.configure(text=tr("wl.notice.undone"), fg=_CONFIRM_GREEN)
         undo_btn.pack_forget()
         win.after(1500, _dismiss)
 
@@ -589,7 +592,8 @@ def build_enroll_notice(parent, process: str, on_undo: Callable[[], None]):
                       font=("Microsoft YaHei", 10), cursor="hand2",
                       command=_dismiss)
     close.pack(side="right", padx=(8, 0))
-    undo_btn = tk.Button(body, text="撤销", relief="flat", bd=0, bg=_DARK,
+    undo_btn = tk.Button(body, text=tr("wl.notice.undo"), relief="flat", bd=0,
+                         bg=_DARK,
                          fg=_ACTION_BLUE, activebackground=_DARK,
                          activeforeground="#A8C7FA",
                          font=("Microsoft YaHei", 10, "bold"),
@@ -612,7 +616,7 @@ def build_revoke_confirm(parent, process: str, result_path, timeout_s: float):
     """
     result_path = Path(result_path)
     win = tk.Toplevel(parent)
-    win.title("DeskPilot 白名单")
+    win.title(tr("wl.revoke.title"))
     win.overrideredirect(True)
     win.attributes("-topmost", True)
     win.configure(bg="#FFFFFF")
@@ -623,10 +627,12 @@ def build_revoke_confirm(parent, process: str, result_path, timeout_s: float):
     body = tk.Frame(card, bg="#FFFFFF")
     body.pack(fill="both", expand=True, padx=16, pady=12)
 
-    tk.Label(body, text=f"AI 请求将「{process}」移出白名单", bg="#FFFFFF",
+    tk.Label(body, text=tr("wl.revoke.headline", process=process),
+             bg="#FFFFFF",
              font=_TITLE_FONT, anchor="w").pack(fill="x")
     remaining = [int(timeout_s)]
-    timer_label = tk.Label(body, text=f"{remaining[0]} 秒后默认保留",
+    timer_label = tk.Label(body, text=tr("wl.revoke.countdown",
+                                         n=remaining[0]),
                            bg="#FFFFFF", fg="#888888", font=_HINT_FONT,
                            anchor="w")
     timer_label.pack(fill="x", pady=(6, 0))
@@ -645,11 +651,13 @@ def build_revoke_confirm(parent, process: str, result_path, timeout_s: float):
 
     bar = tk.Frame(body, bg="#FFFFFF")
     bar.pack(fill="x", pady=(12, 0))
-    rm = tk.Button(bar, text="移出", width=10, relief="flat", bg="#C8391F",
+    rm = tk.Button(bar, text=tr("wl.revoke.remove"), width=10, relief="flat",
+                   bg="#C8391F",
                    fg="#FFFFFF", font=_TEXT_FONT, cursor="hand2",
                    command=lambda: decide("remove"))
     rm.pack(side="right")
-    keep = tk.Button(bar, text="保留", width=10, relief="flat", bg="#F0F0F0",
+    keep = tk.Button(bar, text=tr("wl.revoke.keep"), width=10, relief="flat",
+                     bg="#F0F0F0",
                      font=_TEXT_FONT, cursor="hand2",
                      command=lambda: decide("keep"))
     keep.pack(side="right", padx=(0, 12))
@@ -661,7 +669,7 @@ def build_revoke_confirm(parent, process: str, result_path, timeout_s: float):
         if remaining[0] <= 0:
             decide("timeout")
             return
-        timer_label.config(text=f"{remaining[0]} 秒后默认保留")
+        timer_label.config(text=tr("wl.revoke.countdown", n=remaining[0]))
         win.after(1000, tick)
 
     win.geometry(_resolve_geo(_WIDTH, 130))

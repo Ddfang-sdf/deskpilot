@@ -22,6 +22,7 @@ from .errors import (APPROVAL_DENIED, APPROVAL_TIMEOUT, AUDIT_FAILURE,
                      ExecutorError)
 from .estop import EstopMonitor
 from .executor import Executor
+from .i18n import tr
 from .models import (BINDING_REQUIRED_TOOLS, L0, L1, L2, L3, TOOL_LEVELS,
                      AuditEntry, BindingRecord, Decision, OperationRequest,
                      Policy)
@@ -342,25 +343,6 @@ class Enforcement:
 
     # ---- 审批描述（人话层 + 技术底注）与目标实拍 ----
 
-    _KEY_ACTIONS = {
-        "alt+f4": "关闭窗口",
-        "delete": "按 Delete 删除键",
-        "escape": "按 Escape 键",
-        "ctrl+w": "关闭当前标签页",
-        "ctrl+shift+escape": "打开任务管理器",
-    }
-    _TOOL_ACTIONS = {
-        "launch_app": "启动应用",
-        "activate_window": "激活窗口",
-        "click": "鼠标点击",
-        "click_element": "点击控件",
-        "type_text": "输入文本",
-        "type_element": "向控件输入文本",
-        "set_clipboard": "改写剪贴板内容",
-        "drag": "鼠标拖拽",
-        "key": "按键",
-    }
-
     def _live_title(self, binding: BindingRecord) -> str:
         """窗口标题以当前活值为准；查不到退回绑定快照。"""
         try:
@@ -414,17 +396,14 @@ class Enforcement:
                     except Exception:
                         pass
                 if onscreen:
-                    self._capture_note = (f"（实拍来源：目标软件 {proc} 的"
-                                          f"可见窗口）")
+                    self._capture_note = tr("enf.note.source", proc=proc)
                     return self._shot_verified(onscreen[0])
                 if all_cands:
                     # D′：无可见窗如实陈述——不把隐藏窗拽出来拍照求背书
-                    self._capture_note = ("（该软件当前无可见窗口，未截图；"
-                                          "本次无实拍，请谨慎裁决）")
+                    self._capture_note = tr("enf.note.invisible")
                     return None
             # 反查不到:不给错图,明示(禁止全屏退化静默误导)
-            self._capture_note = ("（未找到目标软件的窗口，未截图；"
-                                  "本次无实拍，请谨慎裁决）")
+            self._capture_note = tr("enf.note.notfound")
             return None
         except Exception as e:
             try:
@@ -461,18 +440,15 @@ class Enforcement:
             activated = activated or ok
             hits = self._visibility_hits(rect, hwnd)
             if hits >= 3:                            # 五点过半=基本可辨认
-                note = ("已置前取证" if activated
-                        else "未能置前，就当前画面取证")
-                self._capture_note += f"（{note}，可见性采样 {hits}/5）"
+                note = (tr("enf.note.forefront", hits=hits) if activated
+                        else tr("enf.note.nofront", hits=hits))
+                self._capture_note += note
                 return self._executor.capture_approval_shot(rect)
         # 两次仍不过:如实区分置前失败与遮挡,不给错图(fail-closed)
         if not activated:
-            self._capture_note += (f"（未能置前目标软件窗口，可见性采样 "
-                                   f"{hits}/5，未截图；本次无实拍，请谨慎裁决）")
+            self._capture_note += tr("enf.note.notfront", hits=hits)
         else:
-            self._capture_note += (f"（目标软件窗口被遮挡，可见性采样 "
-                                   f"{hits}/5 未达过半，未截图；"
-                                   f"本次无实拍，请谨慎裁决）")
+            self._capture_note += tr("enf.note.occluded", hits=hits)
         return None
 
     def _visibility_hits(self, rect: tuple, hwnd: int) -> int:
@@ -512,60 +488,79 @@ class Enforcement:
 
         ISS-0020 A：内容型操作主标题直接带内容(截断展示,不改操作语义);
         B：底注参数上限 500 字并标注总长;C：附实拍来源说明。
+        REQ-007：文案经 i18n.tr(进程名/路径/坐标等槽内容不译)。
         """
         tech_target = ""
         if binding is not None:
             title = self._live_title(binding)
-            plain_target = (f"「{title}」" if title
-                            else f"进程 {binding.process_name} 的窗口")
-            tech_target = (f"进程 {binding.process_name} 的窗口"
-                           f"（句柄 {binding.hwnd}）")
+            plain_target = (tr("enf.head.target.title", title=title) if title
+                            else tr("enf.head.target.proc",
+                                    proc=binding.process_name))
+            tech_target = (tr("enf.head.target.proc",
+                              proc=binding.process_name)
+                           + f"（{tr('enf.head.attach.hwnd', hwnd=binding.hwnd)}）")
         else:
             # ISS-0012 F：launch 无绑定窗口，plain_target 用显示名（裸进程名不可读）
             from .appnames import app_display_name
             app_raw = str(request.params.get("app", ""))
             proc = app_raw.strip().lower().rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
             plain_target = app_display_name(proc)
-            tech_target = f"应用 {app_raw}"
+            tech_target = tr("enf.head.target.app", app=app_raw)
 
         if request.tool == "key":
             key = normalize_key(str(request.params.get("key", "")))
-            action = self._KEY_ACTIONS.get(key, f"按下 {key}")
-            headline = f"{action}{plain_target}" if binding else f"{action}"
-            tech = f"按键 {key} 作用于{tech_target}"
+            action = tr(f"enf.act.key.{key}")
+            if action == f"enf.act.key.{key}":      # 未收录键按通用形
+                action = tr("enf.act.key.generic", key=key)
+            headline = (tr("enf.head.key", action=action, target=plain_target)
+                        if binding else tr("enf.head.key.nobinding",
+                                           action=action))
+            tech = tr("enf.head.tech.key", key=key, target=tech_target)
         elif request.tool == "attach":
             # ISS-0020 补:attach 主标题带目标窗口(不再"执行 attach"空泛)
             from .appnames import app_display_name
             att_title = str(request.params.get("title", "") or "")
             att_proc = str(request.params.get("process", "") or "")
-            att_target = (f"「{att_title}」" if att_title
+            att_target = (tr("enf.head.target.title", title=att_title)
+                          if att_title
                           else app_display_name(att_proc) if att_proc
-                          else f"句柄 {request.params.get('hwnd')}")
-            headline = f"绑定窗口 {att_target}"
-            tech = (f"attach（参数 {_truncate_show(self._digest(request), 500)}）"
-                    f"作用于{tech_target or '目标窗口'}")
+                          else tr("enf.head.attach.hwnd",
+                                  hwnd=request.params.get('hwnd')))
+            headline = tr("enf.head.attach", target=att_target)
+            tech = tr("enf.head.tech.attach",
+                      digest=_truncate_show(self._digest(request), 500),
+                      target=tech_target or tr("enf.head.target.generic"))
         elif request.tool == "launch_app":
-            headline = f"启动应用 {plain_target}"
-            tech = f"launch_app 作用于{tech_target}"
+            headline = tr("enf.head.launch", target=plain_target)
+            tech = tr("enf.head.tech.launch", target=tech_target)
         elif request.tool in ("type_text", "type_element", "set_clipboard"):
             # ISS-0020 A：内容进主标题（≤60 字截断+总长标注）
-            action = self._TOOL_ACTIONS.get(request.tool,
-                                            f"执行 {request.tool}")
+            action = tr(f"enf.act.{request.tool}")
             text = str(request.params.get("text", ""))
-            headline = f"{action}「{_truncate_show(text, 60)}」{plain_target}"
-            tech = f"{request.tool}（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+            headline = tr("enf.head.text", action=action,
+                          text=_truncate_show(text, 60), target=plain_target)
+            tech = tr("enf.head.tech.tool", tool=request.tool,
+                      digest=_truncate_show(self._digest(request), 500),
+                      target=tech_target)
         elif request.tool == "click":
             x, y = request.params.get("x"), request.params.get("y")
-            headline = f"鼠标点击 ({x}, {y}){plain_target}"
-            tech = f"click（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+            headline = tr("enf.head.click", x=x, y=y, target=plain_target)
+            tech = tr("enf.head.tech.click", target=tech_target)
         elif request.tool == "drag":
             s, e = request.params.get("start"), request.params.get("end")
-            headline = f"鼠标拖拽 ({s[0]}, {s[1]})→({e[0]}, {e[1]}){plain_target}"
-            tech = f"drag（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+            headline = tr("enf.head.drag", sx=s[0], sy=s[1],
+                          ex=e[0], ey=e[1], target=plain_target)
+            tech = tr("enf.head.tech.tool", tool="drag",
+                      digest=_truncate_show(self._digest(request), 500),
+                      target=tech_target)
         else:
-            action = self._TOOL_ACTIONS.get(request.tool, f"执行 {request.tool}")
+            action = tr(f"enf.act.{request.tool}")
+            if action == f"enf.act.{request.tool}":
+                action = f"执行 {request.tool}"    # 未注册动作的兜底(罕见)
             headline = f"{action}{plain_target}"
-            tech = f"{request.tool}（参数 {_truncate_show(self._digest(request), 500)}）作用于{tech_target}"
+            tech = tr("enf.head.tech.tool", tool=request.tool,
+                      digest=_truncate_show(self._digest(request), 500),
+                      target=tech_target)
         note = getattr(self, "_capture_note", "")
         return f"{headline}\n---\n{tech}{note}"
 
@@ -588,18 +583,19 @@ class Enforcement:
                 if cands and cands[0].get("title"):
                     title = cands[0]["title"]
         display, src = resolve_display_name(proc, title)
+        # REQ-007:来源标签经翻译器(appnames 产出中文规范名,键位映射)
+        src_label = tr({"版本信息": "enf.src.version",
+                        "窗口标题": "enf.src.title",
+                        "进程名": "enf.src.proc"}.get(src, "enf.src.proc"))
         exe = _resolve_exe(proc)
         # T1:exe 全路径给人看(文件系统锚定,目标改不了);超长中段省略
-        exe_txt = _truncate_path_mid(exe) if exe else "未取得"
-        aux = (f"；窗口标题「{title}」供辅助识别"
+        exe_txt = (_truncate_path_mid(exe) if exe
+                   else tr("enf.enroll.exe_missing"))
+        aux = (tr("enf.enroll.aux_title", title=title)
                if title and title != display else "")
-        headline = f"AI 请求操作新应用「{display}」"
-        tech = (f"进程 {proc}（显示名来源：{src}——由目标软件自报，"
-                f"未经系统核验{aux}）当前未经本地授权"
-                f"（请求动作 {request.tool}）。"
-                f"程序路径：{exe_txt}。"
-                f"本次会话允许 = 重启前有效（会话级，不落盘）；"
-                f"永久加入 = 写入白名单长期有效，可随时在白名单管理中移出")
+        headline = tr("enf.enroll.headline", display=display)
+        tech = tr("enf.enroll.tech", proc=proc, src=src_label, aux=aux,
+                  tool=request.tool, exe=exe_txt)
         note = getattr(self, "_capture_note", "")
         return f"{headline}\n---\n{tech}{note}"
 

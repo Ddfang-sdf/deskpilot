@@ -291,16 +291,18 @@ class TestDET02WeightsNotBundled:
         assert hits == [], f"deskpilot/ 内出现权重文件: {hits}"
 
     def test_spec_datas_unchanged_vs_head(self):
-        spec_path = ROOT / "deskpilot.spec"
-        worktree = spec_path.read_text(encoding="utf-8")
-        try:
-            head = subprocess.run(
-                ["git", "show", "HEAD:deskpilot.spec"], cwd=ROOT,
-                capture_output=True, text=True, check=True,
-                encoding="utf-8").stdout
-        except Exception as e:  # git 不可用 → 显式跳过并留痕
-            pytest.skip(f"git 不可用,无法取 HEAD 基线: {e}")
-        assert worktree == head, "deskpilot.spec 与 HEAD 基线不一致(本单应零改动)"
+        """REQ-003 DET-02 原钉「spec 与 HEAD 零改动」——REQ-007 设计授权
+        变更(i18n.yml 文案目录入包,单行声明)后,守护面改为**datas 白名单
+        精确钉**:collect_data_files 恰 2 处(uiautomation+rapidocr)+
+        i18n.yml 一条;权重/模型类条目永不入包(原钉真意图=防检测权重
+        混入,不变)。"""
+        spec_text = (ROOT / "deskpilot.spec").read_text(encoding="utf-8")
+        assert spec_text.count("collect_data_files(") == 2
+        assert "collect_data_files('uiautomation')" in spec_text
+        assert "collect_data_files('rapidocr_onnxruntime')" in spec_text
+        assert "('deskpilot/i18n.yml', 'deskpilot')" in spec_text
+        for ext in (".onnx", ".pt", ".pth", ".weights"):
+            assert ext not in spec_text, f"spec 出现权重类条目: {ext}"
 
 
 # ---------- TC-DET-03a/03b:校验失败两支(真 verify() 产出结论) ----------

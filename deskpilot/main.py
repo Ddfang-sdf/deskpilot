@@ -79,6 +79,7 @@ from .estop import EstopMonitor
 from .executor import DesktopProbe, Executor
 from .freeze_notify import FreezeNotifier
 from .httpd import DEFAULT_HOST, DEFAULT_PORT, probe_daemon
+from .i18n import tr
 from .mcp_server import serve
 from .policy import load_policy
 from .secure_desktop import SecureDesktopGuard
@@ -602,8 +603,8 @@ def main() -> int:
     def _alarm_fn(msg: str) -> None:
         """③死亡告警:托盘气泡(属主形态)+ stderr 双通道。"""
         if owner_tray["t"] is not None:
-            owner_tray["t"].notify("DeskPilot 守护进程不在",
-                                   "白名单管理/热键复位不可用,请重启 daemon")
+            owner_tray["t"].notify(tr("tray.alarm.title"),
+                                   tr("tray.alarm.text"))
         print(msg + "(白名单管理/热键复位不可用)", file=sys.stderr)
 
     def _ownership_watch() -> None:

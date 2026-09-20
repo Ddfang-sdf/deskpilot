@@ -84,7 +84,9 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     height = _HEIGHT + hint_h + (img_h + 8 if photo_im is not None else 0)
 
     win = tk.Toplevel(parent)
-    win.title("DeskPilot 入白审批" if enroll else "DeskPilot 审批")
+    from .i18n import tr
+    win.title(tr("approval.title.enroll") if enroll
+              else tr("approval.title"))
     win.overrideredirect(True)                  # 无边框 toast
     win.attributes("-topmost", True)
     win.configure(bg=_BG)
@@ -109,7 +111,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     header.pack(fill="x")
     tk.Label(header, text="⚠", bg=_BG, fg=_ACCENT,
              font=("Microsoft YaHei", 13, "bold")).pack(side="left")
-    tk.Label(header, text="DeskPilot 入白审批" if enroll else "DeskPilot 审批",
+    tk.Label(header, text=tr("approval.title.enroll") if enroll
+             else tr("approval.title"),
              bg=_BG, fg=_TITLE_FG,
              font=("Microsoft YaHei", 11, "bold")).pack(side="left", padx=(8, 0))
 
@@ -134,7 +137,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
                                                                 pady=(6, 0))
 
     remaining = [int(timeout_s)]
-    timer_label = tk.Label(body, text=f"{remaining[0]} 秒后默认拒绝",
+    timer_label = tk.Label(body, text=tr("approval.countdown",
+                                         n=remaining[0]),
                            bg=_BG, fg=_TIMER_FG,
                            font=("Microsoft YaHei", 9), anchor="w")
     timer_label.pack(fill="x", pady=(6, 0))
@@ -156,7 +160,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     bar.pack(fill="x", pady=(14, 0))
     if enroll:
         # ISS-0012 入白三态：本次允许（会话）/ 永久加入（落盘）/ 拒绝
-        always = tk.Button(bar, text="永久加入", width=_BTN_WIDTH, relief="flat",
+        always = tk.Button(bar, text=tr("approval.btn.permanent"),
+                           width=_BTN_WIDTH, relief="flat",
                            bg=_APPROVE_BG, fg="#FFFFFF",
                            activebackground=_APPROVE_HOVER,
                            activeforeground="#FFFFFF",
@@ -164,7 +169,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
                            command=lambda: decide("approve_always"))
         always.pack(side="right")
         _hover(always, _APPROVE_BG, _APPROVE_HOVER)
-        once = tk.Button(bar, text="本次会话允许", width=_BTN_WIDTH, relief="flat",
+        once = tk.Button(bar, text=tr("approval.btn.session"),
+                         width=_BTN_WIDTH, relief="flat",
                          bg=_DENY_BG, fg=_TITLE_FG,
                          activebackground=_DENY_HOVER,
                          activeforeground=_TITLE_FG,
@@ -172,9 +178,10 @@ def build_window(parent, description: str, result_path, timeout_s: float,
                          command=lambda: decide("approve"))
         once.pack(side="right", padx=(0, _BTN_GAP))
         _hover(once, _DENY_BG, _DENY_HOVER)
-        deny_text = "拒绝"
+        deny_text = tr("approval.btn.deny")
     else:
-        approve = tk.Button(bar, text="批准一次", width=_BTN_WIDTH,
+        approve = tk.Button(bar, text=tr("approval.btn.approve_once"),
+                            width=_BTN_WIDTH,
                             relief="flat",
                             bg=_APPROVE_BG, fg="#FFFFFF",
                             activebackground=_APPROVE_HOVER,
@@ -184,7 +191,8 @@ def build_window(parent, description: str, result_path, timeout_s: float,
         approve.pack(side="right")
         _hover(approve, _APPROVE_BG, _APPROVE_HOVER)
         # ISS-0019：批量授权——此后同类操作都允许（本窗口，本次会话）
-        batch = tk.Button(bar, text="此后同类允许", width=_BTN_WIDTH,
+        batch = tk.Button(bar, text=tr("approval.btn.batch"),
+                          width=_BTN_WIDTH,
                           relief="flat",
                           bg=_DENY_BG, fg=_TITLE_FG,
                           activebackground=_DENY_HOVER,
@@ -196,11 +204,10 @@ def build_window(parent, description: str, result_path, timeout_s: float,
         # ISS-0043 A + ISS-0053 C:作用域可见化——许可键=同窗口同类操作
         # (按键类=同键),仅本次会话;hwnd 键法下重绑不失忆,daemon 重启才重批
         tk.Label(body,
-                 text="「此后同类允许」仅本次会话有效：同窗口同类操作免批"
-                      "（按键类=同键），daemon 重启后需重批",
+                 text=tr("approval.batch.hint"),
                  font=("Microsoft YaHei", 8), fg=_TIMER_FG, bg=_BG,
                  anchor="e", justify="right").pack(fill="x", pady=(6, 0))
-        deny_text = "拒绝"
+        deny_text = tr("approval.btn.deny")
     deny = tk.Button(bar, text=deny_text, width=_BTN_WIDTH, relief="flat",
                      bg=_DENY_BG, fg=_TITLE_FG,
                      activebackground=_DENY_HOVER, activeforeground=_TITLE_FG,
@@ -216,7 +223,7 @@ def build_window(parent, description: str, result_path, timeout_s: float,
         if remaining[0] <= 0:
             decide("timeout")
             return
-        timer_label.config(text=f"{remaining[0]} 秒后默认拒绝")
+        timer_label.config(text=tr("approval.countdown", n=remaining[0]))
         win.after(1000, tick)
 
     def slide(y: int) -> None:

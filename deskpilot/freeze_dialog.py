@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from .freeze_notify import STATE_FILE
+from .i18n import tr
 from .monitors import TASKBAR_RESERVE
 
 FRAME_MS = 16               # 动画帧间隔（约 60fps）
@@ -158,7 +159,7 @@ def build_window(parent, audit_dir: str, interval: float,
     win.bind("<Destroy>",
              lambda e: release_singleton() if e.widget is win else None,
              add="+")
-    win.title("DeskPilot 急停")
+    win.title(tr("freeze.title"))
     win.overrideredirect(True)                  # toast 形态：无边框
     win.attributes("-topmost", True)
     win.config(bg=CHROMA)
@@ -203,13 +204,13 @@ def build_window(parent, audit_dir: str, interval: float,
     card_bg = STYLE["card_bg"]
     tk.Label(win, text="🛡️", font=("Segoe UI Emoji", 14),
              bg=card_bg).place(x=18, y=13)
-    tk.Label(win, text="DeskPilot 已冻结", fg=STYLE["title_fg"], bg=card_bg,
+    tk.Label(win, text=tr("freeze.frozen"), fg=STYLE["title_fg"], bg=card_bg,
              font=("Microsoft YaHei UI", 13, "bold")).place(x=48, y=15)
     src = tk.Label(win, text="", font=FG, fg=STYLE["source_fg"], bg=card_bg)
     src.place(x=48, y=45)
-    tk.Label(win, text="AI 的写操作已全部拒绝（EMERGENCY_STOP）",
+    tk.Label(win, text=tr("freeze.allwrites"),
              font=FG, fg=STYLE["body_fg"], bg=card_bg).place(x=18, y=76)
-    tk.Label(win, text="可随时按 Ctrl+Shift+F11 直接解冻，本窗口会自动消失",
+    tk.Label(win, text=tr("freeze.hotkey_hint"),
              font=FG, fg=STYLE["hint_fg"], bg=card_bg).place(x=18, y=100)
 
     holder = {"state": "SLIDE_IN", "snooze_start": 0.0,
@@ -219,8 +220,9 @@ def build_window(parent, audit_dir: str, interval: float,
         st = read_state(audit_dir)
         if st:
             holder["last_seq"] = int(st.get("seq", 0))
-            src.config(text=f"触发：{st.get('source', '')} · "
-                            f"{str(st.get('ts', ''))[:19]}")
+            src.config(text=tr("freeze.source",
+                               source=str(st.get("source", "")),
+                               ts=str(st.get("ts", ""))[:19]))
 
     def on_reset_now():
         # 乐观关闭（ISS-0006 方案 F）：写请求即滑出隐藏；请求若未被消费
@@ -265,10 +267,11 @@ def build_window(parent, audit_dir: str, interval: float,
         return b
 
     # 按钮组整体居中：136 + 16 + 140 = 292，左右各 (440-292)/2 = 74
-    btn_reset = _flat_button("立即解冻", on_reset_now, STYLE["primary"], 136)
+    btn_reset = _flat_button(tr("freeze.btn.reset_now"), on_reset_now,
+                             STYLE["primary"], 136)
     btn_reset.place(x=74, y=144)
-    _flat_button(f"稍后提醒（{interval:.0f}s）", on_snooze,
-                 STYLE["secondary"], 140).place(x=226, y=144)
+    _flat_button(tr("freeze.btn.snooze") + f"（{interval:.0f}s）",
+                 on_snooze, STYLE["secondary"], 140).place(x=226, y=144)
 
     def slide_step():
         """滑动画帧驱动：frames (x, alpha) 播完进入下一阶段。"""

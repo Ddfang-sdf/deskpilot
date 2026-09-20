@@ -10,7 +10,10 @@ hiddenimports += collect_submodules('rapidocr_onnxruntime')
 # uiautomation 运行期从 <pkg>/bin 以 add_dll_directory 加载
 # UIAutomationClient_VC140_*.dll（数据文件，须显式收集，否则 onefile 下 UIA 失效）；
 # rapidocr_onnxruntime 的 config.yaml 与 ONNX 模型同为数据文件。
-datas = collect_data_files('uiautomation') + collect_data_files('rapidocr_onnxruntime')
+# REQ-007:i18n.yml 界面文案目录(翻译器运行时按 _MEIPASS 读取)
+datas = (collect_data_files('uiautomation')
+         + collect_data_files('rapidocr_onnxruntime')
+         + [('deskpilot/i18n.yml', 'deskpilot')])
 
 
 a = Analysis(
