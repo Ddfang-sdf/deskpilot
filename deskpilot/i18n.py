@@ -32,9 +32,13 @@ _CATALOG_CACHE: dict[str, dict[str, str]] | None = None
 # ---------- 目录加载(配置文件) ----------
 
 def _catalog_path() -> Path:
-    """i18n.yml 位置:源码=包目录;冻结(onefile)=_MEIPASS 解包目录。"""
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    return base / "i18n.yml"
+    """i18n.yml 位置:源码=包目录;冻结(onefile)=_MEIPASS/deskpilot/
+    (spec datas 落位,REQ-007;素材实测实证:错写到 _MEIPASS 根目录会让
+    冻结形态整窗显示键名)。"""
+    mp = getattr(sys, "_MEIPASS", None)
+    if mp:
+        return Path(mp) / "deskpilot" / "i18n.yml"
+    return Path(__file__).resolve().parent / "i18n.yml"
 
 
 def _load_catalog() -> dict[str, dict[str, str]]:

@@ -440,9 +440,9 @@ class _ManagerUI:
         if not self._query and rest > 0:
             more.command = (lambda k=key: self._toggle(k))
             if self._expanded[key]:
-                more.set_state("收起", "up")
+                more.set_state(tr("wl.collapse"), "up")
             else:
-                more.set_state(f"更多 {rest} 项", "down")
+                more.set_state(tr("wl.more", n=rest), "down")
             more.pack(side="left", pady=4)
         else:
             more.pack_forget()

@@ -218,6 +218,17 @@ def build_window(parent, description: str, result_path, timeout_s: float,
     deny.focus_set()                             # 默认焦点在安全项
     win.bind("<Escape>", lambda e: decide("deny"))
 
+    # ISS-0098：先排版后量尺——静态估算只做地板(防空描述塌缩),真实
+    # 需求高由排版后实测接管(英文长文折行不再裁掉倒计时/按钮);
+    # 此时窗在屏底缘外侧(y_start),重设几何不可见。上限护栏:不超
+    # work_area 可用高(fail-closed,不顶出屏外)。
+    win.update_idletasks()
+    wa = target_screen["work_area"]
+    max_h = (wa[3] - wa[1]) - _TASKBAR - 16
+    height = min(max(height, win.winfo_reqheight()), max_h)
+    x, y_start, y_final = _toast_placement(target_screen, _WIDTH, height)
+    win.geometry(f"{_WIDTH}x{height}+{x}+{y_start}")
+
     def tick() -> None:
         remaining[0] -= 1
         if remaining[0] <= 0:

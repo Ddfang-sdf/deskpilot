@@ -82,6 +82,8 @@ class TestDialogBilingual:
                     return lambda key: self._text if key == "text" else ""
                 if name in ("winfo_screenwidth", "winfo_screenheight"):
                     return lambda: 1920
+                if name == "winfo_reqheight":
+                    return lambda: 100   # ISS-0098:实测高接口(小值→走地板)
                 return lambda *a, **k: None
 
             def configure(self, **k):
@@ -175,19 +177,61 @@ class TestEnforcementBilingual:
         assert "自报" in desc2 and "未经系统核验" in desc2
 
 
+class TestCatalogPathFrozenForm:
+    """i07:冻结形态目录路径=_MEIPASS/deskpilot/i18n.yml(素材实拍实证:
+    错写根目录会整窗显示键名)——路径逻辑钉。"""
+
+    def test_i07_catalog_path_frozen_layout(self, monkeypatch, tmp_path):
+        """i07:模拟冻结形态(设 _MEIPASS)→ 目录路径指到
+        _MEIPASS/deskpilot/i18n.yml;源码形态指包目录。"""
+        from deskpilot import i18n
+        monkeypatch.setattr(i18n.sys, "_MEIPASS", str(tmp_path),
+                            raising=False)
+        p = i18n._catalog_path()
+        assert p == tmp_path / "deskpilot" / "i18n.yml"   # 直出
+        monkeypatch.delattr(i18n.sys, "_MEIPASS")
+        p2 = i18n._catalog_path()
+        assert p2.name == "i18n.yml" and p2.is_file()      # 源码直读在盘
+
+
 class TestNoResidualChineseInEnMode:
     """i06(形态):en 模式下四类弹窗渲染树不得残留中文。"""
 
     def test_i06_six_surfaces_use_tr(self):
         """i06:六面源码不再出现裸中文 UI 字面量(取词必经 tr();
-        抽查:四个弹窗文件内无 text="...中文..." 形态)。"""
+        抽查:四个弹窗文件内无 text="...中文..." 形态)。
+        ISS-0099:邻近词表扩三通道——text= / set_state( / .title(,
+        防运行时改文案通道漏网(「更多 N 项」事件)。"""
         import io
         cjk = re.compile(r'"[^"\n]*[一-鿿][^"\n]*"')
+        channels = ("text=", "set_state(", ".title(")
         for mod in ("approval_dialog.py", "freeze_dialog.py",
                     "whitelist_window.py"):
             src = io.open(ROOT / "deskpilot" / mod,
                           encoding="utf-8").read()
-            hits = [h for h in cjk.findall(src)
-                        if 'text=' in src[max(0, src.find(h)-12):
-                                           src.find(h)+len(h)]]
+            hits = []
+            for h in cjk.findall(src):
+                pos = src.find(h)
+                ctx = src[max(0, pos - 16):pos + len(h)]
+                if any(ch in ctx for ch in channels):
+                    hits.append(h)
             assert not hits, f"{mod} 残留裸中文 UI 字面量: {hits[:4]}"
+
+    def test_i06b_more_collapse_keys_slot_injection(self, monkeypatch):
+        """w02:wl.more/wl.collapse 槽位注入双语直出(ISS-0099)。"""
+        from deskpilot import i18n
+        monkeypatch.setenv("DESKPILOT_LOCALE", "en")
+        assert i18n.tr("wl.more", n=3) == "More 3 items"
+        assert i18n.tr("wl.collapse") == "Collapse"
+        monkeypatch.setenv("DESKPILOT_LOCALE", "zh-CN")
+        assert i18n.tr("wl.more", n=3) == "更多 3 项"
+        assert i18n.tr("wl.collapse") == "收起"
+
+    def test_i06c_more_collapse_call_sites_use_tr(self):
+        """w03:「更多/收起」调用点走 tr 取词,不再裸写字面量(源码直读)。"""
+        src = (ROOT / "deskpilot" / "whitelist_window.py").read_text(
+            encoding="utf-8")
+        assert 'set_state(tr("wl.collapse")' in src
+        assert 'set_state(tr("wl.more", n=rest)' in src
+        assert 'set_state("收起"' not in src
+        assert 'set_state(f"更多' not in src

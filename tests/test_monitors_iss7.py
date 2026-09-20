@@ -110,6 +110,12 @@ class TestBuildWindowTargetScreen:
             def after(self, *a, **k):
                 pass
 
+            def update_idletasks(self):           # ISS-0098 测量契约
+                pass
+
+            def winfo_reqheight(self):
+                return 100                        # 小值→走地板,旧几何不变
+
             def bind(self, *a, **k):
                 pass
 

@@ -289,6 +289,8 @@ class TestEnrollDialog:
             def geometry(self, g): self.geo = g
             def after(self, *a, **k): pass
             def destroy(self): pass
+            def update_idletasks(self): pass           # ISS-0098 测量契约
+            def winfo_reqheight(self): return 100      # 小值→走地板,旧几何不变
             def winfo_screenwidth(self): return 2560
             def winfo_screenheight(self): return 1440
 
@@ -754,6 +756,8 @@ class TestEnrollLabel:
             def geometry(self, g): self.geo = g
             def after(self, *a, **k): pass
             def destroy(self): pass
+            def update_idletasks(self): pass           # ISS-0098 测量契约
+            def winfo_reqheight(self): return 100      # 小值→走地板,旧几何不变
             def winfo_screenwidth(self): return 2560
             def winfo_screenheight(self): return 1440
 
