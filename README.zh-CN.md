@@ -1,16 +1,9 @@
 <p align="center">
-  <img src="assets/logo-dp.png" alt="DeskPilot" width="128">
-</p>
-
-<h1 align="center">DeskPilot</h1>
-
-<p align="center">
-  <strong>让 AI 安全地替你操作 Windows 桌面。</strong><br>
-  微信、Excel、老式 ERP、内部系统……凡是没留 API 的软件，AI 都能直接上手。
-</p>
-
-<p align="center">
   <a href="README.md"><strong>English</strong></a> · <strong>简体中文</strong>
+</p>
+
+<p align="center">
+  <img src="assets/hero-banner.png" alt="DeskPilot —— AI 驱动的 Windows 桌面安全驾驶舱。每一次危险操作都等人类点头。" width="1000">
 </p>
 
 <p align="center">

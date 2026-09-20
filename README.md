@@ -1,17 +1,9 @@
 <p align="center">
-  <img src="assets/logo-dp.png" alt="DeskPilot" width="128">
-</p>
-
-<h1 align="center">DeskPilot</h1>
-
-<p align="center">
-  <strong>The safety cockpit for AI-driven Windows desktops.</strong><br>
-  Let AI operate any Windows software — WeChat, Excel, legacy ERPs, internal systems —<br>
-  with hard safety rails: four fail-closed gates, local approval for dangerous ops, and a human-only emergency stop.
-</p>
-
-<p align="center">
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <img src="assets/hero-banner.png" alt="DeskPilot — the safety cockpit for AI-driven Windows desktops. Every dangerous op waits for a human yes." width="1000">
 </p>
 
 <p align="center">
