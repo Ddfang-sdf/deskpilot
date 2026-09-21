@@ -97,6 +97,32 @@ def write_reset_request(audit_dir: str, seq: int) -> None:
         json.dumps({"seq": seq}), encoding="utf-8")
 
 
+# ISS-0103：急停触发源显示侧翻译——state.source 携的是 estop 硬编码中文
+# 字面量(协议字段含显示串是设计异味,token 化改动面大,备案不实施);
+# 显示侧映射已知来源到 i18n 键,未知来源原样透传(不静默吞)。
+_TRIGGER_SRC_KEYS = {
+    "鼠标甩角": "estop.src.corner",
+    "热键 Ctrl+Shift+F12": "estop.src.hotkey",
+}
+
+
+def source_display(source: str) -> str:
+    """急停触发源 → 当前语言显示串(已知映射,未知原样透传)。"""
+    key = _TRIGGER_SRC_KEYS.get(source)
+    return tr(key) if key else source
+
+
+def _measure_text(text: str) -> int:
+    """按钮文本像素宽(测试缝:替身注入;生产=tkfont 实测,无根窗/实测
+    失败时按字宽估算——量宽是显示辅助,估算兜底不炸建窗)。"""
+    try:
+        from tkinter import font as tkfont
+        return tkfont.Font(family="Microsoft YaHei UI", size=10).measure(text)
+    except Exception:
+        # 估算:ASCII ~7px,宽字符(CJK/全角) ~14px(size 10 经验值)
+        return sum(14 if ord(c) > 0x2E7F else 7 for c in text)
+
+
 def should_remind(snooze_start: float, now: float, frozen: bool,
                   interval: float) -> bool:
     """SNOOZED 重提醒判定：到点且仍冻结。"""
@@ -221,7 +247,7 @@ def build_window(parent, audit_dir: str, interval: float,
         if st:
             holder["last_seq"] = int(st.get("seq", 0))
             src.config(text=tr("freeze.source",
-                               source=str(st.get("source", "")),
+                               source=source_display(str(st.get("source", ""))),
                                ts=str(st.get("ts", ""))[:19]))
 
     def on_reset_now():
@@ -266,12 +292,21 @@ def build_window(parent, audit_dir: str, interval: float,
         b.place(width=width_px, height=34)
         return b
 
-    # 按钮组整体居中：136 + 16 + 140 = 292，左右各 (440-292)/2 = 74
-    btn_reset = _flat_button(tr("freeze.btn.reset_now"), on_reset_now,
-                             STYLE["primary"], 136)
-    btn_reset.place(x=74, y=144)
-    _flat_button(tr("freeze.btn.snooze") + f"（{interval:.0f}s）",
-                 on_snooze, STYLE["secondary"], 140).place(x=226, y=144)
+    # ISS-0103：按钮宽按实测文本(先量后排,同 ISS-0098 纪律)——英文长文
+    # 不再裁边;秒数括号随语言(i18n 模板槽)。组按实测总宽居中。
+    _pad = 28                                # 按钮左右内边距合计
+    _min_w = (136, 140)                      # zh 时代既有宽(下限,不缩)
+    reset_text = tr("freeze.btn.reset_now")
+    snooze_text = tr("freeze.btn.snooze", n=int(interval))
+    w_reset = max(_min_w[0], _measure_text(reset_text) + _pad)
+    w_snooze = max(_min_w[1], _measure_text(snooze_text) + _pad)
+    total = w_reset + 16 + w_snooze
+    x_reset = (WIN_W - total) // 2
+    btn_reset = _flat_button(reset_text, on_reset_now,
+                             STYLE["primary"], w_reset)
+    btn_reset.place(x=x_reset, y=144)
+    _flat_button(snooze_text, on_snooze, STYLE["secondary"],
+                 w_snooze).place(x=x_reset + w_reset + 16, y=144)
 
     def slide_step():
         """滑动画帧驱动：frames (x, alpha) 播完进入下一阶段。"""

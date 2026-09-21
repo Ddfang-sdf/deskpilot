@@ -20,7 +20,9 @@ en:
   freeze.hotkey_hint: "Press Ctrl+Shift+F11 to unfreeze anytime — this window dismisses itself"
   freeze.source: "Trigger: {source} · {ts}"
   freeze.btn.reset_now: "Unfreeze now"
-  freeze.btn.snooze: "Remind me later"
+  freeze.btn.snooze: "Remind me later ({n}s)"
+  estop.src.corner: "mouse corner-shake"
+  estop.src.hotkey: "hotkey Ctrl+Shift+F12"
 
   wl.title: "DeskPilot Whitelist Manager"
   wl.header: "Whitelist Manager"
@@ -116,7 +118,9 @@ zh-CN:
   freeze.hotkey_hint: "可随时按 Ctrl+Shift+F11 直接解冻，本窗口会自动消失"
   freeze.source: "触发：{source} · {ts}"
   freeze.btn.reset_now: "立即解冻"
-  freeze.btn.snooze: "稍后提醒"
+  freeze.btn.snooze: "稍后提醒（{n}s）"
+  estop.src.corner: "鼠标甩角"
+  estop.src.hotkey: "热键 Ctrl+Shift+F12"
 
   wl.title: "DeskPilot 白名单管理"
   wl.header: "白名单管理"
