@@ -106,9 +106,9 @@ class TestFadeIn:
         import deskpilot.whitelist_window as ww
         from .faketk import install
         _rec = install(monkeypatch, ww.tk)
-        rec = {"alphas": _rec.alphas, "afters": _rec.after_ms}
         ww.build_window(object(), {"static": {}, "session": {}},
                         on_remove=lambda p: None, on_clear_session=lambda: None)
+        rec = {"alphas": _rec.alphas, "afters": _rec.after_ms}
         return rec
 
     def test_anim01_fadein_scheduled(self, monkeypatch):
