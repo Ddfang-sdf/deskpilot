@@ -64,17 +64,12 @@ class TestBuilderGeometry:
     """g04/g05:两个白名单浮窗建窗走统一落位(Tk 替身记录 geometry)。"""
 
     def _stub_tk(self, monkeypatch, rec):
-        class W:
-            def __init__(self, *a, **k): pass
-            def geometry(self, s): rec.append(s)
-
-            def __getattr__(self, name):
-                if name.startswith("__"):
-                    raise AttributeError(name)
-                return lambda *a, **k: None   # 其余 Tk 方法全沉默替身
-
-        for cls in ("Toplevel", "Frame", "Label", "Button"):
-            monkeypatch.setattr(ww.tk, cls, W)
+        """ISS-0059 步骤10:__getattr__ 沉默替身收编 tests/faketk.install
+        (geometry 记录经活列表换入,断言零改动)。"""
+        import deskpilot.whitelist_window as ww
+        from .faketk import install
+        _rec = install(monkeypatch, ww.tk)
+        _rec.geometries = rec
 
     def test_g04_revoke_confirm_follows_target_screen(self, monkeypatch,
                                                       tmp_path):
