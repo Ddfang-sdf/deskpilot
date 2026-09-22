@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0089 |
 | 标题 | screenshot 把落盘 PNG **原尺寸 base64 内联**返回,fullscreen(本机虚拟桌面 3840×1081)或大屏单屏(如 27 寸 2560 宽)长边 >2000px 时,客户端(Claude Code)图像处理步骤失败并**整张拒收**——AI 什么都看不到。整改:内联前源头等比降采样到长边 ≤2000px,落盘 PNG 保持全分辨率、`path` 照常返回,`scale_x/scale_y` 同步为缩放比 |
 | 严重级 | **中高**(AI 可发现性/可用性:大屏或 fullscreen 下感知通道对 AI 完全失效;非安全缺陷,但直接削弱「AI 是直接用户」的核心能力面) |
-| 状态 | **P3 完成待验收**(2026-09-17;方向 A 评审通过后按 SDD P1红→P2核对→P3绿实施;全量回归 777 passed/24 skipped/0 failed;描述压缩与两处修复备案见 §7 v0.2) |
+| 状态 | **已关闭**(2026-09-22 验收通过:双屏降采样scale精确+内联2000×563;sdfang 缺席授权自决,证据见 手工测试计划-20260922-批次②积压验收 X12) |
 | 提出 | 2026-09-16 sdfang 实测:27 寸曲面屏(分辨率 >本机)screenshot(scope=screen) 报 `Unable to resize image — dimensions exceed the 2000x2000px limit`;本机 24 寸 1920×1080 单屏正常 |
 
 ## 1. 现象与证据(三条证据链,均带出处)
@@ -89,3 +89,4 @@
 |------|------|------|
 | v0.1 | 2026-09-16 | 建单。sdfang 实测大屏 screenshot 报 2000px 错;三条证据链坐实(①报错串全库零命中=客户端发②本机 enum_monitors 分辨率:fullscreen 3840 宽>2000、单屏 1920<2000③mcp_server:356/378 原尺寸内联无降采样);权威证据:Anthropic vision >20图降 2000px 上限、Claude Code #53170/#13383/#37418 open 未解决。整改方向 A(源头等比降采样+落盘保真+scale 同步)sdfang 裁定;测试设计 TC-DS-01~06 落档。**评审通过,进入 P1** |
 | v0.2 | 2026-09-17 | **P3 完成回填**。①实现落点:mcp_server.py——`INLINE_MAX_PX=2000` 单源常量;`_downscale_inline` 纯函数(PIL `Resampling.LANCZOS` 等比重编码;≤阈值原样直通返回同一对象);新增 `_screenshot_inline_b64` 共用装配(读 path 全分辨率→降采样→b64;f<1 时 patch `data["scale_x"]=data["scale_y"]=f`;OSError→None 不阻断,沿用原容错语义);http/local 两返回路径重接=**先降采样+scale patch 再 dump payload**(原码先 dump 后挂图,patch 不前移则文本载荷不带 scale);screenshot 描述换写(ISS-0090 #5 归属本单:降采样/scale/path 语义入描述)。core.py ISS-0021 C 注释翻页(落盘恒 1.0/内联或 f<1,除法契约)。REQ-003 详设两处「scale 恒 1.0」交叉引用加注 ISS-0089 A3(检测器读落盘全分辨率不受影响)。②SDD 实证:P1 红三条——TC-DS-01 尺寸 (3840,1081)≠(2000,563) 且 f=1.0;TC-DS-05 local/http 内联仍 3840>2000;TC-DS-02/03/04 红期即绿=零损失回归守卫正确就位;P3 绿(6 passed);修复 2 次(预算内):Path/base64 提模块级(原 import 在 build_server 内,helper 提级后 NameError)、描述压缩误丢 ISS-0037 sv06「图像不可见」子串→补回再压至 198 字符;全量回归 **777 passed, 24 skipped, 0 failed**(基线 771/24)。③既有兼容:TC-CT-07(scale_x×width≈rect 宽)走 scope=window 普通窗 <2000px 不触发降采样,断言不受契约修订影响;iss83 描述闸门(screen/屏/region/精读/coverage)+bound04(查看)+desc05(≤200)+sv06(图像不可见)全保。④契约备忘:scale 语义由「乘」(scale×图像宽≈虚拟宽)翻为「除」(虚拟坐标=virtual_rect 原点+内联像素/scale);f=1 时两式等价,历史行为零漂移;仅长边>2000 的内联图出现 f<1;落盘原图/ocr/template_match/detect 全分辨率精度零丢失(A2) |
+| v0.3 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-批次②积压验收 X12,双屏降采样 scale 精确+内联 2000×563 |

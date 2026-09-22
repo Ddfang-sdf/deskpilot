@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0088 |
 | 标题 | `get_ui_tree` 走 `_walk`(深度上限 **10**),`click_element`/`get_clickable_map` 的解析链走 `_iter_summaries`(深度上限 **8**)——同一棵树两个深度口径。画图形状钮的内层 `ButtonControl` 位于深度 9:树上可见、SoM 不编号、点击 ELEMENT_NOT_FOUND,只有其深度 8 的 `ListItemControl` 外壳可被(名字路径)点中。**AI 按树上读到的 `control_type` 去点,必然踩空** |
 | 严重级 | **中**(可达性+AI 可发现性缺陷:UIA 可见元素的类型信息把 AI 引向一条必然失败的寻址路径;安全面无影响) |
-| 状态 | **P3 完成待验收**(2026-09-17;方向①采纳+嵌套同名歧义化解机制备案见 §6 尾注;全量回归 793 passed/25 skipped/0 failed;dt07 真画图实测通过) |
+| 状态 | **已关闭**(2026-09-22 验收通过:真画图深度链命中ButtonControl;sdfang 缺席授权自决,证据见 手工测试计划-20260922-批次②积压验收 X13) |
 | 提出 | 2026-09-15 验收作业(画房子和树)实测暴露,sdfang 追问「为什么开发阶段没有发现」 |
 
 ## 1. 现象与证据(2026-09-15 实测,mspaint.exe 真机)
@@ -77,3 +77,4 @@
 |------|------|------|
 | v0.1 | 2026-09-15 | 建单。实证链:树上可见(depth 9)→ 类型路径 ELEMENT_NOT_FOUND → 名字路径命中 ListItem(depth 8);深度截断 8 vs 10 两行源码定位;版本差嫌疑经 merge-base 排除;测试设计遗漏认账(浅 fixture + 无跨工具一致性用例) |
 | v0.2 | 2026-09-17 | **P3 完成回填**。①实现落点:core.py——模块级 `_UI_TREE_MAX_DEPTH=10` 单源常量,`_walk`/`_iter_summaries`/`_iter_controls` 三处共用(800 上限不动);新增 `_strictly_inside` 纯函数(矩形严格内含判据,缺失/相等保守 False);`_find_elements` 改集摘要并加嵌套同名让位过滤(存在「矩形严格内含且深度更深」子孙匹配的祖先出局;兄弟并列保持歧义)。②SDD 实证:P1 红六条——dt01/dt02/dt04a NOT_FOUND(深度>8 不可见)、dt03 类型路径 NOT_FOUND、dt05 AMBIGUOUS(2 匹配)、dt09 SoM 无深层条目;dt04b/dt06/dt08 红期即绿(边界钉正确就位);P3 绿(9 passed 默认跑);dt07 真机实测通过(真 mspaint 深度≥9 形状钮类型路径命中 ButtonControl,--run-integration 10 passed);全量回归 **793 passed, 25 skipped, 0 failed**(基线 784/24);零修复(P3 一次过)。③行为变化明示(设计授权内):浅层嵌套同名(Button⊃Text)由 AMBIGUOUS 变为解析最内层(dt05 钉住);既有 test_elements 歧义/幽灵去重/可见性用例全绿不回退。④§2 认账闭环:深树 fixture(深度 9/10/11)+跨工具一致性用例(dt03)已入测试套件——「开发阶段为什么没发现」的两条遗漏均补上 |
+| v0.3 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-批次②积压验收 X13,真画图深度链命中 ButtonControl |

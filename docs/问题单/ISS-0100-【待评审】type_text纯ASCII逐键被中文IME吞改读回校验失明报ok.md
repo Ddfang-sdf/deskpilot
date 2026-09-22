@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0100 |
 | 标题 | `type_text` 对纯 ASCII 文本走逐键模拟(executor/core.py:1179「ASCII 逐键模拟;非 ASCII 走剪贴板桥」),目标窗口中文 IME 激活时,按键被输入法组合成候选字——实发内容≠请求内容;工具自报「带读回校验」却返回 ok:true,乱码落地且被 ctrl+s 存盘 |
 | 严重级 | **高**(写操作正确性:AI 自报成功但落地内容错误——AI 友好/可信面根基;附实证) |
-| 状态 | **P3 实现完成(2026-09-22),待验收** |
+| 状态 | **已关闭**(2026-09-22 验收通过:全量桥+三级读回+TYPE_MISMATCH/READBACK_UNAVAILABLE fail-closed;sdfang 缺席授权自决,证据见 手工测试计划-20260922-四单整改升级验收 W6/W7) |
 | 提出 | 2026-09-21 demo.gif 英文版录制实拍:请求 "Hello from DeskPilot - typed by AI, approved by a human." 落地为「HellofromDeskPilot - typed不要AI， approv二点不要啊胡曼。」并被保存进 %TEMP%\demo-notes.txt |
 
 ## 1. 实证链(全部直读)
@@ -63,6 +63,7 @@
 | v0.3 | 2026-09-22 | sdfang 裁定改法=**A+C 组合**:type_text 全量走剪贴板桥(ASCII 逐键路径废止)+读回校验修真(比对落地 vs 请求,fail-closed,不一致报 TYPE_MISMATCH 类新码);B/D 废止(shift 预切实证不可靠) |
 | v0.4 | 2026-09-22 | **落位设计定稿**(§5:读回三通道序+不可用独立新码 READBACK_UNAVAILABLE);**测试设计 9 用例+交叉面清单**(§6/§7);退役/适配登记(§8)。测绘补获:逐键分支零测试钉(废止零误伤);读回失败现用 INTERNAL_ERROR 泛码;iss21/iss27 真记事本集成用例是 C 的最大连带面(P3 实证 TextPattern 可用性后定) |
 | v0.6 | 2026-09-22 | **P3 完成回填**。①实现落点(executor/core.py):删 ASCII 逐键分支(全量走桥,docstring 翻页);读回失败 INTERNAL_ERROR→TYPE_MISMATCH;读回三通道全灭 raise READBACK_UNAVAILABLE(fail-closed,删「不可用仍 ok」放行路径,消息指引 screenshot 自核);`_read_edit_value` 扩三级通道序(ValuePattern→TextPattern→选读 ctrl+a/ctrl+c,选读覆盖剪贴板由桥 finally old_clip 还原覆盖);`_node_text`/`_read_via_selection` 新增;ELEMENT_UNSUPPORTED 引导句「键盘路径」→「剪贴板路径」(:969,:788/:944 同类措辞按裁决不动,另案)。详设翻页:§14.5 输出项 type_text 行补登两码、§14.6 表述与规则表翻页、附录 A 两码行+计数 29→31(P1 已落)。②**实机取证两条(P3 测绘新发现,实现据此落地,测试替身缝未变)**:a) uiautomation 2.0.29 的 ControlTypeName 带 Control 后缀(EditControl/DocumentControl)且 ValuePattern.Value/TextPattern.DocumentRange 为属性非方法——既有 `("Edit","Document")` 谓词+`.Current.Value` 访问在本库版本**从未命中**,通道①实为死代码(读回失明的更深一层根因);实现按双形态兼容(裸名=设计/替身缝,后缀名=真机;DocumentRange callable 双形)。b) **TextPattern 归一化换行**:真记事本 GetText(-1) 把 CRLF 呈现为孤立 (实测 repr 'dp探测串99999'),原样子串包含对多行文本必误报——双侧换行归一(_normalize_newlines)后比对,仅统一换行表示,乱改字符仍必拦(登记待人类复核)。③测试数字:P1 基线 876 绿 9 红;P3 后受影响面(test_typeguard_iss100+test_textchannel_iss35+test_bigtext_iss45)**17 passed 1 skipped**(TC-100-08 环境守卫 skip=真 daemon 在线);全量默认层 **885 passed 0 failed**;全量 --run-integration 903 passed 3 failed——bm03/fuzz04/ct08 三条经 git stash 基线对照为**既有环境红**(真 OCR/桌面/计时;ct08 基线与现码同一断点同一签名「未找到文本 dp测试串」,且现码下其 type_text 步骤已真实通过=通道②真记事本实盘取证成功,红在后续 OCR 步骤)。④登记项:TC-TX-02/TC-45-02 适配(§8 已登记)P3 转绿;P2 裁决四项全部照办(UIA 缝/raise 形态/文案范围 :969-only/附录 A §14.5 补登)。⑤待验收事项:TC-100-08 真记事本端到端(集成层)需无 daemon 环境或打包后手工测试取证(真 daemon 为 dist 旧码,不含本实现) |
+| v0.7 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-四单整改升级验收 W6/W7,全量桥+三级读回+TYPE_MISMATCH/READBACK_UNAVAILABLE fail-closed |
 
 ## 5. 落位设计(P3 实现依据)
 

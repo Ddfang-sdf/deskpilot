@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0106 |
 | 标题 | ISS-0100/0104 新增的 UIA 访问点 `_read_edit_value`(core.py:1520)与 `_focus_first_edit`(:1545)直调 `uiautomation.ControlFromHandle` **未先 `_ensure_com()`**(ISS-0016 A 缝,:695);打包(PyInstaller)daemon 的 HTTP 工作线程 COM 未初始化即抛异常,被宽泛 try/except 吞掉 → 读回恒 None → type_text 全量 READBACK_UNAVAILABLE——**打包形态 type_text 对编辑类目标不可用**(源码形态因 comtypes 自动初始化差异不受影响) |
 | 严重级 | **高**(发布面:打包形态核心写工具不可用;修改引入类,先认账) |
-| 状态 | **P3 实现完成待验收**(2026-09-22;TC-106-01/02 红→绿;全量 904 绿;重打包 W6 终验 note「读回校验一致」) |
+| 状态 | **已关闭**(2026-09-22 验收通过:打包形态读回修真,note「读回校验一致」;sdfang 缺席授权自决,证据见 手工测试计划-20260922-四单整改升级验收 W6终验 + tests/test_comseam_iss106) |
 | 提出 | 2026-09-22 W6 打包形态复验:paste 已落地(SetFocus 生效)但 READBACK_UNAVAILABLE;诊断链见 §1 |
 
 ## 0. 认账(修改引入)
@@ -60,3 +60,4 @@ fail-closed(enforcement 场景键分类);打包形态若因此恒 None,场景受
 |------|------|------|
 | v0.1 | 2026-09-22 | 建单。打包形态读回全盲实证链(§1);根因=绕 _ensure_com 缝+吞异常(§2);改法=补缝+两单元钉(§3);focused_control_type 潜伏观察项另案(§4) |
 | v0.2 | 2026-09-22 | **P1→P3 完成+打包实盘闭环**。P1 红两条(绕缝零调用)→补 `self._ensure_com()`(core.py `_read_edit_value`/`_focus_first_edit` 首行)→TC-106-01/02 绿;全量回归 **904 passed/29 skipped/0 failed**;重打包(21:58)+W6 终验:type_text→ok+note「读回校验一致」(打包形态,响应体直出)。状态转「P3 实现完成待验收」 |
+| v0.3 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-四单整改升级验收 W6终验 + tests/test_comseam_iss106,打包形态读回修真,note「读回校验一致」 |

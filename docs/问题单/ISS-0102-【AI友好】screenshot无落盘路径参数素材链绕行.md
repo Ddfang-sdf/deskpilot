@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0102 |
 | 标题 | 素材生产需要「精确 region + 落指定路径」的截图;现 screenshot 只落受管审计目录+内联返回(长边>2000 内联缩),AI 做素材只能再裸写 PIL ImageGrab 抓屏——绕过强制层(2026-09-21 sdfang 怒批事件的两大真实缺口之二) |
 | 严重级 | **中**(能力缺口:迫使 AI 离开 MCP 面;非安全缺陷) |
-| 状态 | **P3 实现完成(2026-09-22),待验收** |
+| 状态 | **已关闭**(2026-09-22 验收通过:path落盘+越界/穿越护栏+允许根;sdfang 缺席授权自决,证据见 手工测试计划-20260922-四单整改升级验收 W4) |
 | 提出 | 2026-09-21 sdfang 裁定:「B 提单」 |
 
 ## 1. 实证(机制层)
@@ -34,6 +34,7 @@
 | v0.2 | 2026-09-22 | sdfang 批准设计草案:path 参数(给定时落指定路径+审计留痕,不给零变化)+路径护栏(仅仓库内/审计根,fail-closed)+后处理归 AI 边界 |
 | v0.3 | 2026-09-22 | **落位设计定稿**(§3:两裁决点落锤——冻结期 path 分支加闸拒写、L0 级别保留;越界码复用 INVALID_PARAMS;描述 195/200 必改写);**测试设计 7 用例+交叉面**(§4/§5);退役/适配登记(§6) |
 | v0.4 | 2026-09-22 | **P3 完成回填**。①实现落点:core.py `screenshot` path 分叉(path=None 走 _save_shot 现状零变化;给定走新增 `_save_shot_to`——闸序=冻结闸 EMERGENCY_STOP→允许根判定(相对锚 allowed_roots[0]=仓库根装配约定置首,.resolve()+is_relative_to,越界/穿越 INVALID_PARAMS 消息含允许根)→父目录须已存在不代建→目标已存在先 record_event「screenshot覆盖写」(AuditFailure 自然上抛=留痕失败即写失败)→写盘返回绝对路径);allowed_roots=None(未接线)时 path 给定 fail-closed 拒「未配置允许根」;tools/__init__.py 透传 path;main.py 装配计算允许根=policy.yml 所在目录(置首)∪resolve_audit_dir(policy.audit_dir, policy_path).resolve() 传入 Executor;描述压缩重写(见下)。②描述终稿(194/200,闸门证据;全部钉子串保留:图像不可见/0=主屏/screen+屏/region+精读/coverage/查看/path=):「拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=屏号(0=主屏)、window=绑定窗口、region=rect(精读/局部,含 coverage)。path=落盘路径(仅仓库/审计根)。长边>2000 等比缩:图坐标/scale 还原;返回 path 为原图。图像不可见改调 ocr;ocr:true 附文字清单。」(压缩点:「余左到右」/「scale=缩放比,」/「全分辨率…供回读」/「缺省受管目录」释义让位,语义由返回体字段与护栏错误消息承载)③测试数字:P1 基线 886 绿 7 红;P3 后受影响面(test_shotpath_iss102+iss83+iss89+iss18)**29 passed**;全量默认层 **893 passed 0 failed**;全量 --run-integration 909 passed 3 failed——bm03/fuzz04/ct08 经 git stash 基线对照为**既有环境红**(真 OCR/桌面/计时,与本单无引用关系,本 session 三次复验同签名)。④登记项:P2 裁决四点全部照办(签名定案/事件名 screenshot覆盖写/描述含 path= 字面/返回绝对路径);§6 描述 5 处钉零适配全保(iss15/iss37/iss83/iss96/boundary 全量回归绿为证);Executor 直接构造旧调用点零适配(allowed_roots 缺省 None 兼容,行为钉不动)。⑤边界知悉:覆盖写留痕以 audit 已接线为前提(生产 main.py 恒接线;audit=None 的旧测试构造点不记事件,与既有「audit 无则事件不落盘」惯例一致);指定路径文件不受受管清理约束(§3.4 已入档) |
+| v0.5 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-四单整改升级验收 W4,path 落盘+越界/穿越护栏+允许根 |
 
 ## 3. 落位设计(P3 实现依据)
 

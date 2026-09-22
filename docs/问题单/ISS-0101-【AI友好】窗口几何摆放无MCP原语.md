@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0101 |
 | 标题 | 演示编导/多窗协同场景需要把目标窗摆到指定位置(背景板摆位、并排对照、落点避让),MCP 无窗口几何写入原语;AI 唯一出路是裸写 ctypes MoveWindow——绕过强制层与审计面(2026-09-21 sdfang 怒批「为什么不用 MCP」事件的两大真实缺口之一) |
 | 严重级 | **中**(能力缺口:迫使 AI 离开 MCP 面;非安全缺陷) |
-| 状态 | **P3 实现完成(2026-09-22),待验收** |
+| 状态 | **已关闭**(2026-09-22 验收通过:set_window_rect返回与读回逐值一致;sdfang 缺席授权自决,证据见 手工测试计划-20260922-四单整改升级验收 W5) |
 | 提出 | 2026-09-21 sdfang 裁定:「B 提单」 |
 
 ## 1. 实证(机制层)
@@ -34,6 +34,7 @@
 | v0.2 | 2026-09-22 | sdfang 批准设计草案:set_window_rect 物理层原语(SW_RESTORE+MoveWindow,返回新 rect)+L2 闸门+绑定进程窗限定+判断归 AI |
 | v0.3 | 2026-09-22 | **落位设计定稿**(§4:DPI 零换算实证;六装配点+两计数钉;不收 hwnd=结构性跨窗限定);**测试设计 8 用例+交叉面**(§5/§6);适配登记(§7) |
 | v0.4 | 2026-09-22 | **P3 完成回填**。①实现落点:probe.py 增模块级 `set_window_rect()` OS 接缝(SW_RESTORE=9 恒定先发→MoveWindow,经模块 user32 单层,替身缝同 iss41 先例;与 activate 的 SW_SHOWMAXIMIZED 命令选择语义相反不复用);core.py `_dispatch` 增 set_window_rect 分支+新方法 `_set_window_rect`(rect=[l,t,r,b] 四点式自解为 MoveWindow (l,t,r-l,b-t);几何非法 r<=l/b<=t→INVALID_PARAMS 且 user32 零调用;MoveWindow False→WINDOW_GONE;返回 {"rect": list(rect_of(hwnd))} 直出);tools/__init__.py 增公开封装(走 enforcement.submit 默认分支,不进 _L0/_L1_DIRECT)。②自查纠偏一次:初版把接缝落成 DesktopProbe 实例方法,单测 FakeProbe 无此方法(替身钉在 probe.user32 模块层)——改为模块级函数接缝(与 P2 裁决②「probe 模块 user32 接缝」严格对齐),core 经 `from .probe import set_window_rect` 调用(禁 core 直引 ctypes)。③测试数字:P1 基线 898 绿 2 红;P3 后受影响面(test_wingeo_iss101+validation+detector_orch+activate_iss41)**72 passed 3 skipped**;全量默认层 **900 passed 0 failed**;全量 --run-integration 916 passed 3 failed——bm03/fuzz04/ct08 经 git stash 基线对照为**既有环境红**(本 session 第四次复验,与本单无引用关系)。④**TC-101-06 逃逸口实证**:`ISS101_FORCE_E2E=1 ... -k tc101_06` → **1 passed**(真 daemon 9420 在线无冲突;真记事本 attach→set_window_rect [100,100,700,600]→返回 rect 与 find_window 读回同口径一致;零窗口残留)。⑤登记项:P2 裁决四点全部照办(返回形态/probe 模块接缝/TC-101-04 既有死窗闸不破坏/description 不动);§7 两条计数钉适配(test_validation==30/test_detector_orch_req03 合法重指==30)随声明落地转绿;逃逸口 ISS101_FORCE_E2E 备案(ISS-93 先例)。⑥文档翻页 §4.3 全项:详设 §14.1(9→10)/§14.2/§14.4/§14.5;功能设计 F-L2 清单+F-L2-10 小节;DESIGN.md 工具契约表;README/README.zh-CN(29→30);测试设计说明书补 TC-N-L2-02b。⑦偏差知悉:DESIGN.md §4.3 所列 :186 为 M2 里程碑历史行(新工具非 M2 内容),未翻历史,仅工具契约表(:118)落行,待裁决;详设 §14.1 计数句口径=本节枚举工具(click_text/mouse_down/mouse_up/hold 等后增工具历史未入本节枚举,属既有漂移,另案记录不混做) |
+| v0.5 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-四单整改升级验收 W5,set_window_rect 返回与读回逐值一致 |
 
 ## 4. 落位设计(P3 实现依据)
 

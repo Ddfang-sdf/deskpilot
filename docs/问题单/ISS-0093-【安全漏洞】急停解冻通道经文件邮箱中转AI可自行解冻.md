@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0093 |
 | 标题 | `estop-reset-{seq}.req` 文件邮箱(ISS-0004/0006 定案的弹窗解冻传输层)把「人类点击解冻」编码成**任何进程可复现的文件**;持 MCP 的 AI 天然拥有命令执行与文件读写(宿主 shell)——AI 可自行写 req 文件解冻,**急停作为最后防线被自有协议绕过** |
 | 严重级 | **严重**(安全面:急停解冻通道可被被防对象自行调用;已实证) |
-| 状态 | **P3 实现完成(2026-09-22),待验收** |
+| 状态 | **已关闭**(2026-09-22 验收通过:三通道消亡+state旁路焊死+弹窗直调解冻+零req;sdfang 缺席授权自决,证据见 手工测试计划-20260922-四单整改升级验收 W2/W3/W8) |
 | 提出 | 2026-09-18 sdfang 当场裁定;同日升级验收手工测试 AI 自行解冻实证 |
 
 ## 1. 裁定原话(2026-09-18,逐字)
@@ -75,6 +75,7 @@
 | v0.4 | 2026-09-22 | **暴露面清点落档**(§8,测绘补获 state 文件直写旁路 E7 并纳入);**落位设计定稿**(§9:子进程通道定案=退出码 73,零文件零接口零命名);**测试设计 12 用例+交叉面清单**(§10);退役/适配按双闸门登记(§11);残余风险登记(§12) |
 | v0.5 | 2026-09-22 | **P1 完成+P2 核对**(核对表见下)。P1 实证:全量 867 绿+10 红,红色全部精确落在未实现行为,旧用例零误伤;退役/适配按 §11 执行。P2 裁决四点:①**§9.4 反向修正**——v0.4「shared true→灌回本地冻结」与 ISS-0092 fg04「本地权威防假象」冲突且该方向无安全增益,修正为沿用 fg04(本地不冻+修共享),TC-93-03 反向同步改;fg04 补登记保持不动;②退出码消费方法名定案 `FreezeNotifier.check_dialog_exit(estop)`;③TestResetClickAction 补登记(P3 适配时另行登记);④TC-93-12 环境逃逸口 ISS93_FORCE_E2E 知悉备案;EXIT_RESET=73 常量声明先行落地备案。P2 核对结论:12 用例入口/断言出处/五要素与设计一致(TC-93-03 反向除外,已按①修正) |
 | v0.6 | 2026-09-22 | **P3 完成回填**。①实现落点:estop.py 删 cli_reset/shared_sync_reset;httpd.py 删 /estop/reset 分支(estop 注入保留,idle 豁免在用);main.py 删 _cli_reset 与 --reset 分派、_corner_loop 消费点改 check_dialog_exit、装配注入 notifier.on_reset=estop.dialog_reset;dialog_service freeze 分支透传 on_reset;freeze_dialog 删 write_reset_request、build_window(on_reset=) 实现(进程内直调+滑出/子进程关窗+EXIT_RESET,main() 在 mainloop 返回后产出退出码 73——Tk 回调内 SystemExit 被 tkinter 吞,双保险)、reset_click_action token 更名 reset_and_slide_out;freeze_notify 删 REQ_FILE/REQ_PREFIX/check_reset_request、check_dialog_exit 实现(持本轮 Popen 句柄,poll==73→dialog_reset,一次性)、_default_spawn 返回 Popen+payload 注 on_reset、sync 单向化(本地权威两方向只修共享,§9.4 v0.5)。②测试数字:P1 基线 867 绿+10 红;P3 后受影响面(9 文件,--run-integration)**69 passed 1 skipped**(TC-93-12 环境守卫 skip=真 daemon 在线,预期);全量默认层 **877 passed 0 failed**;全量 --run-integration 895 passed 3 failed——3 红(test_benchmark_iss8 bm03/test_selfheal_iss27 fuzz04/test_clicktext_iss21 ct08)经 git stash 基线对照为**既有环境红**(真 OCR/真桌面依赖,与本单无引用关系,改动前同样红)。③双闸门登记:TestResetClickAction token 更名(§11 表内);fg03 _NotifierStub 接口随设计更名 check_reset_request→check_dialog_exit(计数语义不变);TC-93-10 对照数据准备修正(静态条目→会话条目——静态撤回需落盘,policy_path=None fail-closed 抛 PolicyError,P1 前提写错;断言不变)。④**停手汇报项:TC-93-12 前提装配缺 on_reset 注入**——其装配(真 EstopMonitor+FreezeNotifier+DialogService)未镜像 main.py 的 notifier.on_reset=estop.dialog_reset 接线(TC-93-06 钉住的真实管线),弹窗落入子进程语义(点击关窗,SystemExit 73 被 tkinter 吞),estop 不复位;ISS93_FORCE_E2E=1 实证红在测试装配而非实现。建议授权修正:测试装配补一行 notifier.on_reset=estop.dialog_reset(与生产接线一致),待人类裁决。**(2026-09-22 已裁决授权并落实:TC-93-12 装配备案修正——测试 bug,镜像 main.py 生产接线,断言零改动;实测:test_estopreset_iss93.py --run-integration 12 passed 1 skipped,带 ISS93_FORCE_E2E=1 逃逸口单条实证 1 passed——真 daemon(9420) 在线未发生单例互斥冲突,全链:真 Tk 弹窗点击「立即解冻」→ 进程内直调复位 → 零 req 落盘 → 审计 detail=「冻结提示弹窗」,尾部 Tcl_AsyncDelete 为 Tk 线程退出噪音,非失败)**⑤文档翻页 §9.5 全项执行(INSTALL/功能/详细/测试设计说明书+ISS-0002/0004/0049/0084/0092+CHANGES.md,标废止不删历史) |
+| v0.7 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-四单整改升级验收 W2/W3/W8,三通道消亡+state 旁路焊死+弹窗直调解冻+零 req |
 
 ### P2 逐用例核对表(2026-09-22)
 

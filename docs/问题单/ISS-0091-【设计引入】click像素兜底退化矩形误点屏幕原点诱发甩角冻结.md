@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0091 |
 | 标题 | `_invoke_element` 像素兜底只挡 `rect is None` 不挡退化 rect(宽/高/面积=0),中心算得 (0,0) → 真实点击屏幕原点;原点恰为甩角判定点(CORNER_X=CORNER_Y=0),光标停角 ≥1s → 误触发「鼠标甩角」冻结。兜底路径同时缺落点/遮挡校验;`_find_elements` 无可见性过滤,不可见元素照常成为点击候选 |
 | 严重级 | **高**(安全面:AI 写操作被误冻结 + 原点真实点击可误操作系统左上角组件;2026-09-16 内网实机故障链根因,与 ISS-0092 成对) |
-| 状态 | **P3 完成待验收**(2026-09-17;自主推进授权下按 SDD P1红→P2核对→P3绿实施;全量回归 767 passed/23 skipped/0 failed;①③矛盾裁定 Option A、既有用例适配与描述压缩均备案于 §6 v0.2) |
+| 状态 | **已关闭**(2026-09-22 验收通过:正常点击+未诱发冻结(退化矩形钉cg03/04在904绿套件);sdfang 缺席授权自决,证据见 手工测试计划-20260922-批次②积压验收 X11) |
 | 提出 | 2026-09-16 内网实机故障取证(sdfang 报障:「我几乎确定了,就是点击的时候,会触发冻结」) |
 
 ## 1. 现象与证据
@@ -80,3 +80,4 @@
 |------|------|------|
 | v0.1 | 2026-09-16 | 建单。内网实机故障取证:症状链(点击触发冻结/key与截屏伪相关)+ 代码实证(core.py:816-835/:447/:650-684/:148-150,estop.py:72-82)+ 证据缺口如实标注(属主当日审计在第二安装目录,待补) |
 | v0.2 | 2026-09-17 | **P3 完成回填**。①设计勘误与裁定:用例2 rect (100,100,200,50) 高度为负系笔误→勘误 (100,100,200,150)(中心 (150,125)∈FIXTURE_RECT,_check_point 放行、遮挡桩可达);整改①③内在矛盾(③过滤退化 rect 则用例1/3 永远打不到①的兜底守卫)→**裁定 Option A**:③只滤 IsOffscreen=True,退化 rect 元素保留候选(Invoke-first 对折叠控件仍有效,过滤=过修),退化防护由①在像素兜底时刻(唯一动鼠标处)fail-closed;用例3 断言随裁定集合化:error_code∈{ELEMENT_RECT_DEGENERATE, ELEMENT_NOT_FOUND},任一层显式拒绝皆可,关键是不许静默成功点击。②实现落点:errors.py 新增 ELEMENT_RECT_DEGENERATE;core.py 八处(_invoke_element 重写=退化守卫在 _check_point **之前**——否则 (0,0) 先吃 OUT_OF_BOUNDS 错误码失真+校验链接入镜像 _click 的 ISS-0017 C 次序 check_point→激活→check_occlusion;_find_elements/_resolve_unique_element/_resolve_typed_element 加 visible_only;_click_element 三调用点 visible_only=True;_iter_summaries 独立防御读 IsOffscreen;_hidden_hint AI 友好增强=不可见命中时 NOT_FOUND 消息附自愈指引);mcp_server.py 描述随代码。③SDD 实证:P1 红(cg01/cg02 DID NOT RAISE——兜底真点 (0,0)/不调遮挡校验,复现缺陷机制)→P3 绿(tests/test_clickguard_iss91.py 2 passed 2 skipped,集成 cg03/cg04 需 --run-integration);全量回归 **767 passed, 23 skipped, 0 failed**。④既有用例适配备案:tests/test_elements.py::TestInvokeFallback::test_pixel_fallback 受整改②**设计授权的契约变更**影响(兜底从不调 _check_occlusion→必调),旧测试未桩致真实 ctypes WindowFromPoint 打到测试机前台窗口报 WINDOW_OCCLUDED;修法=单元层规则加 no-op 桩,**原断言不动**(兜底仍打出 click(135,125));「兜底确实调用遮挡校验」由 cg02 专测覆盖,非私改测试迁就实现。⑤描述长度闸门适配:整改④初稿 347 字符超 ISS-0015 既有质量预算(desc05/GOV01≤200,bound05≤260)→压缩至 200 字符整(拒绝语义短式「不可见/退化矩形/遮挡→错误码+自愈指引」,错误码全称与自愈指引由拒绝时错误消息承载);压缩保留全部必需子串(绑定/Windows/detect/get_ui_tree/som_id),三闸门复跑绿。⑥行号漂移:实施后 core.py 变长,_check_occlusion 由 :1167→约 :1260,后续引用以 grep 为准 |
+| v0.3 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-批次②积压验收 X11,正常点击+未诱发冻结(退化矩形钉 cg03/04 在 904 绿套件) |
