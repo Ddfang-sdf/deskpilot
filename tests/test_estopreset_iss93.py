@@ -52,65 +52,22 @@ def _read_src(name: str) -> str:
     return (SRC / name).read_text(encoding="utf-8")
 
 
-# ---------- Tk 替身装配(TC-93-04/07 共用,同 test_freeze_dialog_iss103 先例) ----------
-
-class _TkRig:
-    """Tk 替身:控件全替身;after 回调入队供测试手动泵;按钮 command 按文本记录。
-
-    替身清单(assembly 边界自陈——本替身仅用于单元层 TC-93-04/07):
-    Toplevel/Label/Button/Canvas 全为替身;真实部件=build_window 状态机本体、
-    reset_click_action 决策、盘上 state 文件读取;断层面=Tk 渲染与事件循环。
-    """
-
-    def __init__(self) -> None:
-        self.after_queue: list = []
-        self.buttons: dict[str, object] = {}     # 按钮文本 -> command
-
-    def install(self, monkeypatch) -> None:
-        import tkinter as _tk
-
-        rig = self
-
-        class W:
-            def __init__(self, *a, **k):
-                self._text = k.get("text", "")
-                cmd = k.get("command")
-                if cmd is not None:
-                    rig.buttons[self._text] = cmd
-
-            def __getattr__(self, name):
-                if name.startswith("__"):
-                    raise AttributeError(name)
-                if name in ("winfo_screenwidth", "winfo_screenheight"):
-                    return lambda: 1920
-                if name == "after":
-                    return lambda ms, fn=None: rig.after_queue.append(fn)
-                return lambda *a, **k: None
-
-            def place(self, *a, **k):
-                pass
-
-            def config(self, **k):
-                if "text" in k:
-                    self._text = k["text"]
-
-            configure = config
-
-        for cls in ("Toplevel", "Frame", "Label", "Button", "Canvas"):
-            monkeypatch.setattr(_tk, cls, W)
-
-    def pump_to_shown(self) -> None:
-        """泵 after 队列直至滑入完成进入 SHOWN:15 帧滑入 + 1 次状态迁移。"""
-        for _ in range(16):
-            fn = self.after_queue.pop(0)
-            fn()
-
+# ---------- Tk 替身装配(TC-93-04/07 共用,ISS-0059 步骤12 收编 tests/faketk) ----------
 
 @pytest.fixture
 def tk_rig(monkeypatch):
-    rig = _TkRig()
-    rig.install(monkeypatch)
-    yield rig
+    """Tk 替身(ISS-0059 步骤12):_TkRig 收编 tests/faketk.install——
+    after 队列泵=rec.pump(16)(15 帧滑入+1 次状态迁移进 SHOWN);
+    按钮 command 按文本取=rec.button_command(文本)(断言零改动)。
+    替身清单(assembly 边界自陈——本替身仅用于单元层 TC-93-04/07):
+    Toplevel/Frame/Label/Button/Canvas 全为替身;真实部件=build_window
+    状态机本体、reset_click_action 决策、盘上 state 文件读取;
+    断层面=Tk 渲染与事件循环。"""
+    import tkinter as _tk
+
+    from .faketk import install
+    rec = install(monkeypatch, _tk, screen=(1920, 1080))
+    yield rec
     import deskpilot.freeze_dialog as fd
     fd.release_singleton()          # 替身窗无 Destroy 事件,互斥须手动放(iss103 先例)
 
@@ -260,8 +217,8 @@ class TestDialogDirectReset:
         calls: list[str] = []
         fd.build_window(object(), audit_dir=str(tmp_path), interval=180.0,
                         on_reset=lambda: calls.append("reset"))
-        tk_rig.pump_to_shown()
-        click = tk_rig.buttons[tr("freeze.btn.reset_now")]
+        tk_rig.pump(16)                              # 泵至 SHOWN(15 帧+1 迁移)
+        click = tk_rig.button_command(tr("freeze.btn.reset_now"))
         click()
         assert calls == ["reset"], \
             "「立即解冻」须进程内直调 on_reset 一次(桩记录直出)"
@@ -315,8 +272,8 @@ class TestDialogDirectReset:
         _write_state(tmp_path, True, 1)
         fd.build_window(object(), audit_dir=str(tmp_path), interval=180.0,
                         on_reset=None)           # 子进程形态:无进程内回调
-        tk_rig.pump_to_shown()
-        click = tk_rig.buttons[tr("freeze.btn.reset_now")]
+        tk_rig.pump(16)                              # 泵至 SHOWN
+        click = tk_rig.button_command(tr("freeze.btn.reset_now"))
         with pytest.raises(SystemExit) as exc:
             click()
         assert exc.value.code == EXIT_RESET      # SystemExit.code 直出
