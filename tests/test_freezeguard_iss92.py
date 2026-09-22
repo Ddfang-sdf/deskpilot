@@ -1,24 +1,20 @@
-"""ISS-0092 急停共享状态机写回失败健壮性测试(fg01~fg05,问题单 §4 v0.1)。
+"""ISS-0092 急停共享状态机写回失败健壮性测试(问题单 §4 v0.1)。
 
-层级:fg01~fg03 单元(允许打桩,断言在桩记录/盘上文件直读/函数行为);
+层级:fg02/fg03 单元(允许打桩,断言在桩记录/盘上文件直读/函数行为);
 fg04 集成(真实 AuditLogger/FreezeNotifier/EstopMonitor+真实临时目录文件,
-禁桩,断言在盘上文件与审计 JSONL 直读);fg05 集成(@pytest.mark.integration,
-真实甩角线程+真实鼠标物理通道驱动,断言在盘上 estop-state.json/req 文件
-=系统外表面)。
+禁桩,断言在盘上文件与审计 JSONL 直读)。
 
-入口(设计):FreezeNotifier.check_reset_request / on_state_change /
-sync_local_with_shared_state 与 main._corner_loop 线程体——公开装配入口
-(模块级函数视为公开入口)。
+入口(设计):FreezeNotifier.on_state_change / sync_local_with_shared_state
+与 main._corner_loop 线程体——公开装配入口(模块级函数视为公开入口)。
 
-断言出处:盘上 estop-state.json / estop-reset-N.req = Path 直读;审计事件
-=AuditLogger JSONL 直读(read_audit,集成层)/记录桩直出(单元层);
-线程存活 = threading.Thread.is_alive() 直出;调用不抛 = 无 pytest.raises
-包装;req 消费次序 = 桩调用计数直出。
+断言出处:盘上 estop-state.json = Path 直读;审计事件=AuditLogger JSONL
+直读(read_audit,集成层)/记录桩直出(单元层);线程存活 =
+threading.Thread.is_alive() 直出;调用不抛 = 无 pytest.raises 包装。
 
-fg05 黑盒→集成折中备案(待 v0.2 回填单据):纯黑盒理想形态需打包 exe+
-隔离环境(真服务共享目录=%LOCALAPPDATA%\\DeskPilot,测试驱动会污染真实
-用户状态,危险),故集成层装配(import 仅为装配,驱动走真实物理鼠标通道
-+文件邮箱协议,断言全在盘上文件外表面)。
+ISS-0093 §11 退役登记:fg01(TestResetOrder,req 消费次序)/fg05
+(TestEndToEndUnfreeze,req 半链端到端)随 req 邮箱整体删除而退役——
+不再探测「req 消费可靠性」,该面缺陷随通道消亡(ISS-0093 §6 已登记,
+无被掩盖缺陷);fg05 的端到端防回归由 TC-93-12(新全链,零 req)接替。
 """
 
 from __future__ import annotations
@@ -28,11 +24,8 @@ import threading
 import time
 from datetime import datetime
 
-import pytest
-
-from deskpilot.audit import AuditLogger
 from deskpilot.estop import EstopMonitor
-from deskpilot.freeze_notify import REQ_PREFIX, STATE_FILE, FreezeNotifier
+from deskpilot.freeze_notify import STATE_FILE, FreezeNotifier
 from deskpilot.main import _corner_loop
 
 from .conftest import read_audit
@@ -75,50 +68,21 @@ class _EstopStub:
 
 
 class _NotifierStub:
-    """notifier 桩(fg03 甩角循环用):消费/对账为空调用并记录次数。"""
+    """notifier 桩(fg03 甩角循环用):退出码消费/对账为空调用并记录次数。
+
+    ISS-0093 v0.6 适配登记:消费方法随设计更名 check_reset_request →
+    check_dialog_exit(§9.2 监听循环挂点替换),桩接口跟随,计数语义不变。"""
 
     def __init__(self) -> None:
         self.consume_calls = 0
         self.sync_calls = 0
 
-    def check_reset_request(self, estop) -> None:
+    def check_dialog_exit(self, estop) -> None:
         self.consume_calls += 1
 
     def sync_local_with_shared_state(self, estop) -> bool:
         self.sync_calls += 1
         return False
-
-
-class TestResetOrder:
-    """fg01:整改③消费次序——复位成功才删 req,失败保留待下轮重试。"""
-
-    def test_fg01_reset_failure_keeps_req_for_retry(self, tmp_path):
-        """fg01(单元,整改③):dialog_reset 抛 OSError → req 保留+审计
-        「解冻请求复位失败」+调用不上抛;下轮重试复位成功 → req 正常消费。
-
-        红态(现状):先 unlink 后 dialog_reset(freeze_notify.py:93-94)
-        → OSError 上抛 + req 已灭失(解冻请求被吞,复位通道死)。
-        """
-        state = {"frozen": True, "seq": 5, "source": "鼠标甩角",
-                 "ts": datetime.now().astimezone().isoformat()}
-        (tmp_path / STATE_FILE).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8")
-        req = tmp_path / f"{REQ_PREFIX}5.req"
-        req.write_text(json.dumps({"seq": 5}), encoding="utf-8")
-        estop = _EstopStub(frozen=True,
-                           reset_effects=[OSError("桩:复位失败"), None])
-        audit = _AuditRec()
-        notifier = FreezeNotifier(str(tmp_path), spawn=lambda *a, **k: None,
-                                  audit=audit)
-
-        notifier.check_reset_request(estop)      # 复位失败:不上抛
-        assert req.exists() is True              # req 保留(盘上直读)
-        assert estop.reset_calls == 1            # 复位已尝试(桩记录直出)
-        assert "解冻请求复位失败" in audit.events()
-
-        notifier.check_reset_request(estop)      # 下轮重试:复位成功
-        assert estop.reset_calls == 2            # 桩记录直出
-        assert req.exists() is False             # 成功才删 req(盘上直读)
 
 
 class TestWriteResilience:
@@ -231,83 +195,3 @@ class TestSharedReconcile:
         events = [e.get("event") for e in read_audit(str(tmp_path / "audit"))]
         assert "共享状态对账修复" in events       # 审计 JSONL 直读
 
-
-@pytest.mark.integration
-class TestEndToEndUnfreeze:
-    """fg05:端到端解冻链(真鼠标物理通道+文件邮箱,断言全在外表面)。"""
-
-    def test_fg05_corner_freeze_then_reset_req_e2e(self, tmp_path, policy):
-        """fg05(集成,真鼠标):真实甩角线程冻结→req 文件驱动解冻→盘上复位。
-
-        链路:ctypes SetCursorPos 真实移光标至 (300,300) 基线 → (0,0) 保持
-        > corner_hold(1000ms) → 甩角触发(state frozen:true) → 移开光标
-        (ISS-0049 规避:复位后再基线再触发) → 写 estop-reset-S.req(弹窗
-        解冻协议) → 甩角线程消费 → 盘上 frozen:false + req 消失。
-        红/绿属性:洁净环境下修复前链路可走通(预期绿,与 cg04 同性质=
-        端到端防回归验证链;P1 实测记录其属性)。
-        环境守卫:真实 daemon 在线(9420)时 skip——真甩角会冻结真服务。
-        注意:本用例短暂劫持真实鼠标约 3s;SetCursorPos 直驱绕开
-        pyautogui FAILSAFE(position() 实测不查 FAILSAFE,甩角读取无碍)。
-        """
-        import ctypes
-
-        from deskpilot.httpd import DEFAULT_HOST, DEFAULT_PORT, probe_daemon
-
-        if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-            pytest.skip("环境守卫:真实 daemon 在线,真甩角会冻结真服务")
-
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        state_path = shared_dir / STATE_FILE
-        audit_dir = tmp_path / "audit"
-        audit = AuditLogger(str(audit_dir))
-        notifier = FreezeNotifier(str(shared_dir), clock=time.monotonic,
-                                  spawn=lambda *a, **k: None, audit=audit)
-        estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
-                             on_state_change=notifier.on_state_change)
-        notifier.on_state_change(False, "测试启动")   # 镜像 main.py:183
-        stop = threading.Event()
-        t = threading.Thread(target=_corner_loop, args=(estop, notifier),
-                             kwargs={"audit": audit, "stop": stop.is_set},
-                             daemon=True)
-        user32 = ctypes.windll.user32
-
-        def _state() -> dict | None:
-            try:
-                return json.loads(state_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                return None
-
-        def _wait(pred, timeout=5.0) -> bool:
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                if pred():
-                    return True
-                time.sleep(0.1)
-            return False
-
-        t.start()
-        try:
-            user32.SetCursorPos(300, 300)        # 基线:角外
-            time.sleep(0.3)
-            user32.SetCursorPos(0, 0)            # 压角
-            time.sleep(policy.corner_hold_ms / 1000 + 0.4)
-            assert _wait(lambda: (_state() or {}).get("frozen") is True), \
-                "甩角未触发冻结(链路前提失败)"
-            user32.SetCursorPos(300, 300)        # 移开(ISS-0049 规避)
-            s = int((_state() or {}).get("seq", 0))
-            req = shared_dir / f"{REQ_PREFIX}{s}.req"
-            req.write_text(json.dumps({"seq": s}), encoding="utf-8")
-            assert _wait(lambda: (_state() or {}).get("frozen") is False
-                         and not req.exists()), \
-                "解冻请求未被消费(盘上状态未复位)"
-            st = json.loads(state_path.read_text(encoding="utf-8"))
-            assert st["frozen"] is False         # 盘上文件直读(外表面)
-            assert req.exists() is False         # req 已消费(外表面)
-            events = [e.get("event") for e in read_audit(str(audit_dir))]
-            assert "急停触发" in events          # 审计 JSONL 直读
-            assert "急停复位" in events
-        finally:
-            user32.SetCursorPos(300, 300)
-            stop.set()
-            t.join(timeout=2.0)

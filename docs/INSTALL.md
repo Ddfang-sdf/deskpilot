@@ -204,7 +204,7 @@ whitelist:
 | **9420 端口被占用** | 查占用：`netstat -ano \| findstr :9420`。若是旧 deskpilot 进程残留：`Stop-Process -Name deskpilot -Force`。确需换端口：给 daemon 与 MCP 客户端都设环境变量 `DESKPILOT_DAEMON_PORT=<新端口>`。 |
 | **启动报 policy 未找到** | `policy.yml` 不在 exe 同目录。放回同目录后重启。 |
 | **内网/离线机器怎么装** | 在有网机器下载 zip + sha256，经审批通道拷到目标机 → 按 ①③④ 照做（跳过下载）；或用 `install.ps1 -LocalZip <zip路径>`，全程无需外网。 |
-| **审批窗没弹、操作超时被拒** | ① 确认目标进程在白名单（出厂 `policy.yml` 或你的 `policy.local.yml`）；② 多显示器用户看另一块屏（v0.3.1 起弹窗跟随目标窗口/鼠标所在屏）；③ 看 `audit\` 目录日志；④ 确认未处于急停冻结（冻结中写操作一律拒绝，`Ctrl+Shift+F11` 或 `deskpilot.exe --reset` 解冻）。 |
+| **审批窗没弹、操作超时被拒** | ① 确认目标进程在白名单（出厂 `policy.yml` 或你的 `policy.local.yml`）；② 多显示器用户看另一块屏（v0.3.1 起弹窗跟随目标窗口/鼠标所在屏）；③ 看 `audit\` 目录日志；④ 确认未处于急停冻结（冻结中写操作一律拒绝，`Ctrl+Shift+F11` 或冻结弹窗「立即解冻」解冻；`deskpilot.exe --reset` 通道已随 ISS-0093 废止——安全收口，AI 可经该通道自行解冻）。 |
 | **审批窗挂着，AI 先报超时了** | v0.3.4 起已修复：审批 90 秒内调用一直在线，超时才自动拒绝。若客户端有自己的工具超时，把它放宽到 120s：`$env:MCP_TOOL_TIMEOUT = "120000"`。 |
 | **AI 说连不上 deskpilot** | 客户端配置路径含空格没加引号 / 改配置后没重启客户端 / daemon 端口被改但客户端环境变量没同步。 |
 

@@ -365,6 +365,7 @@ class TestStateMtimeFastPath:
         n1 = notifier.state_reads
         notifier.sync_local_with_shared_state(estop_n)
         assert notifier.state_reads == n1          # mtime 未变 → 零新读取
-        estop_n.cli_reset()                        # 状态变化 → mtime 变
+        estop_n.dialog_reset()                     # 状态变化 → mtime 变
+        # ISS-0093 §11 适配:复位手段 cli_reset→dialog_reset(载体更名,行为钉不动)
         notifier.sync_local_with_shared_state(estop_n)
         assert notifier.state_reads == n1 + 1

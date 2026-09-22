@@ -171,8 +171,8 @@ def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier,
                  audit: AuditLogger | None = None,
                  sleep: Callable[[float], None] = time.sleep,
                  stop: Callable[[], bool] | None = None) -> None:
-    """鼠标甩角轮询线程（50ms）；兼任弹窗解冻请求消费（ISS-0004）与
-    解冻全局同步（ISS-0006：共享 frozen=false → 本地立即复位）。
+    """鼠标甩角轮询线程（50ms）；兼任弹窗子进程退出码消费（ISS-0093 §9.2）
+    与共享状态单向对账（ISS-0093 §9.4 v0.5：本地权威,只修共享不改本地）。
 
     ISS-0092 ①线程异常守卫：循环体 try/except，单轮异常不杀线程
     （写回失败异常曾沿此链打死甩角线程→冻结卡死+解冻消费死）；
@@ -189,7 +189,7 @@ def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier,
         try:
             pos = pyautogui.position()
             estop.check_corner(pos.x, pos.y)
-            notifier.check_reset_request(estop)
+            notifier.check_dialog_exit(estop)    # ISS-0093 §9.2:退出码消费
             notifier.sync_local_with_shared_state(estop)
         except Exception as e:                              # noqa: BLE001
             failed_rounds += 1
@@ -234,31 +234,6 @@ def _start_estop_listeners(estop: EstopMonitor, audit: AuditLogger,
     threading.Thread(target=_hotkey_loop, args=(estop, audit), daemon=True).start()
     threading.Thread(target=_corner_loop, args=(estop, notifier),
                      kwargs={"audit": audit}, daemon=True).start()
-
-
-def _cli_reset() -> int:
-    """本地 CLI 复位命令入口（--reset，详细设计 §11.8，ISS-0002）。
-
-    经本机 HTTP POST /estop/reset 触达常驻 daemon（冻结标志持有者）；
-    daemon 离线时显式报错、非零退出（禁止静默）。"""
-    import json
-    import urllib.request
-
-    url = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
-    if not probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-        print(f"无法连接常驻服务 {url}（daemon 未启动）", file=sys.stderr)
-        return 4
-    req = urllib.request.Request(f"{url}/estop/reset", data=b"",
-                                 headers={"Content-Type": "application/json"},
-                                 method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except OSError as e:
-        print(f"无法连接常驻服务 {url}: {e}", file=sys.stderr)
-        return 4
-    print(body.get("message", ""))
-    return 0 if body.get("ok") else 4
 
 
 def _build_ocr_engine(rapid):
@@ -425,8 +400,8 @@ def _run_migrate_policy(args: list[str]) -> int:
 
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
-    if "--reset" in sys.argv:
-        return _cli_reset()
+    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
+    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
     if "--migrate-policy" in sys.argv:
         i = sys.argv.index("--migrate-policy")
         return _run_migrate_policy(sys.argv[i + 1:i + 4])
@@ -502,6 +477,9 @@ def main() -> int:
                               dialog_service=dialog_service, audit=audit)
     estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
                          on_state_change=notifier.on_state_change)
+    # ISS-0093 §9.1:freeze payload 注入进程内直调回调(模式同构
+    # enroll_notice 的 payload["on_undo"] 先例,见 :556-559)
+    notifier.on_reset = estop.dialog_reset
     install_last_will(audit, "daemon" if "--daemon" in sys.argv else "stdio")
 
     probe = DesktopProbe()

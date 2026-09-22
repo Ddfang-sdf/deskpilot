@@ -1,6 +1,6 @@
 """急停（EstopMonitor）单元测试。
 
-覆盖：TC-N-EST-01、TC-S-EST-01/02、复位通道（热键 Ctrl+Shift+F11 / CLI）。
+覆盖：TC-N-EST-01、TC-S-EST-01/02、复位通道（热键 Ctrl+Shift+F11 / 弹窗直调）。
 断言值来源：is_frozen 返回值与审计 JSONL 持久化数据。
 """
 
@@ -27,10 +27,14 @@ class TestTriggerAndReset:
         assert "急停触发" in events
         assert "急停复位" in events
 
-    def test_cli_reset_unfreezes(self, estop):
-        """本地 CLI 复位命令同样解除冻结。"""
+    def test_dialog_reset_unfreezes(self, estop):
+        """冻结提示弹窗「立即解冻」入口同样解除冻结。
+
+        ISS-0093 §11 适配:原 test_cli_reset_unfreezes 随 cli_reset 删除
+        平移为 dialog_reset(语义由 TC-93-01 全要素继承,本钉留最小回归)。
+        """
         estop.on_trigger_hotkey()
-        estop.cli_reset()
+        estop.dialog_reset()
         assert estop.is_frozen() is False
 
     def test_reset_when_not_frozen_is_noop(self, estop, audit_log, tmp_path):

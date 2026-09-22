@@ -88,7 +88,7 @@ class HttpDaemon:
     def __init__(self, ctx, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
                  estop=None, idle_timeout_s: float = 0.0, whitelist_admin=None):
         self._ctx = ctx
-        self._estop = estop            # 急停复位端点用（ISS-0002，段3 接线）
+        self._estop = estop            # idle 豁免用（ISS-0093:复位端点已删）
         self._whitelist_admin = whitelist_admin   # 白名单管理端点用（ISS-0012 E2）
         self._host = host
         self._port = port
@@ -271,18 +271,8 @@ class HttpDaemon:
                                      "message": "端点不存在"})
 
             def do_POST(self):
-                estop = daemon._estop
-                if self.path == "/estop/reset" and estop is not None:
-                    # 本地人类复位通道（详细设计 §11.8，ISS-0002）：
-                    # 无论是否改变状态都返回 200 + was_frozen；审计由 estop 侧记录
-                    was = estop.is_frozen()
-                    estop.cli_reset()
-                    daemon._touch()
-                    self._send(200, {"ok": True, "error_code": "",
-                                     "message": ("急停已复位" if was
-                                                 else "复位请求已记录（当前未冻结）"),
-                                     "data": {"was_frozen": was, "frozen": False}})
-                    return
+                # ISS-0093 §9.3：急停复位端点已收口删除(localhost 接口
+                # AI 可 curl 自行解冻);estop 注入保留(idle 豁免在用)。
                 admin = daemon._whitelist_admin
                 if admin is not None and self.path in (
                         "/whitelist/remove", "/whitelist/clear_session"):

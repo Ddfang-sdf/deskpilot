@@ -1,20 +1,21 @@
 """冻结弹窗互斥与乐观关闭（ISS-0006 §6 接口）单元测试。
 
 入口：freeze_dialog 公开函数 acquire_singleton / release_singleton /
-reset_click_action / write_reset_request、常量 SINGLETON_NAME。
-断言值来源：被调函数返回值 / 子进程 stdout / req 文件持久化内容。
+reset_click_action、常量 SINGLETON_NAME。
+断言值来源：被调函数返回值 / 子进程 stdout。
+
+ISS-0093 §11 退役登记:TC-ISS6-03(TestWriteResetRequestNaming)随
+write_reset_request/req 协议整体删除而退役。
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 from deskpilot.freeze_dialog import (SINGLETON_NAME, acquire_singleton,
-                                     release_singleton, reset_click_action,
-                                     write_reset_request)
+                                     release_singleton, reset_click_action)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,21 +55,15 @@ class TestSingletonMutex:
 
 
 class TestResetClickAction:
-    """TC-ISS6-02 乐观关闭决策（方案 F）。"""
+    """TC-ISS6-02 「立即解冻」点击决策（ISS-0093：token 随 req 废止更名）。
 
-    def test_shown_writes_and_slides_out(self):
-        assert reset_click_action("SHOWN") == "write_req_and_slide_out"
+    ISS-0093 v0.6 适配登记(放宽双闸门·裁决 4 授权):token
+    write_req_and_slide_out → reset_and_slide_out;不再探测「点击写 req」
+    ——req 通道本身不复存在(§11 退役登记),SHOWN 门控语义不变。"""
+
+    def test_shown_resets_and_slides_out(self):
+        assert reset_click_action("SHOWN") == "reset_and_slide_out"
 
     def test_other_states_wait(self):
         assert reset_click_action("SNOOZED") == "wait"
         assert reset_click_action("SLIDE_IN") == "wait"
-
-
-class TestWriteResetRequestNaming:
-    """TC-ISS6-03 解冻请求文件按 seq 命名（方案 B）。"""
-
-    def test_req_file_named_with_seq(self, tmp_path):
-        write_reset_request(str(tmp_path), 7)
-        req = tmp_path / "estop-reset-7.req"
-        assert req.exists()
-        assert json.loads(req.read_text(encoding="utf-8")) == {"seq": 7}
