@@ -101,40 +101,14 @@ class TestBatchButton:
     断言:按钮文本与结果文件内容(直出)。"""
 
     def test_batch_button_writes_approve_session(self, monkeypatch, tmp_path):
+        """ISS-0059 步骤7:本地 W/Btn 替身收编 tests/faketk.install
+        (buttons 观测口=text/command,断言零改动)。"""
         import deskpilot.approval_dialog as ad
-        buttons = []
-
-        class W:
-            def pack(self, *a, **k): pass
-            def place(self, *a, **k): pass
-            def bind(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def focus_set(self): pass
-            def title(self, *a): pass
-            def overrideredirect(self, *a): pass
-            def attributes(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def geometry(self, *a): pass
-            def after(self, *a, **k): pass
-            def destroy(self): pass
-            def update_idletasks(self): pass           # ISS-0098 测量契约
-            def winfo_reqheight(self): return 100      # 小值→走地板,旧几何不变
-            def winfo_screenwidth(self): return 2560
-            def winfo_screenheight(self): return 1440
-
-        class Btn(W):
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.command = k.get("command")
-                buttons.append(self)
-
-        monkeypatch.setattr(ad.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(ad.tk, "Frame", lambda *a, **k: W())
-        monkeypatch.setattr(ad.tk, "Label", lambda *a, **k: W())
-        monkeypatch.setattr(ad.tk, "Button", lambda *a, **k: Btn(*a, **k))
+        from .faketk import install
+        rec = install(monkeypatch, ad.tk)
         rp = tmp_path / "r.txt"
         ad.build_window(object(), "常规审批", str(rp), 5)
-        btn = [b for b in buttons if "同类" in b.text]
+        btn = [b for b in rec.buttons if "同类" in b.text]
         assert btn, "缺少批量授权按钮"
         btn[0].command()
         assert rp.read_text(encoding="utf-8") == "approve_session"
