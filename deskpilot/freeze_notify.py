@@ -25,6 +25,8 @@ from datetime import datetime
 from pathlib import Path
 
 from .policy import DEFAULT_FREEZE_REMIND_INTERVAL
+from .audit_events import (EV_SHARED_STATE_RECONCILED,
+                           EV_SHARED_STATE_WRITE_FAILED)
 
 STATE_FILE = "estop-state.json"
 # ISS-0093:req 文件邮箱协议(命名常量+消费方法)整体废止——文件的存在
@@ -125,13 +127,13 @@ class FreezeNotifier:
         """以本地内存态为权威重写共享 frozen（单向对账的落盘半）。"""
         self._seq = int(shared.get("seq", 0)) + 1
         state = {"frozen": frozen, "seq": self._seq,
-                 "source": "共享状态对账修复",
+                 "source": EV_SHARED_STATE_RECONCILED,
                  "ts": datetime.now().astimezone().isoformat()}
         if not self._write_shared_state(state):
             return False
         if self._audit is not None:
             self._audit.record_event(
-                "共享状态对账修复",
+                EV_SHARED_STATE_RECONCILED,
                 f"本地 frozen={frozen} 而共享 frozen={not frozen}"
                 f"（原 seq={shared.get('seq')},源={shared.get('source')}），"
                 f"已按本地权威重写 frozen={frozen} seq={self._seq}")
@@ -162,7 +164,7 @@ class FreezeNotifier:
             return True
         if self._audit is not None:
             self._audit.record_event(
-                "共享状态写失败",
+                EV_SHARED_STATE_WRITE_FAILED,
                 f"重试 {attempt} 次仍失败: {last!r}; seq={state.get('seq')}")
         tmp.unlink(missing_ok=True)              # 清孤儿 tmp
         return False
