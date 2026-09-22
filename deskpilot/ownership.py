@@ -11,6 +11,11 @@ daemon 复出时 stdio 属主让位(②属主协议 + ⑥管理入口随 MCP 存
 """
 
 from __future__ import annotations
+from .audit_events import (
+    EV_DAEMON_DEATH_ALARM, EV_HEARTBEAT_WRITE_FAILED,
+    EV_HEARTBEAT_WRITE_RECOVERED, EV_PROCESS_EXIT,
+    EV_STDIO_CEDE_OWNER, EV_STDIO_TAKEOVER_OWNER)
+
 
 import atexit
 import json
@@ -154,7 +159,7 @@ class HeartbeatWriter:
             return
         self._beat_failed = True
         self._audit_event(
-            "心跳写失败",
+            EV_HEARTBEAT_WRITE_FAILED,
             f"重试 3 次仍失败: {e!r}（节流:连续失败仅记首败,恢复另记一条）")
 
     def _record_recovery(self) -> None:
@@ -162,7 +167,7 @@ class HeartbeatWriter:
         if not self._beat_failed:
             return
         self._beat_failed = False
-        self._audit_event("心跳写恢复", "连续写失败后恢复落盘")
+        self._audit_event(EV_HEARTBEAT_WRITE_RECOVERED, "连续写失败后恢复落盘")
 
     def _audit_event(self, event: str, detail: str) -> None:
         """审计自身失败不上抛（观测面不得反噬主功能）。"""
@@ -218,7 +223,7 @@ def write_last_will(audit_log, role: str, reason: str) -> None:
     """遗嘱载荷(钩子本体):落审计「进程退出」带角色与原因。尽力而为。"""
     try:
         if audit_log is not None:
-            audit_log.record_event("进程退出", f"{role}: {reason}")
+            audit_log.record_event(EV_PROCESS_EXIT, f"{role}: {reason}")
     except Exception:                               # noqa: BLE001
         pass
 
@@ -328,7 +333,7 @@ class RoleSupervisor:
                 self._heartbeat.beat_once()
                 self._heartbeat.start()
                 if self._audit is not None:
-                    self._audit.record_event("stdio 接管属主",
+                    self._audit.record_event(EV_STDIO_TAKEOVER_OWNER,
                                              "daemon 不在,本实例升属主")
                 if self._on_become is not None:
                     self._on_become()
@@ -349,7 +354,7 @@ class RoleSupervisor:
             self._last_alarmed_ts = ts
             if self._audit is not None:
                 self._audit.record_event(
-                    "daemon 死亡告警",
+                    EV_DAEMON_DEATH_ALARM,
                     f"心跳过期({int(self._clock() - ts)}s 未更新):白名单管理/"
                     f"热键复位不可用,请重启 daemon")
             if self._alarm_fn is not None:
@@ -364,7 +369,7 @@ class RoleSupervisor:
     def _cede(self) -> None:
         """daemon 复出回迁:停心跳/回调停热键托盘 HTTP/放锁。"""
         if self._audit is not None:
-            self._audit.record_event("stdio 属主让位", "daemon 复出,退回瘦代理")
+            self._audit.record_event(EV_STDIO_CEDE_OWNER, "daemon 复出,退回瘦代理")
         if self._heartbeat is not None:
             self._heartbeat.stop()
             self._heartbeat = None
