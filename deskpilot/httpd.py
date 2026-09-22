@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
+from .audit_events import EV_WHITELIST_DATA_ASSEMBLED
 from . import errors
 from .models import (RETRY_AFTER_MS, RETRY_MAX, TOOL_BUDGET_OVERRIDES,
                      TOOL_TIME_BUDGETS)
@@ -282,7 +283,7 @@ class HttpDaemon:
                         try:
                             _dur = (time.monotonic() - _t0) * 1000
                             _audit.record_event(
-                                "白名单数据装配",
+                                EV_WHITELIST_DATA_ASSEMBLED,
                                 f"dur_ms={_dur:.0f} n={n}"
                                 + (f" slow={slow}" if slow else ""))
                         except Exception:                # noqa: BLE001

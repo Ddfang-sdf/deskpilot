@@ -78,6 +78,7 @@ from .audit_events import (
     EV_POLICY_EXTERNALLY_MODIFIED, EV_POLICY_FINGERPRINT,
     EV_POLICY_LOADED, EV_POLICY_LOCAL_EXTERNALLY_MODIFIED,
     EV_POLICY_LOCAL_FINGERPRINT, EV_PROXY_SKIPS_HOTKEY,
+    EV_MANAGER_WINDOW_LAUNCH, EV_NAME_CACHE_WARMED,
     EV_SCREENSHOT_CLEANUP_ERROR, EV_SERVICE_START,
     EV_SERVICE_STOP, EV_STDIO_BECOME_OWNER)
 from .audit import AuditLogger
@@ -229,7 +230,7 @@ def _open_manager_for(port: int, audit=None, stderr_log=None):
         base_url = f"http://127.0.0.1:{port}"
         if audit is not None:                    # O1:拉起打点(不阻断)
             try:
-                audit.record_event("管理窗拉起", base_url)
+                audit.record_event(EV_MANAGER_WINDOW_LAUNCH, base_url)
             except Exception:                    # noqa: BLE001
                 pass
         if getattr(sys, "frozen", False):
@@ -273,7 +274,7 @@ def _warm_caches_with_audit(audit=None) -> None:
     dur_ms = (time.monotonic() - t0) * 1000
     if audit is not None:
         try:
-            audit.record_event("名称缓存暖机",
+            audit.record_event(EV_NAME_CACHE_WARMED,
                                f"dur_ms={dur_ms:.0f} ok={ok}{err}")
         except Exception:                        # noqa: BLE001
             pass

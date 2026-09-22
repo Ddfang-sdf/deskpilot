@@ -89,7 +89,8 @@ class SecureDesktopGuard:
         self._detect_failed = failed
         if active != self._active:
             if self._audit is not None and (self._active is not None or active):
-                self._audit.record_event(
-                    EV_SECURE_DESKTOP_ACTIVATED if active else EV_SECURE_DESKTOP_EXITED, "")
+                _event = (EV_SECURE_DESKTOP_ACTIVATED if active
+                          else EV_SECURE_DESKTOP_EXITED)
+                self._audit.record_event(_event, "")
             self._active = active
         return active
