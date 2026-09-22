@@ -40,11 +40,12 @@ from deskpilot.audit import AuditLogger
 from deskpilot.estop import EstopMonitor
 from deskpilot.freeze_dialog import EXIT_RESET
 from deskpilot.freeze_notify import STATE_FILE, FreezeNotifier
-from deskpilot.httpd import DEFAULT_HOST, DEFAULT_PORT, HttpDaemon, probe_daemon
+from deskpilot.httpd import HttpDaemon
 
 from deskpilot.audit_events import (
     EV_ESTOP_RESET)
 from .conftest import read_audit
+from .envguard import env_skip, real_daemon_online
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "deskpilot"
@@ -449,8 +450,8 @@ class TestFullChainNoReqOnDisk:
         from deskpilot.i18n import tr
 
         if os.environ.get("ISS93_FORCE_E2E") != "1" and \
-                probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-            pytest.skip("环境守卫:真实 daemon 在线,单例互斥/共享面会冲突")
+                real_daemon_online():
+            env_skip("真实 daemon 在线,单例互斥/共享面会冲突")
 
         shared = tmp_path / "shared"
         shared.mkdir()

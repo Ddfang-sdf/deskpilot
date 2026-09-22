@@ -84,20 +84,15 @@ class TestClickTextIntegration:
     """TC-CT-07/08:真 daemon+真记事本。断言:HTTP 响应体(外表面直出)。"""
 
     def _spawn_notepad(self):
+        """ISS-0062 步骤 A:内联窗口枚举收敛 envguard.notepad_mains(纯重构)。"""
         import subprocess
-        from deskpilot.executor import DesktopProbe
 
-        def mains():
-            return [w for w in DesktopProbe().find_windows(
-                process="notepad.exe", include_hidden=True)
-                if w.get("title")
-                and (w["rect"][2] - w["rect"][0]) > 100
-                and (w["rect"][3] - w["rect"][1]) > 100]
+        from .envguard import notepad_mains
 
-        before = {w["hwnd"] for w in mains()}
+        before = {w["hwnd"] for w in notepad_mains()}
         proc = subprocess.Popen(["notepad.exe"])
         time.sleep(3.0)
-        new = [w for w in mains() if w["hwnd"] not in before]
+        new = [w for w in notepad_mains() if w["hwnd"] not in before]
         assert new, "记事本窗口未出现"
         return proc, new
 

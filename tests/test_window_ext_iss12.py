@@ -10,6 +10,8 @@ whitelist_window._GraphicButton/fade_in/focus_existing_or_exit/build_window/main
 
 from __future__ import annotations
 
+from .envguard import env_skip
+
 import sys
 
 import pytest
@@ -54,7 +56,7 @@ class TestResolveRegistry:
             pytest.fail("源函数未实现(P1 红阶段预期)")
         path = appnames._from_start_menu_lnk("weixin.exe")
         if not path:
-            pytest.skip("本机无微信快捷方式(环境守卫)")
+            env_skip("本机无微信快捷方式")
         assert "weixin.exe" in path.lower()
 
     def test_resolve03_uninstall_icon(self):
@@ -63,7 +65,7 @@ class TestResolveRegistry:
             pytest.fail("源函数未实现(P1 红阶段预期)")
         path = appnames._from_uninstall_icon("seeyou.exe")
         if not path:
-            pytest.skip("本机无西柚 Uninstall 项(环境守卫)")
+            env_skip("本机无西柚 Uninstall 项")
         assert "seeyou.exe" in path.lower()
 
     def test_resolve05_description_chain(self):
@@ -73,7 +75,7 @@ class TestResolveRegistry:
         无微信则回退进程名——按同文件 resolve02/03 惯例 skip)。"""
         d = appnames.app_description("weixin.exe")
         if "weixin.exe" == d:
-            pytest.skip("本机无微信描述源(环境守卫)")
+            env_skip("本机无微信描述源")
         assert d and d != "weixin.exe"
 
     def test_resolve06_honest_fallback(self):

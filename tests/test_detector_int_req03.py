@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from .envguard import env_skip
+
 import json
 import time
 import urllib.request
@@ -99,7 +101,7 @@ class TestIntReq03:
             wins = self._find(d, "explorer.exe")
             pm = [w for w in wins if w["title"] == "Program Manager"]
             if not pm:
-                pytest.skip("Program Manager 不可见(环境守卫)")
+                env_skip("Program Manager 不可见")
             r = self._call(d, "get_clickable_map",
                            {"window": pm[0]["hwnd"]})
             assert r["ok"], r.get("message")
@@ -124,8 +126,7 @@ class TestIntReq03:
         try:
             w = self._blind_window(d)
             if w is None:
-                pytest.skip("无 UIA 全盲窗口(seeyou.exe/wxwork.exe 未开,"
-                            "环境守卫——开窗后重跑本条)")
+                env_skip("无 UIA 全盲窗口(seeyou.exe/wxwork.exe 未开,开窗后重跑本条)")
             r = self._call(d, "get_clickable_map",
                            {"window": w["hwnd"], "detect": True})
             assert r["ok"], r.get("message")
@@ -170,18 +171,18 @@ class TestIntReq03:
             # 测不到诊断分支)
             wins = self._find(d, "wxwork.exe")
             if not wins:
-                pytest.skip("企微未开(误用防护须 L2 白名单盲窗,环境守卫)")
+                env_skip("企微未开(误用防护须 L2 白名单盲窗)")
             w = wins[0]
             tree = self._call(d, "get_ui_tree",
                               {"window": w["hwnd"]})["data"]["elements"]
             if len(tree) > 4:
-                pytest.skip("企微窗口 UIA 非全盲(环境异常)")
+                env_skip("企微窗口 UIA 非全盲(环境异常)")
             m = self._call(d, "get_clickable_map",
                            {"window": w["hwnd"], "detect": True})
             detect = [e for e in m["data"]["entries"]
                       if e["source"] == "detect"]
             if not detect:
-                pytest.skip("全盲窗口无检测条目(环境守卫)")
+                env_skip("全盲窗口无检测条目")
             a = self._call(d, "attach", {"hwnd": w["hwnd"]})
             token = a["data"]["token"]
             r = self._call(d, "click_element",
@@ -203,7 +204,7 @@ class TestIntReq03:
         try:
             w = self._blind_window(d)
             if w is None:
-                pytest.skip("无 UIA 全盲窗口(环境守卫)")
+                env_skip("无 UIA 全盲窗口")
             self._call(d, "get_clickable_map",
                        {"window": w["hwnd"], "detect": True})   # 预热(装填)
             t0 = time.perf_counter()

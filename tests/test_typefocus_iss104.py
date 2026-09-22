@@ -180,21 +180,15 @@ class TestNotepadFocusIntegration:
     """
 
     def _spawn_notepad(self):
+        """ISS-0062 步骤 A:内联窗口枚举收敛 envguard.notepad_mains(纯重构)。"""
         import subprocess
 
-        from deskpilot.executor import DesktopProbe
+        from .envguard import notepad_mains
 
-        def mains():
-            return [w for w in DesktopProbe().find_windows(
-                process="notepad.exe", include_hidden=True)
-                if w.get("title")
-                and (w["rect"][2] - w["rect"][0]) > 100
-                and (w["rect"][3] - w["rect"][1]) > 100]
-
-        before = {w["hwnd"] for w in mains()}
+        before = {w["hwnd"] for w in notepad_mains()}
         proc = subprocess.Popen(["notepad.exe"])
         time.sleep(3.0)
-        new = [w for w in mains() if w["hwnd"] not in before]
+        new = [w for w in notepad_mains() if w["hwnd"] not in before]
         return proc, new
 
     def _make_daemon(self, policy, audit_log, tmp_path):
@@ -290,17 +284,16 @@ class TestNotepadFocusIntegration:
 
     def test_tc104_03_notepad_focused_paste_readback(self, policy, audit_log,
                                                      tmp_path):
-        from deskpilot.httpd import DEFAULT_HOST, DEFAULT_PORT, probe_daemon
-
+        from .envguard import env_skip, real_daemon_online
         from .test_uia_com_iss16 import _close_all_and_wait
 
         if os.environ.get("ISS104_FORCE_E2E") != "1" and \
-                probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-            pytest.skip("环境守卫:真实 daemon 在线,不打扰真服务")
+                real_daemon_online():
+            env_skip("真实 daemon 在线,不打扰真服务")
         proc, new = self._spawn_notepad()
         if not new:
             proc.terminate()
-            pytest.skip("环境守卫:记事本窗口未出现(无可用记事本环境)")
+            env_skip("记事本窗口未出现(无可用记事本环境)")
         try:
             d = self._make_daemon(policy, audit_log, tmp_path)
             try:

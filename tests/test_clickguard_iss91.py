@@ -21,6 +21,8 @@ Invoke-first 对折叠控件仍有效,过滤=过修回归;退化防护由①号�
 
 from __future__ import annotations
 
+from .envguard import env_skip
+
 import json
 import time
 import urllib.request
@@ -235,7 +237,7 @@ class TestDegenerateRectRealNotepad:
                         if el.get("name") or el.get("automation_id"):
                             cands.append(el)
                 if not cands:
-                    pytest.skip("环境守卫:真实记事本窗口无退化矩形元素")
+                    env_skip("真实记事本窗口无退化矩形元素")
                 c0 = self._cursor(d.port)
                 errored = None
                 for el in cands[:10]:
@@ -255,7 +257,7 @@ class TestDegenerateRectRealNotepad:
                         break
                     # ok=True:元素具 Invoke/Select 模式,非鼠标通道合法成功
                 if errored is None:
-                    pytest.skip("环境守卫:退化元素均被 Invoke/Select 模式承接,"
+                    env_skip("退化元素均被 Invoke/Select 模式承接,"
                                 "无法复现像素兜底")
                 # v0.2 裁定:任一层显式拒绝皆可,不许静默成功点击
                 assert errored["error_code"] in {
@@ -315,7 +317,7 @@ class TestDegenerateRectRealNotepad:
                 cands = [el for el in tree["data"]["elements"]
                          if _addressable(el)]
                 if not cands:
-                    pytest.skip("环境守卫:窗口内无可点正常元素")
+                    env_skip("窗口内无可点正常元素")
                 cands.sort(key=lambda el: 0 if any(
                     t in (el.get("control_type") or "")
                     for t in ("Edit", "Document")) else 1)

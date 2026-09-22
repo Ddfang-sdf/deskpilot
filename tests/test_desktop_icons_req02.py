@@ -356,7 +356,9 @@ class TestRealDesktop:
                 if checked >= 3:
                     break
             if not checked:
-                pytest.skip("当前桌面图标全被遮挡(环境守卫——清桌面后跑)")
+                # ISS-0062 步骤 A:守卫口径收敛 env_skip(纯重构)
+                from .envguard import env_skip
+                env_skip("当前桌面图标全被遮挡(清桌面后跑)")
             # 栈叠同 rect 各成一条(若存在)
             rects = [tuple(i["cell_rect"]) for i in items]
             assert len(rects) == len(items)           # 数量守恒(未合并)
