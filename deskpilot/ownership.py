@@ -104,24 +104,74 @@ class HeartbeatWriter:
     """
 
     def __init__(self, audit_dir: str, role: str, clock=time.time,
-                 interval: float = BEAT_INTERVAL_S):
+                 interval: float = BEAT_INTERVAL_S, audit=None):
         self._path = Path(audit_dir) / HEARTBEAT_NAME
         self._role = role
         self._clock = clock
         self._interval = interval
+        # ISS-0094 ①:终败/恢复审计通道(可选;无则事件不落盘,对齐 _audit 惯例)
+        self._audit = audit
+        # ISS-0094 ②:tmp 按 pid 区分(构造期捕获,消除复出窗口双写互踩)
+        self._pid = os.getpid()
+        # ISS-0094 ①:节流状态(连续失败只记首败,恢复另记一条后复位)
+        self._beat_failed = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def beat_once(self) -> Path:
-        """原子写一次心跳(先写 .tmp 再 os.replace,防读半截),返回路径。"""
+    def beat_once(self) -> Path | None:
+        """原子写一次心跳；成功返回路径，终败返回 None 不上抛。
+
+        ISS-0094 ①（对齐 freeze_notify ISS-0092 ② 防护形态）：写盘
+        OSError 三段退避重试（0.05/0.15/0.45s，每轮先预清同名旧 tmp）；
+        终败记审计「心跳写失败」——节流（连续失败只记首败，恢复另记
+        「心跳写恢复」一条；审计自身失败不上抛）。心跳是观测面，
+        写失败不得阻断主功能（调用方 start() 直连本方法,故终败不上抛）。
+        ISS-0094 ②：tmp 按 pid 区分（daemon-heartbeat.{pid}.tmp）。
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"pid": os.getpid(), "role": self._role,
+        payload = {"pid": self._pid, "role": self._role,
                    "ts": self._clock(), "version": _version()}
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False),
-                       encoding="utf-8")
-        os.replace(tmp, self._path)
-        return self._path
+        tmp = self._path.with_name(f"{self._path.stem}.{self._pid}.tmp")
+        last: OSError | None = None
+        for backoff in (0.05, 0.15, 0.45):
+            try:
+                tmp.unlink(missing_ok=True)      # 预清同名旧 tmp(孤儿残留)
+                tmp.write_text(json.dumps(payload, ensure_ascii=False),
+                               encoding="utf-8")
+                os.replace(tmp, self._path)
+            except OSError as e:
+                last = e
+                time.sleep(backoff)
+                continue
+            self._record_recovery()
+            return self._path
+        self._record_failure(last)
+        return None
+
+    def _record_failure(self, e: OSError | None) -> None:
+        """终败审计（节流:连续失败只记首败）。"""
+        if self._beat_failed:
+            return
+        self._beat_failed = True
+        self._audit_event(
+            "心跳写失败",
+            f"重试 3 次仍失败: {e!r}（节流:连续失败仅记首败,恢复另记一条）")
+
+    def _record_recovery(self) -> None:
+        """恢复审计（连败后首次成功另记一条,复位节流状态）。"""
+        if not self._beat_failed:
+            return
+        self._beat_failed = False
+        self._audit_event("心跳写恢复", "连续写失败后恢复落盘")
+
+    def _audit_event(self, event: str, detail: str) -> None:
+        """审计自身失败不上抛（观测面不得反噬主功能）。"""
+        if self._audit is None:
+            return
+        try:
+            self._audit.record_event(event, detail)
+        except Exception:                           # noqa: BLE001
+            pass
 
     def start(self) -> None:
         if self._thread is not None:
@@ -248,7 +298,8 @@ class RoleSupervisor:
         """心跳先行(复出信号先于持锁,daemon 起舞的前提),再抢锁;抢到 →
         属主(on_become_owner)。抢不到 → 停心跳(瘦身),返回 False。"""
         self._heartbeat = HeartbeatWriter(str(self._dir), self._role,
-                                          clock=self._clock)
+                                          clock=self._clock,
+                                          audit=self._audit)
         self._heartbeat.beat_once()
         self._heartbeat.start()
         if not self._lock.acquire():
@@ -272,7 +323,8 @@ class RoleSupervisor:
             # daemon 不在且锁空 → 自愈接管(死亡放锁/锁空)
             if self._lock.acquire():
                 self._heartbeat = HeartbeatWriter(str(self._dir), self._role,
-                                                  clock=self._clock)
+                                                  clock=self._clock,
+                                                  audit=self._audit)
                 self._heartbeat.beat_once()
                 self._heartbeat.start()
                 if self._audit is not None:
