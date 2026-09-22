@@ -17,6 +17,8 @@ from typing import Any, Mapping
 from ..enforcement import Enforcement
 from ..errors import (AMBIGUOUS_TARGET, INTERNAL_ERROR, SECURE_DESKTOP,
                       TARGET_NOT_FOUND, ExecutorError, InvalidParamsError)
+from ..audit_events import (EV_SECURE_DESKTOP_REJECTED,
+                            EV_WHITELIST_REMOVED_VIA_AI)
 from ..mcp_server import validate_call
 from ..models import (BINDING_REQUIRED_TOOLS, L2, TOOL_LEVELS, AuditEntry,
                       OperationRequest, Policy, ToolResult)
@@ -62,7 +64,7 @@ def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> Too
     if guard.check():
         if ctx.audit is not None:
             try:
-                ctx.audit.record_event("安全桌面拒绝", f"tool={tool}")
+                ctx.audit.record_event(EV_SECURE_DESKTOP_REJECTED, f"tool={tool}")
             except Exception:
                 pass                    # 拒绝本身即安全向,审计失败不改变拒绝
         return ToolResult(
@@ -231,7 +233,7 @@ def request_remove_from_whitelist(ctx: ToolContext, *, process: str) -> ToolResu
             removed = admin.remove(proc) is not None
             if removed and ctx.audit is not None:
                 try:
-                    ctx.audit.record_event("白名单移除-经AI请求", proc)
+                    ctx.audit.record_event(EV_WHITELIST_REMOVED_VIA_AI, proc)
                 except Exception:
                     pass
     result = {"removed": removed}
