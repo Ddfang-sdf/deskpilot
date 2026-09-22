@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import Callable
 
 from .audit import AuditLogger
+from .audit_events import (EV_ESTOP_RESET, EV_ESTOP_TRIGGERED,
+                           EV_RESET_NOOP_NOT_FROZEN)
 
 TRIGGER_HOTKEY = "ctrl+shift+f12"   # 急停热键（规范化形）
 RESET_HOTKEY = "ctrl+shift+f11"     # 复位热键（规范化形）
@@ -83,7 +85,7 @@ class EstopMonitor:
             return
         self._frozen = True
         if self._audit is not None:
-            self._audit.record_event("急停触发", source)
+            self._audit.record_event(EV_ESTOP_TRIGGERED, source)
         if self._on_state_change is not None:
             self._on_state_change(True, source)
         for fn in self._freeze_listeners:       # REQ-001:冻结监听器(独立容错)
@@ -96,12 +98,12 @@ class EstopMonitor:
         if not self._frozen:
             # 复位 no-op 也记审计（ISS-0002）：热键按没按、送到了谁必须可查
             if self._audit is not None:
-                self._audit.record_event("复位请求-未冻结", source)
+                self._audit.record_event(EV_RESET_NOOP_NOT_FROZEN, source)
             return
         self._frozen = False
         self._corner_since = None
         self._corner_inside = None     # ISS-0049:复位再基线——压角残留不复活恐慌
         if self._audit is not None:
-            self._audit.record_event("急停复位", source)
+            self._audit.record_event(EV_ESTOP_RESET, source)
         if self._on_state_change is not None:
             self._on_state_change(False, source)
