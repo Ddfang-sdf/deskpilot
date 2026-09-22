@@ -24,58 +24,22 @@ DESC_LONG = ("AI requests to operate a new app: \"字符映射表\"\n---\n" +
              "Process charmap.exe is not locally authorized yet. " * 12)
 
 
-class _Recorder:
-    """Tk 替身:几何/测量调用记账。winfo_reqheight 由测试注入。"""
-
-    reqheight_value = 0
-
-    def __init__(self, *a, **k):
-        self._text = k.get("text", a[2] if len(a) > 2 else "")
-
-    def __getattr__(self, name):
-        if name.startswith("__"):
-            raise AttributeError(name)
-        if name == "winfo_reqheight":
-            return lambda: type(self).reqheight_value
-        if name in ("winfo_screenwidth", "winfo_screenheight"):
-            return lambda: 1920 if name == "winfo_screenwidth" else 1080
-        if name == "geometry":
-            return self._geometry
-        if name == "update_idletasks":
-            return lambda: type(self).calls.append(("update_idletasks", None))
-        if name == "after":
-            return lambda *a, **k: None       # 不跑 tick/slide 调度
-        return lambda *a, **k: None
-
-    calls: list = []
-
-    def _geometry(self, spec: str):
-        type(self).calls.append(("geometry", spec))
-
-    def configure(self, **k):
-        if "text" in k:
-            self._text = k["text"]
-
-    config = configure
-
-
 @pytest.fixture
 def tk_stub(monkeypatch):
-    """替身装配:全 widget 类替换 + 记账复位;返回记账列表。"""
+    """替身装配(ISS-0059 步骤14):_Recorder 类属性记账收编
+    tests/faketk.install——实例 recorder+fixture 复位,消除借前序
+    残留风险(ISS-0026 教训);观测口:geometries/idletasks/reqheight。"""
     import deskpilot.approval_dialog as ad
-    _Recorder.calls = []
-    _Recorder.reqheight_value = 0
-    for cls in ("Toplevel", "Frame", "Label", "Button", "Canvas"):
-        monkeypatch.setattr(ad.tk, cls, _Recorder)
-    return _Recorder.calls
+    from .faketk import install
+    return install(monkeypatch, ad.tk, screen=(1920, 1080))
 
 
 class TestMeasuredHeightPlacement:
     """i08/i09:实测高进几何与落位;静态估算只做地板。"""
 
-    def _build(self, monkeypatch, reqh: int):
+    def _build(self, monkeypatch, tk_stub, reqh: int):
         import deskpilot.approval_dialog as ad
-        _Recorder.reqheight_value = reqh
+        tk_stub.reqheight = reqh
         seen = {}
         real_tp = ad._toast_placement
 
@@ -92,17 +56,17 @@ class TestMeasuredHeightPlacement:
     def test_i08_long_content_measured_height_applied(self, tk_stub,
                                                       monkeypatch):
         """i08:英文长文(替身 reqheight=600)→ 窗高按 600 重设重落位。"""
-        seen = self._build(monkeypatch, 600)
+        seen = self._build(monkeypatch, tk_stub, 600)
         assert seen["height"] == 600                    # 落位实收(直出)
-        geos = [s for kind, s in tk_stub if kind == "geometry"]
+        geos = tk_stub.geometries                       # 几何记录(直出)
         assert "480x600+1424+1080" in geos              # 重设入几何(直出)
 
     def test_i09_short_content_floor_no_collapse(self, tk_stub, monkeypatch):
         """i09:短正文(reqheight=100 < 地板 216)→ 窗高=地板 216,且
         测量确已发生(reqheight 被咨询过)。"""
-        seen = self._build(monkeypatch, 100)
+        seen = self._build(monkeypatch, tk_stub, 100)
         assert seen["height"] == 216                    # 地板守住(直出)
-        assert ("update_idletasks", None) in tk_stub    # 测量发生(直出)
+        assert tk_stub.idletasks >= 1                   # 测量发生(直出)
 
 
 class TestMeasureBeforeSlideSourceOrder:
