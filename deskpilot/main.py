@@ -71,6 +71,15 @@ def _startup_detail(form: str) -> str:
     return f"{form}; DPI={_DPI_MODE}"
 
 from .approval import ApprovalManager, DenyAllChannel
+from .audit_events import (
+    EV_AUTOSTART_REGISTERED, EV_CORNER_LOOP_ERROR,
+    EV_DAEMON_SINGLETON_EXIT, EV_HOTKEY_REGISTER_FAILED,
+    EV_HOTKEY_REGISTERED, EV_OWNER_BIND_9420_FAILED,
+    EV_POLICY_EXTERNALLY_MODIFIED, EV_POLICY_FINGERPRINT,
+    EV_POLICY_LOADED, EV_POLICY_LOCAL_EXTERNALLY_MODIFIED,
+    EV_POLICY_LOCAL_FINGERPRINT, EV_PROXY_SKIPS_HOTKEY,
+    EV_SCREENSHOT_CLEANUP_ERROR, EV_SERVICE_START,
+    EV_SERVICE_STOP, EV_STDIO_BECOME_OWNER)
 from .audit import AuditLogger
 from .binding import BindingManager
 from .enforcement import Enforcement
@@ -125,7 +134,7 @@ def _hotkey_loop(estop: EstopMonitor, audit: AuditLogger,
         # ISS-0084 ②节流:失败审计只记首次——逐次审计曾是实机每分钟刷屏之源;
         # stderr 每次照打(控制台即时可见),审计面只留首败与恢复两条
         if failed_rounds == 1:
-            audit.record_event("急停热键注册失败",
+            audit.record_event(EV_HOTKEY_REGISTER_FAILED,
                                f"热键可能被占用;退避重试中(节流:仅记首败);"
                                f"甩角触发仍可用")
         print(f"急停热键注册失败（{delay}s 后重试）：热键可能被其他程序占用",
@@ -133,11 +142,11 @@ def _hotkey_loop(estop: EstopMonitor, audit: AuditLogger,
         sleep(delay)
         delay = min(delay * 2, 60)
     if failed_rounds:
-        audit.record_event("急停热键注册",
+        audit.record_event(EV_HOTKEY_REGISTERED,
                            f"Ctrl+Shift+F12 触发 / Ctrl+Shift+F11 复位"
                            f"(恢复:重试 {failed_rounds} 轮后成功)")
     else:
-        audit.record_event("急停热键注册",
+        audit.record_event(EV_HOTKEY_REGISTERED,
                            "Ctrl+Shift+F12 触发 / Ctrl+Shift+F11 复位")
     msg = wintypes.MSG()
     msg_failed_rounds = 0
@@ -155,13 +164,13 @@ def _hotkey_loop(estop: EstopMonitor, audit: AuditLogger,
                 msg_failed_rounds += 1
                 if msg_failed_rounds == 1:
                     audit.record_event(
-                        "甩角轮询异常",
+                        EV_CORNER_LOOP_ERROR,
                         f"热键消息循环: {e!r}(节流:仅记首败,恢复时另记一条)")
                 print(f"热键处理异常（消息循环继续）: {e!r}", file=sys.stderr)
             else:
                 if msg_failed_rounds:
                     audit.record_event(
-                        "甩角轮询异常",
+                        EV_CORNER_LOOP_ERROR,
                         f"热键消息循环恢复:连续异常 {msg_failed_rounds} 轮后"
                         f"恢复正常")
                     msg_failed_rounds = 0
@@ -195,13 +204,13 @@ def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier,
             failed_rounds += 1
             if failed_rounds == 1 and audit is not None:
                 audit.record_event(
-                    "甩角轮询异常", f"{e!r}（节流:仅记首败,恢复时另记一条）")
+                    EV_CORNER_LOOP_ERROR, f"{e!r}（节流:仅记首败,恢复时另记一条）")
             print(f"甩角轮询异常（已容错,继续轮询）: {e!r}", file=sys.stderr)
         else:
             if failed_rounds:
                 if audit is not None:
                     audit.record_event(
-                        "甩角轮询异常",
+                        EV_CORNER_LOOP_ERROR,
                         f"恢复:连续异常 {failed_rounds} 轮后恢复正常")
                 failed_rounds = 0
         finally:
@@ -307,7 +316,7 @@ def policy_sha256_audit(policy_path: str, audit) -> str:
     """
     from .whitelist_admin import file_sha256
     fp = file_sha256(policy_path)
-    audit.record_event("策略指纹", f"{policy_path} sha256={fp}")
+    audit.record_event(EV_POLICY_FINGERPRINT, f"{policy_path} sha256={fp}")
     return fp
 
 
@@ -318,7 +327,7 @@ def local_policy_sha256_audit(local_path: str, audit) -> str:
     """
     from .whitelist_admin import file_sha256
     fp = file_sha256(local_path)
-    audit.record_event("用户策略数据指纹", f"{local_path} sha256={fp}")
+    audit.record_event(EV_POLICY_LOCAL_FINGERPRINT, f"{local_path} sha256={fp}")
     return fp
 
 
@@ -331,7 +340,7 @@ class _PolicyWatchThread(threading.Thread):
     """
 
     def __init__(self, policy_path: str, audit, interval: float,
-                 fingerprint: str, event_name: str = "策略文件被外部修改"):
+                 fingerprint: str, event_name: str = EV_POLICY_EXTERNALLY_MODIFIED):
         super().__init__(daemon=True, name="deskpilot-policy-watch")
         self._path = policy_path
         self._audit = audit
@@ -373,7 +382,7 @@ class _PolicyWatchThread(threading.Thread):
 
 def _start_policy_watch(policy_path: str, audit, interval: float = 60.0,
                         fingerprint: str = "",
-                        event_name: str = "策略文件被外部修改"
+                        event_name: str = EV_POLICY_EXTERNALLY_MODIFIED
                         ) -> _PolicyWatchThread:
     """ISS-0012 §6 C：启动策略守望线程（不重载不冻结，仅留痕告警）。"""
     t = _PolicyWatchThread(policy_path, audit, interval, fingerprint,
@@ -395,7 +404,7 @@ def _start_janitor(policy, audit: AuditLogger) -> None:
                         policy.cleanup_grace_seconds, audit_log=audit)
         except Exception as e:
             try:
-                audit.record_event("截图清理异常", str(e))
+                audit.record_event(EV_SCREENSHOT_CLEANUP_ERROR, str(e))
             except Exception:
                 pass
 
@@ -465,7 +474,7 @@ def main() -> int:
 
     audit = AuditLogger(policy.audit_dir)
     try:
-        audit.record_event("策略加载", f"policy: {policy_path}")
+        audit.record_event(EV_POLICY_LOADED, f"policy: {policy_path}")
     except AuditFailure as e:
         print(f"审计目录不可用: {e}", file=sys.stderr)
         return 3
@@ -473,7 +482,7 @@ def main() -> int:
     # ISS-0046 A:daemon 单例守门——已有属主在线时本实例显式退出(不僵尸)。
     # 必须在甩角/热键监听与弹窗装配之前:非属主进程不监听、不弹窗、不绑端口。
     if "--daemon" in sys.argv and probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-        audit.record_event("daemon 单例退出",
+        audit.record_event(EV_DAEMON_SINGLETON_EXIT,
                            "9420 已有属主在线,拒绝双起(甩角监听/弹窗归属主)")
         print("已有 DeskPilot daemon 在线(127.0.0.1:9420),本实例退出",
               file=sys.stderr)
@@ -489,7 +498,7 @@ def main() -> int:
         local_fp = local_policy_sha256_audit(str(local_path), audit)
         local_watch = _start_policy_watch(
             str(local_path), audit, fingerprint=local_fp,
-            event_name="用户策略数据被外部修改")
+            event_name=EV_POLICY_LOCAL_EXTERNALLY_MODIFIED)
     # ISS-0012 A/D：运行期白名单管理（静态∪会话；落盘由 daemon 原子完成）
     from .whitelist_admin import WhitelistAdmin
     whitelist_admin = WhitelistAdmin(str(policy_path), policy.whitelist,
@@ -608,7 +617,7 @@ def main() -> int:
         except RuntimeError as e:
             # 锁与端口不一致的异常面:记审计,属主回调内不持 HTTP,
             # 调用方据此放锁退瘦代理
-            audit.record_event("属主 9420 绑定失败", f"{e}")
+            audit.record_event(EV_OWNER_BIND_9420_FAILED, f"{e}")
             return
         owner_httpd["d"] = d
         t = TrayIcon(on_manage=_open_manager_for(
@@ -654,18 +663,18 @@ def main() -> int:
                 break
             time.sleep(min(1.0 * (_att + 1), 2.0))
         if not _acquired:
-            audit.record_event("daemon 单例退出", "属主锁未获得:已有属主在线")
+            audit.record_event(EV_DAEMON_SINGLETON_EXIT, "属主锁未获得:已有属主在线")
             print("属主锁未获得(已有属主在线),本实例退出", file=sys.stderr)
             return 4
         # ⑤开机自启:冻结形态幂等注册(源码形态跳过——开发形态不自启)
         if getattr(sys, "frozen", False):
             if ensure_autostart(str(Path(sys.executable).resolve())):
-                audit.record_event("开机自启注册", "HKCU Run: DeskPilotDaemon")
+                audit.record_event(EV_AUTOSTART_REGISTERED, "HKCU Run: DeskPilotDaemon")
         _start_estop_listeners(estop, audit, notifier)
     elif probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
         # stdio 瘦代理：冻结标志归属主(9420 持有人)所有——本进程注册热键
         # 只会抢占复位通道(RegisterHotKey 全系统单持有者,ISS-0002 根因修复)
-        audit.record_event("瘦代理跳过热键注册",
+        audit.record_event(EV_PROXY_SKIPS_HOTKEY,
                            "daemon/既有属主在线；急停热键与甩角监听归其持有")
     else:
         # daemon 不在:心跳新鲜(启动中)则稍候重探;否则试持属主锁
@@ -676,7 +685,7 @@ def main() -> int:
             if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
                 break
         if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-            audit.record_event("瘦代理跳过热键注册",
+            audit.record_event(EV_PROXY_SKIPS_HOTKEY,
                                "daemon 启动中(心跳新鲜),转瘦代理")
         else:
             supervisor = RoleSupervisor(
@@ -688,18 +697,18 @@ def main() -> int:
                     # 9420 绑定失败(锁与端口不一致的异常面):放锁退瘦代理
                     supervisor.stop()
                     supervisor = None
-                    audit.record_event("瘦代理跳过热键注册",
+                    audit.record_event(EV_PROXY_SKIPS_HOTKEY,
                                        "9420 绑定失败(锁端口不一致),退瘦代理")
                 else:
-                    audit.record_event("stdio 升属主",
+                    audit.record_event(EV_STDIO_BECOME_OWNER,
                                        "daemon 不在,本实例接管 9420/热键/托盘")
                     threading.Thread(target=_ownership_watch, daemon=True,
                                      name="deskpilot-ownership").start()
             else:
-                audit.record_event("瘦代理跳过热键注册",
+                audit.record_event(EV_PROXY_SKIPS_HOTKEY,
                                    "另一 stdio 属主在(属主锁被持)")
 
-    audit.record_event("服务启动", _startup_detail("MCP stdio 就绪"))
+    audit.record_event(EV_SERVICE_START, _startup_detail("MCP stdio 就绪"))
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
     if "--daemon" in sys.argv:
         # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
@@ -711,10 +720,10 @@ def main() -> int:
             daemon.start()
         except RuntimeError as e:
             # ISS-0046 A:预检→绑定竞态的败者干净退出(不抛栈、不僵尸)
-            audit.record_event("daemon 单例退出", f"端口绑定失败: {e}")
+            audit.record_event(EV_DAEMON_SINGLETON_EXIT, f"端口绑定失败: {e}")
             print(f"daemon 启动退出: {e}", file=sys.stderr)
             return 4
-        audit.record_event("服务启动", _startup_detail(
+        audit.record_event(EV_SERVICE_START, _startup_detail(
             f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}"))
         print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
               file=sys.stderr)
@@ -736,8 +745,8 @@ def main() -> int:
             daemon.stop()
             if supervisor is not None:
                 supervisor.stop()
-            audit.record_event("服务停止", "常驻服务停止")
+            audit.record_event(EV_SERVICE_STOP, "常驻服务停止")
             return 0
     serve(ctx)                                   # 阻塞于 stdio
-    audit.record_event("服务停止", "stdio 关闭")
+    audit.record_event(EV_SERVICE_STOP, "stdio 关闭")
     return 0
