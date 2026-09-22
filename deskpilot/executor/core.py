@@ -39,6 +39,9 @@ from ..errors import (DETECTOR_UNAVAILABLE, ELEMENT_AMBIGUOUS, ELEMENT_DISABLED,
                       OCR_TEXT_NOT_FOUND, OUT_OF_BOUNDS, READBACK_UNAVAILABLE,
                       TIMEOUT, TYPE_MISMATCH, WINDOW_GONE,
                       WINDOW_OCCLUDED, ExecutorError, InvalidParamsError)
+from ..audit_events import (
+    EV_SCREENSHOT_OVERWRITE, EV_STARTUP_KEY_SWEEP,
+    EV_STARTUP_KEY_SWEEP_FAILSAFE)
 from ..policy import normalize_key
 from .detector import resolve, screened, to_virtual, verify
 from .mousehold import MOUSE_BUTTONS, PressedTracker, WatchdogThread
@@ -203,9 +206,9 @@ class Executor:
             except pyautogui.FailSafeException:
                 _sweep_blocked += 1
         if self._audit is not None:
-            self._audit.record_event("启动抬键清扫", "三键幂等抬起")
+            self._audit.record_event(EV_STARTUP_KEY_SWEEP, "三键幂等抬起")
             if _sweep_blocked:
-                self._audit.record_event("启动抬键清扫-FAILSAFE拦截",
+                self._audit.record_event(EV_STARTUP_KEY_SWEEP_FAILSAFE,
                                          f"光标压角拦截 {_sweep_blocked} 键")
         # REQ-001 安全网①：急停冻结→强制抬起全部按下键
         add_listener = getattr(self._estop, "add_freeze_listener", None)
@@ -1513,7 +1516,7 @@ class Executor:
                 INVALID_PARAMS,
                 f"落盘父目录不存在（不代为创建）: {p.parent}")
         if p.exists() and self._audit is not None:
-            self._audit.record_event("screenshot覆盖写", str(p))
+            self._audit.record_event(EV_SCREENSHOT_OVERWRITE, str(p))
         with mss.MSS() as sct:
             img = sct.grab(region)
             mss.tools.to_png(img.rgb, img.size, output=str(p))
