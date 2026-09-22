@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0059 |
 | 标题 | 同一套 Tk 替身(W 基类 pack/place/bind/config/geometry… + Button/Label 记录器)在 test_batch_iss19 / test_sessionscope_iss43 / test_whitelist_iss12 / test_monitors_iss7 四个文件各抄一份;弹窗 API 增参数时四处同步,今天 ISS-0043/0053 已复制到第四份 |
 | 严重级 | 低(测试可维护性) |
-| 状态 | 方案已批准(sdfang 离场授权自决 2026-09-22),待开发(按方案步骤) |
+| 状态 | **已关闭(2026-09-23 验收:守卫全绿+全量双跑 932 passed 0 failed;sdfang 离场授权自决)** |
 | 提出 | 2026-09-10(cleancode 审查;grep winfo_screenwidth 四文件实证) |
 
 ## 现象与证据
@@ -199,3 +199,4 @@ tests/faketk.py、tests/test_faketk.py 新增;11 个既有测试文件各改
 |------|------|------|
 | v0.1 | 2026-09-22 | 整改方案落档:现状复核为 16 份替身/11 文件(原述 5 处低估);根因写到机制层(无单一来源+双方言漂移+沉默方言悖 fail-closed);14 步小步快走(tests/faketk.py 单一替身库 + 先红守卫 TC-FAKETK-GUARD + 11 文件逐文件纯重构迁移);基线 900 passed 保持绿;状态转「方案已设计,待 sdfang 评审排期」 |
 | v0.2 | 2026-09-22 | 裁决批准(按「待人类裁决」推荐项):①落位形态=tests/faketk.py 显式 import(不采 conftest fixture 注入);②认可借机废止 __getattr__ 沉默方言、统一显式方法面(fail-closed 收紧,迁移连锁红处置=补库方法面并登记,不回退沉默面);③屏幕常量保留参数化,按各测试原校准值传参,不动断言值。离场授权自决,记录在案;状态→方案已批准,待开发 |
+| v0.3 | 2026-09-23 | **14 步全部执行完毕(15 提交 d1d5894~7bf1907)**。①步骤 1/2(d1d5894):tests/faketk.py 单库(显式方法面=16 份并集,未列方法 AttributeError;install 工厂+recorder 观测口+pump)+tests/test_faketk.py(TC-FAKETK-01~04 契约钉全绿;TC-FAKETK-GUARD 唯一来源守卫,提交时红 59 命中/12 文件)。②步骤 3-13(86682b6/606f844/cca2345/072273d+4370b96/58d5954/9e7f6c6/29d1d68/d117555/20d3e3d/5a75f32+515f228/734bd31/7bf1907):11 文件 16 份替身逐文件迁移,断言零改动(观测口经活列表/活视图保持);两次误提交回归(步骤6 after_ms 快照时序、步骤12 pump 一次性快照)均当步修正(4370b96/515f228)并改退出码门禁。③步骤 14(7bf1907):iss98 类属性 calls 改实例 recorder+fixture 复位(ISS-0026 借残留风险消除);**TC-FAKETK-GUARD 转绿**;全量双跑 **932 passed 0 failed 29 skipped**(基线 927+5 新钉)。④净行数:14 文件 **+563/-694(净删 131 行;库+钉 398 行含其中)**。⑤登记项:a) TC-ICON _IconButton 字形/画布替身(test_whitelist_iss12.py:802 豁免标记)属测绘 16 份清单外替身族,非弹窗 widget 面,豁免守卫并上报待裁决;b) 库面两处补强(pump 活弹语义/after_ms 快照取值)已在修正提交内登记;c) 步骤 5/6/7 提交信息中单跑计数笔误(实 4/16/6 passed),以本记录为准;d) 沉默方言废止零连锁红(16 份迁移无一暗靠沉默放行,fail-closed 收紧无代价落地) |
