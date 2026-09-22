@@ -240,9 +240,12 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "token+text。读取用 get_clipboard(无需绑定)。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "drag": {
-        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y]);button=left/right/middle(默认 left)。起点须在绑定窗内(防误射);终点可为虚拟桌面任意点(移动窗口/跨屏拖拽允许,越出所有屏拒)。",
+        # REQ-004:via 途经点(≤32 可拐弯)+duration_ms(按弧长分配)——
+        # P1 空壳=schema/type_map 声明;validate coords 型与执行链属 P3
+        "description": "在 Windows 桌面拖拽鼠标(虚拟桌面坐标系)。token+start/end(各 [x,y]);via=途经点列表(可选,≤32,可拐弯画折线);duration_ms=总时长(可选,按弧长分配到各段);button=left/right/middle(默认 left)。起点须在绑定窗内(防误射);终点与途经点可为虚拟桌面任意点(越出所有屏拒)。",
         "required": {"token": ("str",), "start": ("coord",), "end": ("coord",)},
-             "optional": {"button": ("enum", ["left", "right", "middle"])}},
+             "optional": {"button": ("enum", ["left", "right", "middle"]),
+                          "via": ("coords",), "duration_ms": ("int",)}},
     # ---- REQ-001 原语层(组合基座,详设 §5.1~5.3)----
     "mouse_down": {
         "description": "在 Windows 桌面按下鼠标指定键不松(原语层,组合基座:down+move+up=按住拖动,左右键可同按)。token+button(left/right/middle)。光标态操作,按前请先激活目标窗口或移动光标就位。安全网:30s 看门狗自动抬/急停强抬/启动清扫。",
@@ -298,6 +301,17 @@ def _check_type(name: str, value: Any, spec: tuple, policy: Policy) -> None:
                        for v in value)):
             raise InvalidParamsError(f"参数 {name} 必须为 {want} 元数值坐标")
         return
+    if typ == "coords":
+        # REQ-004:途经点列表——元素须各为 2 元数值坐标(coord 判定复用)
+        if (not isinstance(value, (list, tuple))
+                or any(not isinstance(p, (list, tuple)) or len(p) != 2
+                       or any(isinstance(v, bool)
+                              or not isinstance(v, (int, float))
+                              for v in p)
+                       for p in value)):
+            raise InvalidParamsError(
+                f"参数 {name} 必须为坐标数组（各元素为 2 元数值坐标）")
+        return
     raise InvalidParamsError(f"参数 {name} 模式声明非法: {typ}")
 
 
@@ -350,7 +364,11 @@ def _input_schema(schema: Mapping[str, Any]) -> dict:
                 "bool": {"type": "boolean"},
                 "any": {}, "enum": {"type": "string"},
                 "coord": {"type": "array", "items": {"type": "number"}},
-                "rect": {"type": "array", "items": {"type": "number"}}}
+                "rect": {"type": "array", "items": {"type": "number"}},
+                # REQ-004:途经点列表(坐标数组;校验分支随 P3)
+                "coords": {"type": "array",
+                           "items": {"type": "array",
+                                     "items": {"type": "number"}}}}
     props: dict[str, Any] = {}
     for group in ("required", "optional"):
         for name, spec in schema[group].items():

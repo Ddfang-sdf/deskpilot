@@ -86,6 +86,34 @@ def _normalize_newlines(s: str) -> str:
     return s.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _traj_points(anchors: list, duration_ms=None) -> list:
+    """REQ-004 轨迹引擎（纯函数）：起点→via 各点→终点分段线性插值。
+
+    总步数 = min(48, max(2, round(总弧长/25)))（跨屏长距离封顶,
+    短距不空转）;各段步数 = max(1, round(总步数×段长/总弧长)),
+    段末点 = 该段锚点;每步时长:duration_ms 给定 = 总时长/总步数
+    （匀速,各段按弧长比例自然分得时长）,缺省 = 0.02（现行为保持）。
+    返回 [(x, y, duration)];贝塞尔/吸附/避障不做（裁定边界）。
+    """
+    import math
+    segs = []
+    total = 0.0
+    for a, b in zip(anchors, anchors[1:]):
+        length = math.hypot(b[0] - a[0], b[1] - a[1])
+        segs.append((a, b, length))
+        total += length
+    total_steps = min(48, max(2, round(total / 25)))
+    per = (duration_ms / 1000.0 / total_steps
+           if duration_ms is not None else 0.02)
+    out = []
+    for a, b, length in segs:
+        n = max(1, round(total_steps * length / total)) if total else 1
+        for i in range(1, n + 1):
+            out.append((a[0] + (b[0] - a[0]) * i / n,
+                        a[1] + (b[1] - a[1]) * i / n, per))
+    return out
+
+
 def _failsafe_guard(fn, *args, **kwargs):
     """ISS-0056：pyautogui FAILSAFE → EMERGENCY_STOP 收敛单点
     （ISS-0009 §6 C 三方异常收敛；原 7 处复制模板——复制一次多一处
@@ -665,7 +693,10 @@ class Executor:
             return self._scroll(params["direction"], params["amount"], hwnd)
         if tool == "drag":
             return self._drag(params["start"], params["end"], hwnd,
-                              button=params.get("button", "left"))
+                              button=params.get("button", "left"),
+                              # REQ-004:via/duration_ms 透传
+                              via=params.get("via"),
+                              duration_ms=params.get("duration_ms"))
         if tool == "activate_window":
             ok = self._activate_if_needed(hwnd)
             if not ok:
@@ -1152,11 +1183,25 @@ class Executor:
         return {"status": "ok", "target": [x, y],
                 "matched": payload["matched"]}
 
-    def _drag(self, start, end, hwnd: int, button: str = "left") -> dict:
+    def _drag(self, start, end, hwnd: int, button: str = "left",
+              via=None, duration_ms=None) -> dict:
+        """REQ-004:via=途经点列表(≤32,超限 fail-closed;各途经点沿用
+        终点同闸逐屏判定,越界拒绝零派发);duration_ms=总时长(按弧长
+        比例分配各段,匀速);缺省=现行为直线两点 24 步×0.02 逐点不变。"""
         if button not in MOUSE_BUTTONS:
             raise ExecutorError(INVALID_PARAMS, f"button 非法: {button}")
         self._check_point(hwnd, *start)   # 起点防误射不变(绑定窗内)
-        self._check_drag_end(*end)        # ISS-0047:终点=虚拟桌面逐屏判定
+        use_traj = bool(via) or duration_ms is not None
+        if use_traj:
+            if via is not None and len(via) > 32:
+                raise ExecutorError(
+                    INVALID_PARAMS,
+                    f"via 途经点超限（{len(via)} > 32，fail-closed）")
+            anchors = [list(start)] + [list(p) for p in (via or [])] + [list(end)]
+            for p in anchors[1:]:
+                self._check_drag_end(*p)  # 途经点与终点同闸(逐屏判定)
+        else:
+            self._check_drag_end(*end)        # ISS-0047:终点=虚拟桌面逐屏判定
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
         self._check_occlusion(hwnd, *start)   # ISS-0017 C：激活后再验遮挡
@@ -1169,11 +1214,16 @@ class Executor:
             pyautogui.mouseDown(button=button)
             try:
                 time.sleep(0.15)                      # 让目标应用识别按下
-                steps = 24                            # 分段慢移，保证轨迹被采到
-                for i in range(1, steps + 1):
-                    x = start[0] + (end[0] - start[0]) * i / steps
-                    y = start[1] + (end[1] - start[1]) * i / steps
-                    pyautogui.moveTo(x, y, duration=0.02)
+                if use_traj:
+                    # REQ-004:分段轨迹引擎(锚点=起点→via→终点)
+                    for x, y, dur in _traj_points(anchors, duration_ms):
+                        pyautogui.moveTo(x, y, duration=dur)
+                else:
+                    steps = 24                        # 分段慢移，保证轨迹被采到
+                    for i in range(1, steps + 1):
+                        x = start[0] + (end[0] - start[0]) * i / steps
+                        y = start[1] + (end[1] - start[1]) * i / steps
+                        pyautogui.moveTo(x, y, duration=0.02)
                 time.sleep(0.1)
             finally:
                 pyautogui.mouseUp(button=button)
