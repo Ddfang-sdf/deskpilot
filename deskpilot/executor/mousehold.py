@@ -13,6 +13,8 @@ import threading
 import time
 from typing import Callable
 
+from ..audit_events import EV_MOUSE_KEY_SELF_HEAL
+
 MOUSE_BUTTONS = ("left", "right", "middle")
 MAX_AGE_S = 30.0                     # 看门狗阈值(安全参数,不开放)
 
@@ -82,7 +84,7 @@ class WatchdogThread(threading.Thread):
             except Exception:                   # noqa: BLE001
                 pass
         if self._audit is not None:
-            self._audit.record_event("悬空按键自愈", f"keys={keys}")
+            self._audit.record_event(EV_MOUSE_KEY_SELF_HEAL, f"keys={keys}")
 
     def run(self) -> None:
         while not self._stop_event.wait(self._interval):
