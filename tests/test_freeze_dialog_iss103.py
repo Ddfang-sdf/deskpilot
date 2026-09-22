@@ -50,33 +50,15 @@ class TestButtonMeasuredWidth:
 
     def test_f03_button_width_from_measured_text(self, monkeypatch):
         """f03:英文长文案下,snooze 按钮 place width ≥ 文本实测宽+padding;
-        按钮组按总宽居中(x = (WIN_W - 总宽)/2)。"""
+        按钮组按总宽居中(x = (WIN_W - 总宽)/2)。
+
+        ISS-0059 步骤13:__getattr__ 沉默替身收编 tests/faketk.install
+        (place 记录=(文本,kwargs) 同形,断言零改动)。"""
         import deskpilot.freeze_dialog as fd
-        places = []
-
-        class W:
-            def __init__(self, *a, **k):
-                self._text = k.get("text", "")
-
-            def __getattr__(self, name):
-                if name.startswith("__"):
-                    raise AttributeError(name)
-                if name in ("winfo_screenwidth", "winfo_screenheight"):
-                    return lambda: 1920
-                return lambda *a, **k: None
-
-            def place(self, *a, **k):
-                places.append((self._text, dict(k)))
-
-            def configure(self, **k):
-                if "text" in k:
-                    self._text = k["text"]
-
-            config = configure
-
         import tkinter as _tk
-        for cls in ("Toplevel", "Frame", "Label", "Button", "Canvas"):
-            monkeypatch.setattr(_tk, cls, W)
+
+        from .faketk import install
+        rec = install(monkeypatch, _tk, screen=(1920, 1080))
         monkeypatch.setattr(fd, "_measure_text", lambda s: 170)   # 替身测量缝
         monkeypatch.setenv("DESKPILOT_LOCALE", "en")
         try:
@@ -84,7 +66,7 @@ class TestButtonMeasuredWidth:
                             interval=180)
         finally:
             fd.release_singleton()   # 替身窗无 Destroy 事件,单例互斥须手动放
-        snooze = [p for t, p in places if "Remind" in t]
+        snooze = [p for t, p in rec.places if "Remind" in t]
         assert snooze, "未找到 snooze 按钮 place 记录"
         w = snooze[0].get("width", 0)
         assert w >= 160, f"英文长文按钮宽仍 {w}px(定宽裁边未修)"
