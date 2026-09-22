@@ -1515,7 +1515,11 @@ class Executor:
         覆盖剪贴板中的请求文本，还原由 _type_text 的 finally old_clip
         语义覆盖，语义不变）。三通道全灭（目标无 Edit/Document）
         返回 None（调用方 fail-closed）。
+
+        ISS-0106:首行 _ensure_com()(ISS-0016 A 缝)——打包形态线程
+        COM 未初始化时 UIA 调用必抛,被下方 except 吞成「无通道」假象。
         """
+        self._ensure_com()
         try:
             root = uiautomation.ControlFromHandle(hwnd)
             values: list[str] = []
@@ -1540,7 +1544,10 @@ class Executor:
         与读回通道同一控件面）。无命中节点/任何异常吞掉不阻断——
         聚焦是成功率优化,fail-closed 由读回校验保证;
         选择态副作用（如全选）属裁定接受的交互副作用（§5 登记）。
+
+        ISS-0106:首行 _ensure_com()(同 _read_edit_value 的绕缝修复)。
         """
+        self._ensure_com()
         try:
             root = uiautomation.ControlFromHandle(hwnd)
             for node in self._iter_controls(root, depth=0):
