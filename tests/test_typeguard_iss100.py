@@ -198,14 +198,23 @@ class TestReadbackChannels:
         monkeypatch.setattr(ex, "_activate_if_needed", lambda hwnd: True)
         copies: list[str] = []
         hotkeys: list[tuple] = []
+        # ISS-0105 §5 适配登记:paste 替身改剪贴板状态机——copy 写值;
+        # ctrl+c 模拟目标应用真实改写(选区=请求文本),哨兵序自然成立
+        # (copy 哨兵后 ctrl+c 改写则 paste 返命中值;断言不变)。
+        state = {"v": "old"}
 
-        def _paste():
-            return copies[-1] if copies else "old"   # 首调(old_clip)→old
+        def _copy(t):
+            copies.append(t)
+            state["v"] = t
 
-        monkeypatch.setattr(core.pyperclip, "copy", lambda t: copies.append(t))
-        monkeypatch.setattr(core.pyperclip, "paste", _paste)
-        monkeypatch.setattr(core.pyautogui, "hotkey",
-                            lambda *a, **k: hotkeys.append(a))
+        def _hotkey(*a, **k):
+            hotkeys.append(a)
+            if a == ("ctrl", "c"):
+                state["v"] = text             # 应用真实改写(选区=请求文本)
+
+        monkeypatch.setattr(core.pyperclip, "copy", _copy)
+        monkeypatch.setattr(core.pyperclip, "paste", lambda: state["v"])
+        monkeypatch.setattr(core.pyautogui, "hotkey", _hotkey)
         monkeypatch.setattr(core.time, "sleep", lambda s: None)
 
         r = ex._type_text(text, 42)

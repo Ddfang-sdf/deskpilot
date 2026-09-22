@@ -71,6 +71,13 @@ _UI_TREE_MAX_DEPTH = 10
 _EDIT_TYPE_NAMES = frozenset(
     {"Edit", "Document", "EditControl", "DocumentControl"})
 
+# ISS-0105(裁定 A):选读哨兵——选读通道③写剪贴板前的占位定值。
+# 焦点落空时 ctrl+c 是空操作,剪贴板残留桥写入的请求文本会把读回
+# 比对退化成自证(假命中实证,见单据 §1);ctrl+c 后内容仍是哨兵
+# =选读失败(None),被改写才进入比对。含不可打印字符 \x00 防撞串;
+# 单点定义(TC-105-03 形态钉)。
+_SELECTION_SENTINEL = "\x00DP-SENTINEL\x00"
+
 
 def _normalize_newlines(s: str) -> str:
     """读回比对的换行归一（ISS-0100 实机取证）：TextPattern GetText 把
@@ -1586,17 +1593,27 @@ class Executor:
 
     @staticmethod
     def _read_via_selection() -> str | None:
-        """选读通道（③）：ctrl+a 全选 + ctrl+c 读剪贴板。
+        """选读通道（③）：哨兵清剪贴板 → ctrl+a 全选 + ctrl+c 读剪贴板。
 
+        ISS-0105（裁定 A）：选读前 copy _SELECTION_SENTINEL——ctrl+c 后
+        内容仍是哨兵=目标应用未改写（焦点落空空操作）=选读失败返回
+        None（交上层 READBACK_UNAVAILABLE/重试,自证路径封死）;
+        被改写才返回真实选区内容。哨兵一次性写由 _type_text 的
+        finally old_clip 还原语义覆盖（与现选读通道同生命周期）。
         读前短等剪贴板写滞后（ctrl+c 到剪贴板可见非严格同步;
         外层读回轮询提供重读节奏,此处只消一次竞态）。
         """
         try:
+            pyperclip.copy(_SELECTION_SENTINEL)
             pyautogui.hotkey("ctrl", "a")
             pyautogui.hotkey("ctrl", "c")
             time.sleep(0.2)
             value = pyperclip.paste()
-            return value if isinstance(value, str) and value else None
+            if not isinstance(value, str) or not value:
+                return None
+            if value == _SELECTION_SENTINEL:
+                return None                 # 未被改写=选读失败(自证封死)
+            return value
         except Exception:
             return None
 
