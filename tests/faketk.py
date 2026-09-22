@@ -296,9 +296,10 @@ def install(monkeypatch, tk_module, screen=(2560, 1440), reqheight=100):
 
 GUARD_ALLOW = {"faketk.py", "test_faketk.py"}
 GUARD_BANNED_CLASS = re.compile(
-    r"^class (W|Btn|Lbl|Top|FakeWin|_Recorder|_TkRig|_FakeWidget)\b",
+    r"^\s*class (W|Btn|Lbl|Top|FakeWin|_Recorder|_TkRig|_FakeWidget)\b",
     re.MULTILINE)
 GUARD_BANNED_PATCH = re.compile(
     r"monkeypatch\.setattr\([^)]*\.tk,\s*"
     r"\"(?:Toplevel|Frame|Label|Button|Canvas|Scrollbar|Entry|Listbox)\"")
 GUARD_BANNED_TYPE = re.compile(r'type\("W",')
+GUARD_EXEMPT_MARK = "faketk-guard:豁免"

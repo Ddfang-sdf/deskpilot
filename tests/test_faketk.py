@@ -82,11 +82,15 @@ class TestFakeTkGuard:
             if path.name in faketk.GUARD_ALLOW:
                 continue
             src = path.read_text(encoding="utf-8")
+            lines = src.splitlines()
             for rx, tag in ((faketk.GUARD_BANNED_CLASS, "本地替身类"),
                             (faketk.GUARD_BANNED_PATCH, "就地控件补丁"),
                             (faketk.GUARD_BANNED_TYPE, "内联 type(W)")):
                 for m in rx.finditer(src):
                     line = src[: m.start()].count("\n") + 1
+                    above = "\n".join(lines[max(0, line - 14): line])
+                    if faketk.GUARD_EXEMPT_MARK in above:
+                        continue            # 显式豁免标记(测绘清单外,登记在案)
                     hits.append(f"{path.name}:{line} {tag}: "
                                 f"{m.group(0)[:40]}")
         assert hits == [], \
