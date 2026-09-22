@@ -257,15 +257,36 @@ class HttpDaemon:
                     # ISS-0012 E2：白名单管理窗口数据源（仅 127.0.0.1）；
                     # 附带 display/desc（daemon 内缓存解析，管理窗口零解析提速）
                     from .appnames import app_description, app_display_name
+                    _t0 = time.monotonic()
                     data = {}
+                    slow: list[str] = []
+                    n = 0
                     for group, items in daemon._whitelist_admin.entries().items():
-                        data[group] = [
-                            {"process": p, "level": lv,
-                             "display": app_display_name(p),
-                             "desc": app_description(p)}
-                            for p, lv in items.items()]
+                        data[group] = []
+                        for p, lv in items.items():
+                            n += 1
+                            _e0 = time.monotonic()
+                            disp = app_display_name(p)
+                            desc = app_description(p)
+                            _ems = (time.monotonic() - _e0) * 1000
+                            if _ems > 200:      # ISS-0095 O3:慢条目留名
+                                slow.append(f"{p}@{_ems:.0f}ms")
+                            data[group].append(
+                                {"process": p, "level": lv,
+                                 "display": disp, "desc": desc})
                     self._send(200, {"ok": True, "error_code": "",
                                      "message": "ok", "data": data})
+                    # ISS-0095 O3:装配计时审计(埋点失败不阻断响应)
+                    _audit = getattr(daemon._ctx, "audit", None)
+                    if _audit is not None:
+                        try:
+                            _dur = (time.monotonic() - _t0) * 1000
+                            _audit.record_event(
+                                "白名单数据装配",
+                                f"dur_ms={_dur:.0f} n={n}"
+                                + (f" slow={slow}" if slow else ""))
+                        except Exception:                # noqa: BLE001
+                            pass
                 else:
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",
                                      "message": "端点不存在"})

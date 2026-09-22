@@ -208,11 +208,21 @@ def _corner_loop(estop: EstopMonitor, notifier: FreezeNotifier,
             sleep(0.05)
 
 
-def _open_manager_for(port: int):
-    """白名单管理窗口的拉起命令(托盘 on_manage 回调;daemon/stdio 属主共用)。"""
+def _open_manager_for(port: int, audit=None, stderr_log=None):
+    """白名单管理窗口的拉起命令(托盘 on_manage 回调;daemon/stdio 属主共用)。
+
+    ISS-0095:O1=Popen 前记「管理窗拉起」(base_url);O2=子进程 stderr
+    重定向到受管目录滚动日志(单文件追加;打开失败静默降级)——
+    全部埋点 fail-closed,异常不阻断开窗。
+    """
     def _open() -> None:
         import subprocess
         base_url = f"http://127.0.0.1:{port}"
+        if audit is not None:                    # O1:拉起打点(不阻断)
+            try:
+                audit.record_event("管理窗拉起", base_url)
+            except Exception:                    # noqa: BLE001
+                pass
         if getattr(sys, "frozen", False):
             cmd = [sys.executable, "--whitelist-manager", base_url]
             env = {k: v for k, v in os.environ.items() if k != "_MEIPASS2"}
@@ -220,11 +230,44 @@ def _open_manager_for(port: int):
             cmd = [sys.executable, "-m", "deskpilot.whitelist_window",
                    base_url]
             env = None
+        err = None
+        if stderr_log is not None:               # O2:stderr→受管滚动日志
+            try:
+                Path(stderr_log).parent.mkdir(parents=True, exist_ok=True)
+                err = open(stderr_log, "a", encoding="utf-8")
+            except OSError:
+                err = None                       # 打开失败静默降级
         try:
-            subprocess.Popen(cmd, env=env)
+            subprocess.Popen(cmd, env=env,
+                             **({"stderr": err} if err is not None else {}))
         except OSError:
             pass
+        finally:
+            if err is not None:                  # Popen 已复制句柄,父侧即关
+                try:
+                    err.close()
+                except OSError:
+                    pass
     return _open
+
+
+def _warm_caches_with_audit(audit=None) -> None:
+    """名称缓存暖机计时埋点(ISS-0095 O4):dur_ms+ok 留痕;
+    暖机失败记 ok=False 且不上抛(fail-closed,不阻断启动)。"""
+    from .appnames import warm_caches
+    t0 = time.monotonic()
+    ok, err = True, ""
+    try:
+        warm_caches(parallel=True)
+    except Exception as e:                       # noqa: BLE001
+        ok, err = False, f": {e!r}"
+    dur_ms = (time.monotonic() - t0) * 1000
+    if audit is not None:
+        try:
+            audit.record_event("名称缓存暖机",
+                               f"dur_ms={dur_ms:.0f} ok={ok}{err}")
+        except Exception:                        # noqa: BLE001
+            pass
 
 
 def _start_estop_listeners(estop: EstopMonitor, audit: AuditLogger,
@@ -457,8 +500,8 @@ def main() -> int:
                                      on_written=(local_watch.refresh
                                                  if local_watch else None))
     # ISS-0012 TC-FAST-04：并行暖名称/描述解析缓存（管理窗口/审批弹窗提速）
-    from .appnames import warm_caches
-    threading.Thread(target=warm_caches, kwargs={"parallel": True},
+    # ISS-0095 O4:暖机计时埋点包层(失败记 ok=False 不阻断启动)
+    threading.Thread(target=_warm_caches_with_audit, kwargs={"audit": audit},
                      daemon=True, name="deskpilot-warm-caches").start()
 
     from .dialog_service import get_dialog_service
@@ -568,7 +611,9 @@ def main() -> int:
             audit.record_event("属主 9420 绑定失败", f"{e}")
             return
         owner_httpd["d"] = d
-        t = TrayIcon(on_manage=_open_manager_for(d.port))
+        t = TrayIcon(on_manage=_open_manager_for(
+            d.port, audit=audit,
+            stderr_log=audit_paths.logs / "manager-window.log"))
         t.start()
         owner_tray["t"] = t
         _start_estop_listeners(estop, audit, notifier)
@@ -679,7 +724,9 @@ def main() -> int:
         from .tray import TrayIcon
         base_url = f"http://127.0.0.1:{daemon.port}"
 
-        tray = TrayIcon(on_manage=_open_manager_for(daemon.port))
+        tray = TrayIcon(on_manage=_open_manager_for(
+            daemon.port, audit=audit,
+            stderr_log=audit_paths.logs / "manager-window.log"))
         tray.start()
         try:
             while True:
