@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0059 |
 | 标题 | 同一套 Tk 替身(W 基类 pack/place/bind/config/geometry… + Button/Label 记录器)在 test_batch_iss19 / test_sessionscope_iss43 / test_whitelist_iss12 / test_monitors_iss7 四个文件各抄一份;弹窗 API 增参数时四处同步,今天 ISS-0043/0053 已复制到第四份 |
 | 严重级 | 低(测试可维护性) |
-| 状态 | 方案已设计,待 sdfang 评审排期(2026-09-22 方案落档,见下「整改方案」) |
+| 状态 | 方案已批准(sdfang 离场授权自决 2026-09-22),待开发(按方案步骤) |
 | 提出 | 2026-09-10(cleancode 审查;grep winfo_screenwidth 四文件实证) |
 
 ## 现象与证据
@@ -198,3 +198,4 @@ tests/faketk.py、tests/test_faketk.py 新增;11 个既有测试文件各改
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v0.1 | 2026-09-22 | 整改方案落档:现状复核为 16 份替身/11 文件(原述 5 处低估);根因写到机制层(无单一来源+双方言漂移+沉默方言悖 fail-closed);14 步小步快走(tests/faketk.py 单一替身库 + 先红守卫 TC-FAKETK-GUARD + 11 文件逐文件纯重构迁移);基线 900 passed 保持绿;状态转「方案已设计,待 sdfang 评审排期」 |
+| v0.2 | 2026-09-22 | 裁决批准(按「待人类裁决」推荐项):①落位形态=tests/faketk.py 显式 import(不采 conftest fixture 注入);②认可借机废止 __getattr__ 沉默方言、统一显式方法面(fail-closed 收紧,迁移连锁红处置=补库方法面并登记,不回退沉默面);③屏幕常量保留参数化,按各测试原校准值传参,不动断言值。离场授权自决,记录在案;状态→方案已批准,待开发 |
