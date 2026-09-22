@@ -1212,6 +1212,12 @@ class Executor:
         """
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
+        # ISS-0104(裁定 A):首次粘贴前聚焦首个 Edit/Document 控件——
+        # 窗口前台 ≠ 键盘焦点在编辑区(Win11 记事本焦点可在标签条,
+        # ctrl+v 对非编辑焦点是空操作,W6 实盘)。聚焦只做一次(重贴
+        # 不重复聚焦,选择态副作用最小化);无编辑控件/聚焦失败不阻断,
+        # fail-closed 由读回保证(§5)。
+        self._focus_first_edit(hwnd)
 
         old_clip = None
         try:
@@ -1527,6 +1533,22 @@ class Executor:
             return None
         except Exception:
             return None
+
+    def _focus_first_edit(self, hwnd: int) -> None:
+        """粘贴前聚焦（ISS-0104 §5）：窗口内第一个 Edit/Document 控件
+        调 UIA SetFocus（复用 _iter_controls+_EDIT_TYPE_NAMES 枚举,
+        与读回通道同一控件面）。无命中节点/任何异常吞掉不阻断——
+        聚焦是成功率优化,fail-closed 由读回校验保证;
+        选择态副作用（如全选）属裁定接受的交互副作用（§5 登记）。
+        """
+        try:
+            root = uiautomation.ControlFromHandle(hwnd)
+            for node in self._iter_controls(root, depth=0):
+                if node.ControlTypeName in _EDIT_TYPE_NAMES:
+                    node.SetFocus()
+                    return
+        except Exception:                           # noqa: BLE001
+            pass
 
     @staticmethod
     def _node_text(node) -> str | None:
