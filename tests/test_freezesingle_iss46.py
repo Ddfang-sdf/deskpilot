@@ -32,6 +32,8 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
+from deskpilot.audit_events import (
+    EV_DAEMON_SINGLETON_EXIT)
 from .conftest import policy_yaml_dict, read_audit
 
 
@@ -83,7 +85,7 @@ class TestDaemonSingleton:
         assert rc == 4                            # 显式退出码(直出)
         assert rec["estop_start"].call_count == 0  # 甩角/热键监听未起
         events = [e["event"] for e in read_audit(str(tmp_path / "audit"))]
-        assert "daemon 单例退出" in events
+        assert EV_DAEMON_SINGLETON_EXIT in events
 
     def test_tc46_02_bind_race_loser_exits_cleanly(self, tmp_path, monkeypatch):
         import sys
@@ -93,7 +95,7 @@ class TestDaemonSingleton:
         rc = m.main()                             # 不得抛栈(直出)
         assert rc == 4
         events = [e["event"] for e in read_audit(str(tmp_path / "audit"))]
-        assert "daemon 单例退出" in events
+        assert EV_DAEMON_SINGLETON_EXIT in events
 
 
 class TestFreezeDialogSingletonGuard:

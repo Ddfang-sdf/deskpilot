@@ -15,6 +15,9 @@ from deskpilot.audit import AuditLogger
 from deskpilot.errors import AuditFailure
 from deskpilot.models import AuditEntry
 
+from deskpilot.audit_events import (
+    EV_ESTOP_TRIGGERED,
+    EV_SERVICE_START)
 from .conftest import read_audit
 
 
@@ -87,10 +90,10 @@ class TestRecord:
     def test_record_event(self, tmp_path):
         """特殊事件记录（服务启停、急停触发/复位、策略加载）。"""
         log = AuditLogger(str(tmp_path / "audit"))
-        log.record_event("服务启动", "policy 加载成功")
-        log.record_event("急停触发")
+        log.record_event(EV_SERVICE_START, "policy 加载成功")
+        log.record_event(EV_ESTOP_TRIGGERED)
         events = [r for r in read_audit(str(tmp_path / "audit")) if r.get("event")]
-        assert [e["event"] for e in events] == ["服务启动", "急停触发"]
+        assert [e["event"] for e in events] == [EV_SERVICE_START, EV_ESTOP_TRIGGERED]
 
 
 class TestFailureSemantics:

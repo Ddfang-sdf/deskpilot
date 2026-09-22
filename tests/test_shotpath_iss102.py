@@ -35,6 +35,8 @@ from deskpilot.errors import EMERGENCY_STOP, INVALID_PARAMS, ExecutorError
 from deskpilot.executor.core import Executor
 from deskpilot.mcp_server import TOOL_SCHEMAS
 
+from deskpilot.audit_events import (
+    EV_SCREENSHOT_OVERWRITE)
 from .conftest import FakeProbe, read_audit
 
 
@@ -131,7 +133,7 @@ class TestGuardRails:
         target.write_bytes(b"OLD")
         ex.screenshot("region", rect=[0, 0, 10, 10], path=str(target))
         events = read_audit(str(tmp_path / "audit"))
-        overwrites = [e for e in events if e.get("event") == "screenshot覆盖写"]
+        overwrites = [e for e in events if e.get("event") == EV_SCREENSHOT_OVERWRITE]
         assert len(overwrites) == 1, \
             "覆盖写须审计留痕 record_event(记录对象直读)"
         assert str(target) in overwrites[0]["detail"]   # detail 直读

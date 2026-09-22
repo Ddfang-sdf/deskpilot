@@ -25,6 +25,9 @@ import yaml
 from deskpilot.errors import PolicyError
 from deskpilot.models import OperationRequest
 
+from deskpilot.audit_events import (
+    EV_POLICY_EXTERNALLY_MODIFIED,
+    EV_POLICY_FINGERPRINT)
 from .conftest import make_policy
 
 
@@ -930,7 +933,7 @@ class TestPolicyFingerprint:
         audit = _FakeAudit()
         fp = policy_sha256_audit(str(p), audit)
         assert fp == hashlib.sha256(p.read_bytes()).hexdigest()
-        assert audit.events[0][0] == "策略指纹"
+        assert audit.events[0][0] == EV_POLICY_FINGERPRINT
         assert fp in audit.events[0][1]
 
     def test_external_modify_flagged(self, tmp_path):
@@ -945,7 +948,7 @@ class TestPolicyFingerprint:
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline and not audit.events:
                 time.sleep(0.05)
-            assert any(e[0] == "策略文件被外部修改" for e in audit.events)
+            assert any(e[0] == EV_POLICY_EXTERNALLY_MODIFIED for e in audit.events)
         finally:
             t.stop()
 

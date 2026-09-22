@@ -42,6 +42,8 @@ from deskpilot.freeze_dialog import EXIT_RESET
 from deskpilot.freeze_notify import STATE_FILE, FreezeNotifier
 from deskpilot.httpd import DEFAULT_HOST, DEFAULT_PORT, HttpDaemon, probe_daemon
 
+from deskpilot.audit_events import (
+    EV_ESTOP_RESET)
 from .conftest import read_audit
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -97,7 +99,7 @@ class TestDialogResetCarryover:
         estop.dialog_reset()
         assert estop.is_frozen() is False                     # 返回值直出
         events = read_audit(str(tmp_path / "audit"))
-        resets = [e for e in events if e.get("event") == "急停复位"]
+        resets = [e for e in events if e.get("event") == EV_ESTOP_RESET]
         assert len(resets) == 1
         assert resets[0]["detail"] == "冻结提示弹窗"           # 审计记录直读
 
@@ -170,7 +172,7 @@ class TestSyncOneWayOnly:
             "共享 frozen:false 不得本地复位(复位方向已关闭)"
         events = read_audit(str(tmp_path / "audit"))
         assert [e for e in events
-                if e.get("event") == "急停复位"
+                if e.get("event") == EV_ESTOP_RESET
                 and "共享同步" in e.get("detail", "")] == [], \
             "「复位-共享同步」事件已退役,不得再产生"
 
@@ -492,7 +494,7 @@ class TestFullChainNoReqOnDisk:
             assert list(shared.glob("estop-reset-*.req")) == [], \
                 "全链自始至终零 req 落盘(目录 glob 直读)"
             events = read_audit(str(audit_dir))
-            resets = [e for e in events if e.get("event") == "急停复位"]
+            resets = [e for e in events if e.get("event") == EV_ESTOP_RESET]
             assert len(resets) == 1
             assert resets[0]["detail"] == "冻结提示弹窗"   # 审计直读
         finally:

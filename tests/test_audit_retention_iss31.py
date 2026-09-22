@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from deskpilot.audit_events import (
+    EV_AUDIT_LOG_CLEANUP)
 import os
 import time
 from pathlib import Path
@@ -124,4 +126,4 @@ class TestAuditEvent:
                     shots_max_age_s=90 * DAY,
                     shots_max_bytes=10**9, grace_s=600,
                     audit_log=audit_log)
-        assert "审计日志清理" in _audit_events(d)
+        assert EV_AUDIT_LOG_CLEANUP in _audit_events(d)

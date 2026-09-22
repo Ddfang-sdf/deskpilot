@@ -6,6 +6,10 @@
 
 from __future__ import annotations
 
+
+from deskpilot.audit_events import (
+    EV_APPROVAL_SHOT_FAILED)
+
 from deskpilot.models import OperationRequest
 
 
@@ -162,4 +166,4 @@ class TestCaptureReverseLookup:
         day = time.strftime("%Y%m%d")
         log = tmp_path / "audit" / "logs" / f"audit-{day}.jsonl"
         text = log.read_text(encoding="utf-8") if log.exists() else ""
-        assert "审批取图失败" in text
+        assert EV_APPROVAL_SHOT_FAILED in text

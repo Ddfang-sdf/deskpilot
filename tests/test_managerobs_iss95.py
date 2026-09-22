@@ -29,6 +29,10 @@ import pytest
 
 from deskpilot.httpd import HttpDaemon
 
+from deskpilot.audit_events import (
+    EV_MANAGER_WINDOW_LAUNCH,
+    EV_NAME_CACHE_WARMED,
+    EV_WHITELIST_DATA_ASSEMBLED)
 from .conftest import read_audit
 
 
@@ -68,9 +72,9 @@ class TestO1LaunchAudited:
             stderr_log=tmp_path / "logs" / "manager-window.log")
         open_fn()
         assert popens, "拉起命令须真调 Popen(调用记录直出)"
-        assert audit.count("管理窗拉起") == 1, \
+        assert audit.count(EV_MANAGER_WINDOW_LAUNCH) == 1, \
             f"Popen 前须记「管理窗拉起」(审计桩直读): {audit.records}"
-        assert "http://127.0.0.1:9420" in audit.details("管理窗拉起")[0]
+        assert "http://127.0.0.1:9420" in audit.details(EV_MANAGER_WINDOW_LAUNCH)[0]
 
 
 class TestO2StderrRedirect:
@@ -191,7 +195,7 @@ class TestO3AssemblyTimed:
             d.stop()
         events = read_audit(str(audit_dir))
         assemblies = [e for e in events
-                      if e.get("event") == "白名单数据装配"]
+                      if e.get("event") == EV_WHITELIST_DATA_ASSEMBLED]
         assert len(assemblies) >= 1, \
             "端点装配须计时审计(JSONL 直读)"
         assert "dur_ms" in assemblies[0]["detail"]
@@ -217,9 +221,9 @@ class TestO4WarmCachesTimed:
         audit = _FakeAudit()
         monkeypatch.setattr(appnames, "warm_caches", lambda **k: None)
         m._warm_caches_with_audit(audit)
-        assert audit.count("名称缓存暖机") == 1, \
+        assert audit.count(EV_NAME_CACHE_WARMED) == 1, \
             f"暖机须计时审计(桩记录直读): {audit.records}"
-        detail = audit.details("名称缓存暖机")[0]
+        detail = audit.details(EV_NAME_CACHE_WARMED)[0]
         assert "dur_ms" in detail and "ok=True" in detail
 
         def _boom(**k):
@@ -227,6 +231,6 @@ class TestO4WarmCachesTimed:
 
         monkeypatch.setattr(appnames, "warm_caches", _boom)
         m._warm_caches_with_audit(audit)             # 失败不上抛
-        details = audit.details("名称缓存暖机")
+        details = audit.details(EV_NAME_CACHE_WARMED)
         assert len(details) == 2 and "ok=False" in details[1], \
             f"暖机失败须记 ok=False 且不上抛(桩记录直读): {audit.records}"

@@ -17,6 +17,11 @@ from unittest.mock import Mock
 
 import yaml
 
+from deskpilot.audit_events import (
+    EV_HOTKEY_REGISTERED,
+    EV_HOTKEY_REGISTER_FAILED,
+    EV_PROXY_SKIPS_HOTKEY,
+    EV_RESET_NOOP_NOT_FROZEN)
 from .conftest import policy_yaml_dict, read_audit
 
 
@@ -40,7 +45,7 @@ class TestProxySkipsHotkey:
         assert starter.call_count == 0
         events = read_audit(str(tmp_path / "audit"))
         assert sum(1 for e in events
-                   if e["event"] == "瘦代理跳过热键注册") == 1
+                   if e["event"] == EV_PROXY_SKIPS_HOTKEY) == 1
 
 
 class TestHotkeyRetry:
@@ -67,8 +72,8 @@ class TestHotkeyRetry:
         # ISS-0084 ②节流:失败审计只记**首次**——逐次审计正是 2026-09-14 实机的
         # 每分钟刷屏之源;恢复时记一条带「恢复」的成功事件。退避节奏不变。
         assert sum(1 for e in events
-                   if e["event"] == "急停热键注册失败") == 1
-        ok_events = [e for e in events if e["event"] == "急停热键注册"]
+                   if e["event"] == EV_HOTKEY_REGISTER_FAILED) == 1
+        ok_events = [e for e in events if e["event"] == EV_HOTKEY_REGISTERED]
         assert len(ok_events) == 1 and "恢复" in ok_events[0]["detail"]
         assert capsys.readouterr().err != ""
 
@@ -84,6 +89,6 @@ class TestResetNoopAudited:
         estop.on_reset_hotkey()
         assert estop.is_frozen() is False
         events = read_audit(str(tmp_path / "audit"))
-        noop = [e for e in events if e["event"] == "复位请求-未冻结"]
+        noop = [e for e in events if e["event"] == EV_RESET_NOOP_NOT_FROZEN]
         assert len(noop) == 2
         assert all(e["detail"] for e in noop)

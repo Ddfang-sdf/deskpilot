@@ -18,6 +18,10 @@ from deskpilot.errors import InvalidParamsError
 from deskpilot.executor import core as core_mod
 from deskpilot.executor import Executor
 
+from deskpilot.audit_events import (
+    EV_MOUSE_KEY_SELF_HEAL,
+    EV_STARTUP_KEY_SWEEP,
+    EV_STARTUP_KEY_SWEEP_FAILSAFE)
 from .conftest import FIXTURE_HWND, FakeProbe
 
 
@@ -354,7 +358,7 @@ class TestMouseSafetyNet:
         ex._mouse_watchdog_tick()                     # 手动驱动一次 tick
         assert len(rec.named("mouseUp")) == 1
         events = _audit_events(str(tmp_path / "audit"))
-        heals = [e for e in events if e.get("event") == "悬空按键自愈"]
+        heals = [e for e in events if e.get("event") == EV_MOUSE_KEY_SELF_HEAL]
         assert heals and "left" in heals[-1].get("detail", "")
 
     def test_mouse14b_watchdog_fresh_press_no_action(self, estop, tmp_path,
@@ -371,7 +375,7 @@ class TestMouseSafetyNet:
         assert rec.named("mouseUp") == []             # 零抬起(直出)
         assert ex._mouse.snapshot() == ["left"]       # 按下保留(直出)
         events = _audit_events(str(tmp_path / "audit"))
-        assert not [e for e in events if e.get("event") == "悬空按键自愈"]
+        assert not [e for e in events if e.get("event") == EV_MOUSE_KEY_SELF_HEAL]
 
     def test_mouse16_startup_sweep(self, estop, tmp_path, monkeypatch,
                                    audit_log):
@@ -380,7 +384,7 @@ class TestMouseSafetyNet:
         ups = rec.named("mouseUp")
         assert len(ups) == 3                          # 三键各一次幂等 up
         events = _audit_events(str(tmp_path / "audit"))
-        assert any(e.get("event") == "启动抬键清扫" for e in events)
+        assert any(e.get("event") == EV_STARTUP_KEY_SWEEP for e in events)
 
     def test_mouse16b_sweep_tolerates_corner_failsafe(self, estop, tmp_path,
                                                       monkeypatch,
@@ -402,7 +406,7 @@ class TestMouseSafetyNet:
                       probe=FakeProbe(), audit=audit_log)
         assert len(rec.named("mouseUp")) == 3         # 三键都尝试过(直出)
         events = _audit_events(str(tmp_path / "audit"))
-        assert any(e.get("event") == "启动抬键清扫-FAILSAFE拦截"
+        assert any(e.get("event") == EV_STARTUP_KEY_SWEEP_FAILSAFE
                    for e in events)                   # 拦截如实记审计(直出)
 
     def test_mouse18_drag_tracks_pressed_symmetric(self, estop, tmp_path,

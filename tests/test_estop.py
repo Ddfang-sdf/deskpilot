@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+from deskpilot.audit_events import (
+    EV_ESTOP_RESET,
+    EV_ESTOP_TRIGGERED)
 from .conftest import read_audit
 
 
@@ -15,7 +18,7 @@ class TestTriggerAndReset:
         assert estop.is_frozen() is False
         estop.on_trigger_hotkey()
         assert estop.is_frozen() is True
-        events = [r for r in read_audit(str(tmp_path / "audit")) if r.get("event") == "急停触发"]
+        events = [r for r in read_audit(str(tmp_path / "audit")) if r.get("event") == EV_ESTOP_TRIGGERED]
         assert len(events) == 1
 
     def test_reset_hotkey_unfreezes(self, estop, audit_log, tmp_path):
@@ -24,8 +27,8 @@ class TestTriggerAndReset:
         estop.on_reset_hotkey()
         assert estop.is_frozen() is False
         events = [r["event"] for r in read_audit(str(tmp_path / "audit")) if r.get("event")]
-        assert "急停触发" in events
-        assert "急停复位" in events
+        assert EV_ESTOP_TRIGGERED in events
+        assert EV_ESTOP_RESET in events
 
     def test_dialog_reset_unfreezes(self, estop):
         """冻结提示弹窗「立即解冻」入口同样解除冻结。

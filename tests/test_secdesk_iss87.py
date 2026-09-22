@@ -29,6 +29,11 @@ from deskpilot.models import Decision
 from deskpilot.secure_desktop import SecureDesktopGuard
 from deskpilot.tools import ToolContext, call_tool
 
+from deskpilot.audit_events import (
+    EV_SECURE_DESKTOP_ACTIVATED,
+    EV_SECURE_DESKTOP_CHECK_FAILED,
+    EV_SECURE_DESKTOP_EXITED,
+    EV_SECURE_DESKTOP_REJECTED)
 from .conftest import FakeExecutor
 
 
@@ -96,8 +101,8 @@ class TestSecureDesktopBan:
         assert r.error_code == errors.SECURE_DESKTOP
         assert "稍后" in r.message or "重试" in r.message   # AI 自愈指引
         assert ex.calls == []                   # 截图未执行(桩记录直出)
-        assert "安全桌面激活" in rec.events()    # 进入边沿(桩记录直出)
-        assert "安全桌面拒绝" in rec.events()    # 拒绝留痕(桩记录直出)
+        assert EV_SECURE_DESKTOP_ACTIVATED in rec.events()    # 进入边沿(桩记录直出)
+        assert EV_SECURE_DESKTOP_REJECTED in rec.events()    # 拒绝留痕(桩记录直出)
 
     def test_sd02_secure_desktop_bans_write_and_attach(self, policy):
         """sd02(单元,整改②):detector=True → click(写)/attach 均拒
@@ -169,7 +174,7 @@ class TestFailClosedAndRecovery:
         assert r.ok is False
         assert r.error_code == errors.SECURE_DESKTOP
         assert ex.calls == []
-        assert "安全桌面检测失效" in rec.events()   # 桩记录直出
+        assert EV_SECURE_DESKTOP_CHECK_FAILED in rec.events()   # 桩记录直出
 
     def test_sd05_exit_auto_recovers_with_edge_audit(self, policy):
         """sd05(单元,整改②③+§4 自动恢复):detector 序列 [True,False,True]
@@ -184,9 +189,9 @@ class TestFailClosedAndRecovery:
         results = [call_tool(ctx, "screenshot", {"scope": "fullscreen"})
                    for _ in range(3)]
         assert [r.ok for r in results] == [False, True, False]   # 直出
-        assert rec.events() == ["安全桌面激活", "安全桌面拒绝",
-                                "安全桌面退出",
-                                "安全桌面激活", "安全桌面拒绝"]  # 桩记录直出
+        assert rec.events() == [EV_SECURE_DESKTOP_ACTIVATED, EV_SECURE_DESKTOP_REJECTED,
+                                EV_SECURE_DESKTOP_EXITED,
+                                EV_SECURE_DESKTOP_ACTIVATED, EV_SECURE_DESKTOP_REJECTED]  # 桩记录直出
 
 
 class TestOrdinaryFreezeBoundaryUnchanged:

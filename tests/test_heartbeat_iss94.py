@@ -34,6 +34,9 @@ import yaml
 
 from deskpilot.ownership import (HeartbeatWriter, OwnerLock, RoleSupervisor)
 
+from deskpilot.audit_events import (
+    EV_DAEMON_SINGLETON_EXIT,
+    EV_HEARTBEAT_WRITE_FAILED)
 from .conftest import policy_yaml_dict, read_audit
 
 
@@ -76,7 +79,7 @@ class TestBeatWriteResilience:
         assert r is None, "终败返回 None 不上抛(返回值直出)"
         assert sleeps == [0.05, 0.15, 0.45], \
             f"三段退避序列(桩记录直出): {sleeps}"
-        assert audit.count("心跳写失败") == 1, \
+        assert audit.count(EV_HEARTBEAT_WRITE_FAILED) == 1, \
             f"终败审计恰 1 条(桩记录直读): {audit.records}"
 
         hb.start()                           # 持续失败下线程不许死
@@ -106,11 +109,11 @@ class TestBeatWriteResilience:
         monkeypatch.setattr(ow.os, "replace", _boom_replace)
         hb.beat_once()
         hb.beat_once()                         # 连续第二轮失败:节流不记
-        assert audit.count("心跳写失败") == 1, \
+        assert audit.count(EV_HEARTBEAT_WRITE_FAILED) == 1, \
             f"连续失败只记首败(桩记录直读): {audit.records}"
         monkeypatch.setattr(ow.os, "replace", real_replace)
         hb.beat_once()                         # 恢复:另记一条
-        assert audit.count("心跳写失败") == 1
+        assert audit.count(EV_HEARTBEAT_WRITE_FAILED) == 1
         recovery = [e for e, _ in audit.records if "恢复" in e]
         assert len(recovery) == 1, \
             f"恢复另记一条(桩记录直读): {audit.records}"
@@ -227,7 +230,7 @@ class TestDaemonSingleExit:
         assert rc == 4                           # 返回值直出
         events = read_audit(str(tmp_path / "audit"))
         assert sum(1 for e in events
-                   if e.get("event") == "daemon 单例退出") == 1, \
+                   if e.get("event") == EV_DAEMON_SINGLETON_EXIT) == 1, \
             "审计恰 1 条「daemon 单例退出」(JSONL 直读)"
         data = json.loads((shared / "daemon-heartbeat.json")
                           .read_text(encoding="utf-8"))

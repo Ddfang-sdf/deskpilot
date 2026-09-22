@@ -12,6 +12,9 @@
 
 from __future__ import annotations
 
+from deskpilot.audit_events import (
+    EV_DAEMON_DEATH_ALARM,
+    EV_PROCESS_EXIT)
 import json
 import time
 import urllib.request
@@ -150,10 +153,10 @@ class TestDeathAlarm:
         hb.write_text(json.dumps(stale), encoding="utf-8")
         sup.tick()
         names = [n for n, _ in audit.events]
-        assert "daemon 死亡告警" in names
+        assert EV_DAEMON_DEATH_ALARM in names
         assert len(alarms) == 1, "每段死亡期告警恰好一次"
         sup.tick()                          # 同一段死亡期不重复轰炸
-        assert len([n for n, _ in audit.events if n == "daemon 死亡告警"]) == 1
+        assert len([n for n, _ in audit.events if n == EV_DAEMON_DEATH_ALARM]) == 1
         assert len(alarms) == 1
 
     def test_no_heartbeat_no_alarm(self, tmp_path):
@@ -165,7 +168,7 @@ class TestDeathAlarm:
         sup.start()
         sup.tick()
         assert alarms == []
-        assert [n for n, _ in audit.events if n == "daemon 死亡告警"] == []
+        assert [n for n, _ in audit.events if n == EV_DAEMON_DEATH_ALARM] == []
 
 
 # ---------- TC-OWN-07:遗嘱 ----------
@@ -176,7 +179,7 @@ class TestLastWill:
         write_last_will(audit, "daemon", "正常退出")
         write_last_will(audit, "stdio", "异常: RuntimeError: boom")
         names = [n for n, _ in audit.events]
-        assert names.count("进程退出") == 2
+        assert names.count(EV_PROCESS_EXIT) == 2
         details = [d for _, d in audit.events]
         assert any("daemon" in d and "正常退出" in d for d in details)
         assert any("stdio" in d and "RuntimeError" in d for d in details)
@@ -189,7 +192,7 @@ class TestLastWill:
         # 幂等性的可观测面:重复安装不报错且不重复产生事件——
         # 钩子真正触发在退出时,此处只证重复调用无害
         write_last_will(audit, "stdio", "正常退出")
-        assert [n for n, _ in audit.events].count("进程退出") == 1
+        assert [n for n, _ in audit.events].count(EV_PROCESS_EXIT) == 1
 
 
 # ---------- TC-OWN-08:开机自启幂等 ----------

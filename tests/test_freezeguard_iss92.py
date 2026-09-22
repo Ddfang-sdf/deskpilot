@@ -28,6 +28,10 @@ from deskpilot.estop import EstopMonitor
 from deskpilot.freeze_notify import STATE_FILE, FreezeNotifier
 from deskpilot.main import _corner_loop
 
+from deskpilot.audit_events import (
+    EV_CORNER_LOOP_ERROR,
+    EV_SHARED_STATE_RECONCILED,
+    EV_SHARED_STATE_WRITE_FAILED)
 from .conftest import read_audit
 
 
@@ -108,7 +112,7 @@ class TestWriteResilience:
                                   audit=audit)
 
         notifier.on_state_change(True, "测试")   # 终败不上抛
-        assert "共享状态写失败" in audit.events()        # 桩记录直出
+        assert EV_SHARED_STATE_WRITE_FAILED in audit.events()        # 桩记录直出
         assert (tmp_path / (STATE_FILE + ".tmp")).exists() is False  # 盘上直读
         assert spawned == [str(tmp_path)]        # 冻结边沿弹窗不丢(桩记录直出)
 
@@ -152,7 +156,7 @@ class TestCornerLoopGuard:
                 time.sleep(0.01)
             assert t.is_alive() is True          # 线程不许死(直出)
             assert len(estop.corner_calls) >= 1  # 异常轮之后仍有调用(桩记录)
-            assert "甩角轮询异常" in audit.events()
+            assert EV_CORNER_LOOP_ERROR in audit.events()
         finally:
             stop.set()
             t.join(timeout=2.0)
@@ -193,5 +197,5 @@ class TestSharedReconcile:
         assert st["frozen"] is False             # 盘上直读
         assert st["seq"] == 16                   # seq 单调+1 不回退(盘上直读)
         events = [e.get("event") for e in read_audit(str(tmp_path / "audit"))]
-        assert "共享状态对账修复" in events       # 审计 JSONL 直读
+        assert EV_SHARED_STATE_RECONCILED in events       # 审计 JSONL 直读
 
