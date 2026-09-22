@@ -282,6 +282,12 @@ def activate_window(ctx: ToolContext, *, token: str) -> ToolResult:
     return call_tool(ctx, "activate_window", {"token": token})
 
 
+def set_window_rect(ctx: ToolContext, *, token: str, rect) -> ToolResult:
+    """ISS-0101 §4.1 ④：窗口几何摆放公开封装（走 enforcement.submit
+    默认分支,不进 _L0/_L1_DIRECT——与 activate_window 同链路）。"""
+    return call_tool(ctx, "set_window_rect", {"token": token, "rect": rect})
+
+
 def move(ctx: ToolContext, *, x: int, y: int) -> ToolResult:
     return call_tool(ctx, "move", {"x": x, "y": y})
 

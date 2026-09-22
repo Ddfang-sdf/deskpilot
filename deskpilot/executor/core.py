@@ -42,7 +42,7 @@ from ..errors import (DETECTOR_UNAVAILABLE, ELEMENT_AMBIGUOUS, ELEMENT_DISABLED,
 from ..policy import normalize_key
 from .detector import resolve, screened, to_virtual, verify
 from .mousehold import MOUSE_BUTTONS, PressedTracker, WatchdogThread
-from .probe import DesktopProbe
+from .probe import DesktopProbe, set_window_rect as _os_set_window_rect
 from .textclick import resolve_click, suggest_similar
 
 _NOT_WIRED = {
@@ -664,6 +664,8 @@ class Executor:
             if not ok:
                 raise ExecutorError(WINDOW_GONE, "窗口无法前置（可能已消失）")
             return {"status": "ok"}
+        if tool == "set_window_rect":
+            return self._set_window_rect(params, hwnd)
         if tool == "move":
             pyautogui.moveTo(params["x"], params["y"])
             return {"status": "ok"}
@@ -1271,6 +1273,27 @@ class Executor:
         if self._probe.is_foreground(hwnd):
             return True
         return bool(self._probe.activate(hwnd))
+
+    def _set_window_rect(self, params: dict, hwnd: int) -> dict:
+        """窗口几何摆放（ISS-0101 §4.2，物理层原语）。
+
+        rect=[l,t,r,b] 四点式（虚拟桌面坐标,PMv2 全链物理像素零换算——
+        与 screenshot scope=region 的 [x,y,w,h] 不同,实现内自解为
+        MoveWindow 的 (l,t,r-l,b-t)）；几何非法（r<=l 或 b<=t）fail-closed
+        拒（user32 零调用）；动作序=SW_RESTORE 恒定先发再 MoveWindow
+        （probe 接缝）；MoveWindow 返 False→WINDOW_GONE；
+        返回新 rect（probe.rect_of 直出,GetWindowRect 同口径）。
+        不做吸附/屏幕归属/避让判定（§4.4,落点合理性 AI screenshot 自核）。
+        """
+        l, t, r, b = (int(v) for v in params["rect"])
+        if r <= l or b <= t:
+            raise ExecutorError(
+                INVALID_PARAMS,
+                f"窗口矩形非法（须 r>l 且 b>t）: {params['rect']}")
+        if not _os_set_window_rect(hwnd, l, t, r - l, b - t):
+            raise ExecutorError(WINDOW_GONE,
+                                "MoveWindow 失败（目标窗口已消失）")
+        return {"status": "ok", "rect": list(self._probe.rect_of(hwnd))}
 
     def _check_point(self, hwnd: int, x: int, y: int) -> None:
         rect = self._probe.rect_of(hwnd)   # 执行时刻矩形

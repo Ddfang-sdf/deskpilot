@@ -81,6 +81,7 @@ en:
   enf.act.type_text: "Type text"
   enf.act.type_element: "Type into element"
   enf.act.set_clipboard: "Overwrite clipboard"
+  enf.act.set_window_rect: "Resize/move window"
 
   enf.head.attach: "Attach window {target}"
   enf.head.attach.hwnd: "handle {hwnd}"
@@ -179,6 +180,7 @@ zh-CN:
   enf.act.type_text: "输入文本"
   enf.act.type_element: "向控件输入文本"
   enf.act.set_clipboard: "改写剪贴板内容"
+  enf.act.set_window_rect: "调整窗口位置尺寸"
 
   enf.head.attach: "绑定窗口 {target}"
   enf.head.attach.hwnd: "句柄 {hwnd}"

@@ -116,6 +116,7 @@ attach(window_title | hwnd | process) → binding_token
 | `attach` / `detach` | L1 | 建立/解除绑定 | 目标非白名单→拒绝并说明 |
 | `launch_app` | L2 | 启动应用（白名单内路径/系统注册应用）；无目标窗口，**豁免闸一** | 不在白名单→入白审批（ISS-0012） |
 | `activate_window` | L2 | 把绑定窗口提到前台 | 绑定失效→拒绝 |
+| `set_window_rect` | L2 | 把绑定窗口摆放到指定矩形（[l,t,r,b] 虚拟桌面坐标，ISS-0101） | 绑定失效→拒绝；几何非法→INVALID_PARAMS；死窗→WINDOW_GONE |
 | `click_element` | L2 | **首选**：按元素名/automation_id UIA Invoke，无需坐标 | 元素不存在→列出候选 |
 | `type_element` | L2 | 向指定 UIA 元素输入（SetValue，非键盘模拟） | 同上 |
 | `click` | L2 | 像素坐标点击（兜底，仅在 UIA 失效时用）；落点须在绑定窗口矩形内 | 绑定校验失败→拒绝；落点越界→OUT_OF_BOUNDS |

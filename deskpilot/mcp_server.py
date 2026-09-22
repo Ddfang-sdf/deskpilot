@@ -195,6 +195,11 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "activate_window": {
         "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台;最大化窗口保持最大化不被打回)。token=attach 返回令牌。窗口最大化/移动/缩放等几何变化后,既有截图与坐标即作废,请先重新感知再操作。",
         "required": {"token": ("str",)}, "optional": {}},
+    "set_window_rect": {
+        # ISS-0101:窗口几何摆放原语(P1 空壳=纯声明;138/200 闸门,
+        # 执行链/tools 分派属 P3)
+        "description": "调整绑定的 Windows 窗口位置与尺寸(演示摆位/多窗并排)。attach 绑定后使用。token+rect=[l,t,r,b](虚拟桌面坐标,与 screenshot 同坐标系);最大化/最小化窗先还原再摆;返回新 rect;落点合理性请用 screenshot 自核。",
+        "required": {"token": ("str",), "rect": ("rect",)}, "optional": {}},
     "click_element": {
         # ISS-0091 整改④:拒绝语义入描述(退化矩形/遮挡);受 ISS-0015 描述
         # 长度闸门(≤200)约束,错误码全称由拒绝时的错误消息承载(附自愈指引)

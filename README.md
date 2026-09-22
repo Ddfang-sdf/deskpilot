@@ -112,7 +112,7 @@ AI client ──MCP(stdio)──▶ deskpilot ──4 fail-closed gates──▶
                               └─ everything → screenshot + JSONL audit trail
 ```
 
-29 MCP tools (screenshot / OCR / click-by-text / element tree / click / type / window management…). The full security model, gate internals, and protocol design live in [docs/](docs/DESIGN.md) (Chinese).
+30 MCP tools (screenshot / OCR / click-by-text / element tree / click / type / window management…). The full security model, gate internals, and protocol design live in [docs/](docs/DESIGN.md) (Chinese).
 
 ## Security notes
 
