@@ -49,6 +49,11 @@ OCR_AMBIGUOUS = "OCR_AMBIGUOUS"
 # 详尽设计 §5.3 §8：本码 fail-closed——不写图像、不产生条目。附录 A 登记
 # 义务见详设 §11/§12（登记册全量回填见 ISS-0074）
 DETECTOR_UNAVAILABLE = "DETECTOR_UNAVAILABLE"
+# ISS-0100：type_text 读回校验修真（A+C 组合，sdfang 2026-09-22 裁定）——
+# 比对失败重试耗尽报 TYPE_MISMATCH；读回三通道全灭 fail-closed 报
+# READBACK_UNAVAILABLE（不再 ok:true 放行）。P1 空壳：仅常量声明。
+TYPE_MISMATCH = "TYPE_MISMATCH"
+READBACK_UNAVAILABLE = "READBACK_UNAVAILABLE"
 # 注（ISS-0029）：原 ALL_REASON_CODES 登记册为零消费死代码且漏登
 # TOOL_TIMEOUT,已按 sdfang 裁定删除;防复活守卫见 tests/test_errors_iss29.py
 

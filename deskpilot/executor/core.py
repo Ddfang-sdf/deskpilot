@@ -36,7 +36,8 @@ from ..errors import (DETECTOR_UNAVAILABLE, ELEMENT_AMBIGUOUS, ELEMENT_DISABLED,
                       ELEMENT_NOT_FOUND, ELEMENT_RECT_DEGENERATE,
                       ELEMENT_UNSUPPORTED, EMERGENCY_STOP,
                       INTERNAL_ERROR, INVALID_PARAMS, OCR_AMBIGUOUS,
-                      OCR_TEXT_NOT_FOUND, OUT_OF_BOUNDS, TIMEOUT, WINDOW_GONE,
+                      OCR_TEXT_NOT_FOUND, OUT_OF_BOUNDS, READBACK_UNAVAILABLE,
+                      TIMEOUT, TYPE_MISMATCH, WINDOW_GONE,
                       WINDOW_OCCLUDED, ExecutorError, InvalidParamsError)
 from ..policy import normalize_key
 from .detector import resolve, screened, to_virtual, verify
@@ -63,6 +64,19 @@ _pyauto_key_alias = {"escape": "esc"}
 # 消除「树上看得见、定位链点不到」的双口径(8 vs 10 曾致画图形状钮
 # depth9 可见不可点)。取较深者 10;800 条防爆炸上限(_walk)不动。
 _UI_TREE_MAX_DEPTH = 10
+# 读回校验目标控件类型(ISS-0100 C):uiautomation 2.x 的 ControlTypeName
+# 带 Control 后缀(EditControl/DocumentControl,2.0.29 实测);裸名
+# (Edit/Document)为设计与测试替身缝形态——两形并纳,缺一则真机
+# 读回通道整体失明(ISS-0100 根因面之一,实证见单据 v0.6)。
+_EDIT_TYPE_NAMES = frozenset(
+    {"Edit", "Document", "EditControl", "DocumentControl"})
+
+
+def _normalize_newlines(s: str) -> str:
+    """读回比对的换行归一（ISS-0100 实机取证）：TextPattern GetText 把
+    CRLF 呈现为孤立 \\r（记事本 RichEditD2DPT 实测），原样子串包含会对
+    多行文本误报不一致——双侧归一仅统一换行表示，乱改字符仍必被拦。"""
+    return s.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _failsafe_guard(fn, *args, **kwargs):
@@ -966,7 +980,7 @@ class Executor:
             raise ExecutorError(
                 ELEMENT_UNSUPPORTED,
                 f"元素 {element.Name} 不支持设值（无 ValuePattern），"
-                f"请改用 type_text 走键盘路径输入")
+                f"请改用 type_text 走剪贴板路径输入")
         try:
             pattern.SetValue(params["text"])
         except Exception as e:
@@ -1176,12 +1190,16 @@ class Executor:
         return {"status": "ok", "key": norm}
 
     def _type_text(self, text: str, hwnd: int) -> dict:
-        """ASCII 逐键模拟；非 ASCII 走剪贴板桥（INV-5：全程无预清空动作）。"""
+        """全量走剪贴板桥（INV-5：全程无预清空动作）。
+
+        ISS-0100 A：逐键模拟路径废止——中文 IME 激活时按键流进组合器，
+        落地内容由词库决定（demo 录制实证乱码）；任何文本一律走桥。
+        ISS-0100 C：读回校验修真——比对失败重试耗尽报 TYPE_MISMATCH；
+        读回三通道全灭 raise READBACK_UNAVAILABLE（fail-closed，
+        不再 ok:true 放行）。
+        """
         if not self._activate_if_needed(hwnd):
             raise ExecutorError(WINDOW_GONE, "窗口无法前置，输入中止（防误射）")
-        if all(ord(c) < 128 for c in text):
-            pyautogui.write(text, interval=0.01)
-            return {"status": "ok", "mode": "keyboard"}
 
         old_clip = None
         try:
@@ -1203,25 +1221,28 @@ class Executor:
                 # 增长(65k 实证 3×300ms 远不够),每 8k 字符加一拍,
                 # 3 拍起步、20 拍(6s)封顶。
                 poll_budget = min(20, max(3, -(-len(text) // 8192)))
+                want = _normalize_newlines(text)
                 for _poll in range(poll_budget):
                     time.sleep(0.3)
                     current = self._read_edit_value(hwnd)
                     if current is None:
-                        # 读回校验不可用：只粘贴一次即停止，避免重复粘贴
-                        note = "读回校验不可用（目标无 UIA 值模式）"
-                        break
-                    if text in current:
+                        # ISS-0100 C③:读回三通道全灭(目标无 Edit/Document)
+                        # → fail-closed,不再「note 不可用仍 ok:true」放行;
+                        # 指引 AI 用 screenshot 自核(感知面自核,既有哲学)
+                        raise ExecutorError(
+                            READBACK_UNAVAILABLE,
+                            "目标无可读回通道，落地内容未经校验"
+                            "（fail-closed 不放行）；请用 screenshot "
+                            "自核落地结果")
+                    if want in _normalize_newlines(current):
                         note = "读回校验一致"
                         break
-                else:
-                    current = None
-                if current is None and "不可用" in note:
-                    break
                 if note == "读回校验一致":
                     break
                 attempts += 1
                 if attempts >= 2:
-                    raise ExecutorError(INTERNAL_ERROR, "粘贴读回校验不一致且重试耗尽")
+                    raise ExecutorError(TYPE_MISMATCH,
+                                        "粘贴读回校验不一致且重试耗尽")
         finally:
             if old_clip is not None:
                 try:
@@ -1407,19 +1428,74 @@ class Executor:
             self._walk(child, nodes, depth + 1)
 
     def _read_edit_value(self, hwnd: int) -> str | None:
-        """收集窗口内全部 Edit/Document 控件的值（拼接），供读回校验。"""
+        """收集窗口内全部 Edit/Document 控件的值（拼接），供读回校验。
+
+        ISS-0100 C 三级通道序：① ValuePattern（Edit 类，现状）；
+        ② TextPattern（Document 类,Win11 记事本富文本编辑器走此——
+        DocumentRange().GetText(-1) 取全文）；③ 选读（前两路无值且
+        存在 Edit/Document 控件时：ctrl+a + ctrl+c 读剪贴板——选读会
+        覆盖剪贴板中的请求文本，还原由 _type_text 的 finally old_clip
+        语义覆盖，语义不变）。三通道全灭（目标无 Edit/Document）
+        返回 None（调用方 fail-closed）。
+        """
         try:
             root = uiautomation.ControlFromHandle(hwnd)
             values: list[str] = []
+            has_edit = False
             for node in self._iter_controls(root, depth=0):
-                if node.ControlTypeName in ("Edit", "Document"):
-                    try:
-                        value = node.GetValuePattern().Current.Value
-                        if isinstance(value, str):
-                            values.append(value)
-                    except Exception:
-                        continue
-            return "\n".join(values) if values else None
+                if node.ControlTypeName in _EDIT_TYPE_NAMES:
+                    has_edit = True
+                    value = self._node_text(node)
+                    if value:
+                        values.append(value)
+            if values:
+                return "\n".join(values)
+            if has_edit:
+                return self._read_via_selection()
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _node_text(node) -> str | None:
+        """单节点读值：① ValuePattern → ② TextPattern（取全文）。
+
+        uiautomation 2.x 实测（2.0.29）：ValuePattern.Value 为属性
+        （旧 .Current.Value 形态已不存在）；TextPattern.DocumentRange
+        为属性（非方法）。两形并存兼容（测试替身缝=方法形态,
+        tests/test_typeguard_iss100.py）。
+        """
+        try:
+            vp = node.GetValuePattern()
+            cur = getattr(vp, "Current", None)
+            value = cur.Value if cur is not None else vp.Value
+            if isinstance(value, str) and value:
+                return value
+        except Exception:
+            pass
+        try:
+            rng = node.GetTextPattern().DocumentRange
+            rng = rng() if callable(rng) else rng
+            text = rng.GetText(-1)
+            if isinstance(text, str) and text:
+                return text
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _read_via_selection() -> str | None:
+        """选读通道（③）：ctrl+a 全选 + ctrl+c 读剪贴板。
+
+        读前短等剪贴板写滞后（ctrl+c 到剪贴板可见非严格同步;
+        外层读回轮询提供重读节奏,此处只消一次竞态）。
+        """
+        try:
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.hotkey("ctrl", "c")
+            time.sleep(0.2)
+            value = pyperclip.paste()
+            return value if isinstance(value, str) and value else None
         except Exception:
             return None
 
