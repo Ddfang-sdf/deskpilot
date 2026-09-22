@@ -36,3 +36,9 @@ TOOL_SCHEMAS/TOOL_LEVELS/_DIRECT 由注册表派生;加"派生一致性"单测
 3. **B(注册装饰器)否**:收益同 A,import 序敏感+装配隐式化风险显著更高。
 
 依据素材:新增工具登记点 5(ISS-0101 实证 6 装配点);钉面=19 测试文件约 100 处,全部按名字 import 三表,同名投影可零适配。
+
+## 变更记录
+
+| 版本 | 日期 | 内容 |
+|------|------|------|
+| v0.2 | 2026-09-22 | **C 落地**:tests/test_toolregistry_iss63.py 三条集合恒等钉(keys(TOOL_SCHEMAS)==keys(TOOL_LEVELS)、BINDING_REQUIRED_TOOLS⊆schemas、_L0/_L1_DIRECT⊆schemas),守卫属性 P1 即绿(现状一致);**探测力实证**:临时从 TOOL_LEVELS 删 set_window_rect → keys 恒等断言变红(差集直出 {'set_window_rect'}),还原即绿,文件不留痕;顺带核对②:_L0_DIRECT 与 TOOL_LEVELS 的 L0 集精确一致(9=9),_L1_DIRECT(2)是 L1(6)的路由子集(attach/detach/scroll/wait_for_element 经 enforcement.submit 属设计:闸二/绑定语义,非级别投影),无漂移不改。全量 920 passed 0 failed |
