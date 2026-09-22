@@ -64,35 +64,10 @@ class TestManagerZeroResolve:
     断言:appnames 调用计数与渲染耗时(直出)。"""
 
     def _fake_tk(self, monkeypatch, ww):
-        class W:
-            def __init__(self, *a, **k): pass
-            def pack(self, *a, **k): pass
-            def pack_forget(self): pass
-            def bind(self, *a, **k): pass
-            def bind_all(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def title(self, *a): pass
-            def geometry(self, *a): pass
-            def minsize(self, *a): pass
-            def attributes(self, *a, **k): pass
-            def after(self, *a, **k): return "a1"
-            def create_window(self, *a, **k): return 1
-            def itemconfig(self, *a, **k): pass
-            def bbox(self, *a, **k): return (0, 0, 0, 0)
-            def yview(self, *a, **k): pass
-            def yview_scroll(self, *a, **k): pass
-            def winfo_children(self): return []
-            def destroy(self): pass
-            def get(self): return ""
-            def create_line(self, *a, **k): pass
-            def create_oval(self, *a, **k): pass
-            def create_rectangle(self, *a, **k): pass
-            def delete(self, *a, **k): pass
-
-        for cls in ("Toplevel", "Frame", "Canvas", "Scrollbar", "Label",
-                    "Button", "Entry"):
-            monkeypatch.setattr(ww.tk, cls, lambda *a, **k: W(*a, **k))
+        """ISS-0059 步骤5:本地大 W 替身收编 tests/faketk.install
+        (本类断言不涉观测口,装配即够;断言零改动)。"""
+        from .faketk import install
+        install(monkeypatch, ww.tk)
 
     def test_zero_appnames_calls_with_display_map(self, monkeypatch):
         """TC-FAST-02:display_map 存在时 app_display_name/app_description 零调用。"""
