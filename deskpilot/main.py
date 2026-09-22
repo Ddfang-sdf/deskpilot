@@ -502,9 +502,16 @@ def main() -> int:
     if _weights_dir:
         _weights_dir = str(_resolve_weight_dir(
             _weights_dir, policy_path=os.path.abspath(str(policy_path))))
+    # ISS-0102 §3.2:screenshot path 落盘允许根=仓库根(policy.yml 所在目录,
+    # 装配约定置首=相对路径锚)∪审计根(resolve_audit_dir 绝对值)
+    from .audit_paths import resolve_audit_dir
+    _allowed_roots = (str(Path(policy_path).resolve().parent),
+                      str(resolve_audit_dir(policy.audit_dir,
+                                            str(policy_path)).resolve()))
     executor = Executor(estop, policy.audit_dir, policy.wait_poll_interval,
                         policy.wait_timeout_max, audit=audit,
-                        detector_weights_dir=_weights_dir)
+                        detector_weights_dir=_weights_dir,
+                        allowed_roots=_allowed_roots)
     executor._mouse_watchdog.start()        # REQ-001 看门狗线程(生产装配启动)
 
     def _detector_factory():

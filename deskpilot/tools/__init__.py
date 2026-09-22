@@ -100,7 +100,9 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
             result = ctx.executor.screenshot(params["scope"], params.get("rect"),
                                              params.get("window"),
                                              ocr=params.get("ocr", False),
-                                             screen=params.get("screen"))
+                                             screen=params.get("screen"),
+                                             # ISS-0102 §3.1:path 透传
+                                             path=params.get("path"))
         elif tool == "find_window":
             result = {"windows": ctx.executor.find_windows(
                 title=params.get("title"), process=params.get("process"),

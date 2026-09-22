@@ -113,7 +113,8 @@ class Executor:
     def __init__(self, estop, audit_dir: str, poll_interval: float = 0.5,
                  wait_timeout_max: float = 300.0, clock: Callable[[], float] = time.monotonic,
                  probe=None, element_source=None, shot_fn=None, ocr_engine=None,
-                 audit=None, detector_weights_dir: str | None = None):
+                 audit=None, detector_weights_dir: str | None = None,
+                 allowed_roots=None):
         self._probe = probe if probe is not None else DesktopProbe()
         self._estop = estop
         self._shots_dir = Path(audit_dir) / "shots"
@@ -129,6 +130,10 @@ class Executor:
         # 由 main 装配期传入）；相对路径的锚定交给 resolve()，此处不自行解析。
         # 缺省 None = 生产未接线（P3 起由 main 传入 policy 取值）
         self._weights_dir_configured = detector_weights_dir
+        # ISS-0102 §3.2(P1 空壳:仅签名+默认值,护栏逻辑 P3 落):screenshot
+        # path 落盘允许根集合=仓库根(policy.yml 所在目录)∪审计根
+        # (resolve_audit_dir 绝对值),装配期 main.py 计算传入;缺省 None
+        self._allowed_roots = allowed_roots
         # REQ-003 §3.7 / D-18：检测器工厂（公开装配位，与 ocr_factory 同处装配）；
         # 缺省 None = 未装配 → detect=true 落 DETECTOR_UNAVAILABLE（§9.1）
         self.detector_factory = None
@@ -225,9 +230,14 @@ class Executor:
     # ---------- 感知（L0，tools 层直调） ----------
 
     def screenshot(self, scope: str, rect=None, window=None,
-                   ocr: bool = False, screen=None) -> dict:
+                   ocr: bool = False, screen=None, path=None) -> dict:
+        """ISS-0102 §3.3:path 给定时改落指定路径(护栏见 _save_shot_to);
+        None→受管目录落盘(现状零变化)。返回 path 恒为绝对路径。"""
         region = self._resolve_region(scope, rect, window, screen)
-        path = self._save_shot(region, "sense")
+        if path is None:
+            path = self._save_shot(region, "sense")
+        else:
+            path = self._save_shot_to(region, path)
         out = {"path": str(path), "width": region["width"],
                "height": region["height"]}
         # ISS-0021 C：坐标系元数据——像素→虚拟桌面坐标换算全要素
@@ -1383,6 +1393,45 @@ class Executor:
             img = sct.grab(region)
             mss.tools.to_png(img.rgb, img.size, output=str(path))
         return path
+
+    def _save_shot_to(self, region: dict, target: str) -> Path:
+        """ISS-0102 §3.2：screenshot path 指定路径落盘（护栏 fail-closed）。
+
+        闸序：冻结闸（冻结期写操作全拒补破口）→ 允许根判定（相对路径锚
+        allowed_roots[0]=仓库根，装配约定置首；绝对原样；统一 .resolve()
+        后 is_relative_to 任一允许根，越界/穿越一律拒，消息含允许根——
+        与 screen 越界 fail-closed 同码先例）→ 父目录须已存在（不替 AI
+        建目录，§3.4）→ 目标已存在先审计「screenshot覆盖写」再写
+        （留痕失败=写失败，AuditFailure 自然上抛）。返回目标绝对路径
+        （ISS-0018 绝对语义）。指定路径文件不受受管清理约束（§3.4 入档）。
+        """
+        if self._estop is not None and self._estop.is_frozen():
+            raise ExecutorError(EMERGENCY_STOP,
+                                "急停冻结中，指定路径截图写操作中止")
+        if not self._allowed_roots:
+            raise ExecutorError(
+                INVALID_PARAMS,
+                "未配置允许根（Executor 装配未接线），指定路径落盘拒绝")
+        roots = [Path(r).resolve() for r in self._allowed_roots]
+        p = Path(target)
+        if not p.is_absolute():
+            p = roots[0] / p              # 相对路径锚仓库根（装配约定置首）
+        p = p.resolve()
+        if not any(p.is_relative_to(r) for r in roots):
+            raise ExecutorError(
+                INVALID_PARAMS,
+                f"落盘路径越界（fail-closed）: {p};"
+                f"允许根: {[str(r) for r in roots]}")
+        if not p.parent.is_dir():
+            raise ExecutorError(
+                INVALID_PARAMS,
+                f"落盘父目录不存在（不代为创建）: {p.parent}")
+        if p.exists() and self._audit is not None:
+            self._audit.record_event("screenshot覆盖写", str(p))
+        with mss.MSS() as sct:
+            img = sct.grab(region)
+            mss.tools.to_png(img.rgb, img.size, output=str(p))
+        return p
 
     def _evidence_shot(self, tool: str, tag: str, rect: tuple | None = None) -> str:
         """写操作证据图（ISS-0008 P3）：有绑定矩形取绑定窗口区域，否则虚拟桌面全域。"""
