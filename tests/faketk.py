@@ -57,12 +57,25 @@ class _Recorder:
         return [ms for ms, _ in self.afters]
 
     def pump(self, n: int | None = None) -> None:
-        """after 队列泵:弹出前 n 个(缺省全部)回调并执行,跳过 None。"""
-        queue = list(self.afters if n is None else self.afters[:n])
-        del self.afters[: len(queue)]
-        for _ms, fn in queue:
+        """after 队列泵:弹出回调并执行,跳过 None。
+
+        n 给定=弹出前 n 个(**活弹**:回调自重排也照弹——滑入动画类
+        自续队列的正确语义,estopreset pump_to_shown 先例);n=None=
+        泵当前已入队项(快照,不追自重排,防自续队列死循环)。
+        """
+        if n is None:
+            queue = list(self.afters)
+            del self.afters[: len(queue)]
+            for _ms, fn in queue:
+                if fn is not None:
+                    fn()
+            return
+        count = 0
+        while self.afters and count < n:
+            _ms, fn = self.afters.pop(0)
             if fn is not None:
                 fn()
+            count += 1
 
     def button_command(self, text: str):
         """按文本取按钮 command(estopreset 观测形);无此按钮 → KeyError。"""
