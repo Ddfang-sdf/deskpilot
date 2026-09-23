@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0063 |
 | 标题 | 一个工具的完整身份(schema/安全级别/绑定要求/直放路由)分散登记:TOOL_SCHEMAS(mcp_server)/ TOOL_LEVELS+BINDING_REQUIRED_TOOLS(models)/ _L0_DIRECT+_L1_DIRECT(tools)——新增工具要在 3 个文件登记 5 处,漏一处就是事故 |
 | 严重级 | 低(可维护性;已有事故前科) |
-| 状态 | **裁定落地(sdfang 离场授权自决 2026-09-22):C(集合恒等钉)立即实施;A(单源注册表派生投影)挂起至下一个新工具单顺手做;B(装饰器)否** |
+| 状态 | **已关闭**(2026-09-23:C 集合恒等钉落地(test_toolregistry_iss63,探测力实证),A 挂起有明确触发条件(下一个新工具单),B 否;sdfang 离场授权自决) |
 | 提出 | 2026-09-10(cleancode 审查;实证:schemas 29=levels 29(当前巧合一致),登记点 5 处/工具) |
 
 ## 现象与证据
@@ -42,3 +42,9 @@ TOOL_SCHEMAS/TOOL_LEVELS/_DIRECT 由注册表派生;加"派生一致性"单测
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v0.2 | 2026-09-22 | **C 落地**:tests/test_toolregistry_iss63.py 三条集合恒等钉(keys(TOOL_SCHEMAS)==keys(TOOL_LEVELS)、BINDING_REQUIRED_TOOLS⊆schemas、_L0/_L1_DIRECT⊆schemas),守卫属性 P1 即绿(现状一致);**探测力实证**:临时从 TOOL_LEVELS 删 set_window_rect → keys 恒等断言变红(差集直出 {'set_window_rect'}),还原即绿,文件不留痕;顺带核对②:_L0_DIRECT 与 TOOL_LEVELS 的 L0 集精确一致(9=9),_L1_DIRECT(2)是 L1(6)的路由子集(attach/detach/scroll/wait_for_element 经 enforcement.submit 属设计:闸二/绑定语义,非级别投影),无漂移不改。全量 920 passed 0 failed |
+
+## 变更记录(续)
+
+| 版本 | 日期 | 内容 |
+|------|------|------|
+| v0.2 | 2026-09-23 | 关单:C 落地(三集合恒等钉+探测力实证:临时删键钉即红);A 挂起条件入档;B 否 |
