@@ -49,6 +49,11 @@ def _main_stubs(monkeypatch, tmp_path, probe_online, daemon_start_raises=None):
     policy_file.write_text(yaml.dump(policy_yaml_dict(str(tmp_path / "audit"))),
                            encoding="utf-8")
     monkeypatch.setattr(m, "_find_policy_path", lambda: policy_file)
+    # ISS-0110:属主面共享目录缝重定向到 tmp——恢复全隔离原语义;
+    # 否则真 daemon 持真锁时 tc46_02 类路径撞真锁,落重试循环
+    # time.sleep 触下方陷阱炸全量(本单 §1/§2)。
+    monkeypatch.setattr(m, "_resolve_shared_dir",
+                        lambda: str(tmp_path / "shared"))
     monkeypatch.setattr(m, "probe_daemon", lambda *a, **k: probe_online)
     rec = {"estop_start": Mock(), "tray": Mock()}
     monkeypatch.setattr(m, "_start_estop_listeners", rec["estop_start"])
@@ -96,6 +101,48 @@ class TestDaemonSingleton:
         assert rc == 4
         events = [e["event"] for e in read_audit(str(tmp_path / "audit"))]
         assert EV_DAEMON_SINGLETON_EXIT in events
+
+
+class TestSharedDirIsolation:
+    """TC-110-01(回归形态,ISS-0110 §3):真锁占位下 tc46_01/02 不触陷阱。
+
+    场景:临时目录起真 RoleSupervisor 持锁(=真 daemon 持 owner.lock 的
+    环境替身);tc46_01(probe 在线)/tc46_02(绑定竞态败者)场景重跑。
+    前提:_main_stubs 已把装配段 shared_dir 缝(_resolve_shared_dir)
+    重定向到各例 tmp——与占位锁异目录,隔离语义恢复。
+    步骤:main()。预期:rc 4 直出+审计 EV_DAEMON_SINGLETON_EXIT 直读,
+    不触 time.sleep 陷阱。红态:缝未重定向时真锁在场 → 属主锁 12 连败
+    → 重试循环 time.sleep 触陷阱 KeyboardInterrupt 炸会话(ISS-0110 §1)。
+    """
+
+    def test_tc110_01_real_lock_placeholder_still_green(
+            self, tmp_path, monkeypatch):
+        import sys
+
+        from deskpilot.ownership import RoleSupervisor
+
+        holder = RoleSupervisor(str(tmp_path / "realworld"), "daemon")
+        assert holder.start() is True              # 真锁占位(直出)
+        try:
+            for name, probe, exc in (
+                    ("tc46_01", True, None),
+                    ("tc46_02", False, RuntimeError("端口被占"))):
+                case_dir = tmp_path / name
+                case_dir.mkdir()
+                monkeypatch.setattr(sys, "argv", ["deskpilot", "--daemon"])
+                m, rec = _main_stubs(monkeypatch, case_dir,
+                                     probe_online=probe,
+                                     daemon_start_raises=exc)
+                rc = m.main()                      # 触陷阱则此处炸会话(红)
+                assert rc == 4, f"{name} rc 直出: {rc}"
+                events = [e["event"]
+                          for e in read_audit(str(case_dir / "audit"))]
+                assert EV_DAEMON_SINGLETON_EXIT in events, \
+                    f"{name} 审计直读: {events}"
+                if name == "tc46_01":
+                    assert rec["estop_start"].call_count == 0  # 语义保持
+        finally:
+            holder.stop()
 
 
 class TestFreezeDialogSingletonGuard:

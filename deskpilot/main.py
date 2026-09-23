@@ -538,6 +538,14 @@ def _stage_whitelist(policy, base_policy, policy_path, local_path,
     return whitelist_admin
 
 
+def _resolve_shared_dir() -> str:
+    """属主面文件与急停邮箱共享目录(ISS-0084:锚 LOCALAPPDATA\\DeskPilot
+    跨形态共享;ISS-0110:提为模块级缝——测试经 monkeypatch 重定向到
+    tmp 恢复全隔离,产品语义零改动)。"""
+    return str(Path(os.environ.get("LOCALAPPDATA")
+                    or str(Path.home())) / "DeskPilot")
+
+
 def _stage_dialogs(policy, audit: AuditLogger) -> dict:
     """急停弹窗子段(ISS-0064 S4a,纯重构):弹窗服务/审计路径/共享目录/
     冻结通知/急停装配/遗嘱挂钩。返回运行时束 dict。"""
@@ -549,8 +557,7 @@ def _stage_dialogs(policy, audit: AuditLogger) -> dict:
     # ——daemon(dist)与 stdio(repo)的审计目录分离,属主面/邮箱若跟随审计
     # 目录则双世界分裂,v0.2 实证),与各形态自己的审计**日志**目录分离
     from .ownership import install_last_will
-    _shared_dir = str(Path(os.environ.get("LOCALAPPDATA")
-                           or str(Path.home())) / "DeskPilot")
+    _shared_dir = _resolve_shared_dir()
     notifier = FreezeNotifier(_shared_dir,
                               remind_interval=policy.freeze_remind_interval,
                               dialog_service=dialog_service, audit=audit)
