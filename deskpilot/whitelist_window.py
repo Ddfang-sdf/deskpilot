@@ -313,8 +313,12 @@ class _Tooltip:
 class _ManagerUI:
     """白名单管理窗口控制器：搜索过滤 + 两区分立滚动 + 更多/收起。"""
 
-    _SECTIONS = (("static", tr("wl.group.static")),
-                 ("session", tr("wl.group.session")))
+    @property
+    def _SECTIONS(self):
+        """分区块(键, 标题)。惰性取词(ISS-0111:类级 tr() 在 import 期
+        固化,locale 晚于导入设置时文案锁死——CI en-US 实证)。"""
+        return (("static", tr("wl.group.static")),
+                ("session", tr("wl.group.session")))
 
     def __init__(self, win, entries: dict, on_remove, on_clear_session,
                  display_map: dict | None = None):
@@ -353,12 +357,15 @@ class _ManagerUI:
 
     # ---- 骨架 ----
 
-    _EMPTY_TEXT = {
-        "static": (tr("wl.empty.static"),
-                   tr("wl.empty.static.hint")),
-        "session": (tr("wl.empty.session"),
-                    tr("wl.empty.session.hint")),
-    }
+    @property
+    def _EMPTY_TEXT(self):
+        """空态文案(惰性取词,同 _SECTIONS 的 ISS-0111 固化修复)。"""
+        return {
+            "static": (tr("wl.empty.static"),
+                       tr("wl.empty.static.hint")),
+            "session": (tr("wl.empty.session"),
+                        tr("wl.empty.session.hint")),
+        }
 
     def _build_block(self, win, title: str) -> dict:
         head = tk.Frame(win, bg=_BG)

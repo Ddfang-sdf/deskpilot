@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def _build_collect_texts(monkeypatch, tmp_path, enroll):
     """ISS-0059 步骤8:本地 W/Lbl 替身收编 tests/faketk.install;
@@ -29,6 +31,11 @@ def _build_collect_texts(monkeypatch, tmp_path, enroll):
     ad.build_window(object(), "常规审批", str(tmp_path / "r.txt"), 5,
                     enroll=enroll)
     return rec.labels
+
+
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
 
 
 class TestSessionScopeVisible:

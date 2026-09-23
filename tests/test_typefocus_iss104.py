@@ -220,7 +220,11 @@ class TestNotepadFocusIntegration:
 
         walk(root)
         assert doc is not None, "前提失败:未找到编辑控件"
-        assert tab is not None, "前提失败:未找到 TabItem(非多标签形态?)"
+        if tab is None:
+            # ISS-0111:CI 跑机(Server 系记事本无标签条形态)缺 TabItem
+            # =环境缺形态,非产品红(ISS-0062 同族口径,显式守卫)
+            from .envguard import env_skip
+            env_skip("记事本无标签条形态(CI Server 系),焦点出编辑区前提不可得")
         doc.SetFocus()
         time.sleep(0.2)
         pyperclip.copy("dp104seed种子")

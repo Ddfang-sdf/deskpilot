@@ -59,10 +59,12 @@ class TestWhitelistAlwaysPrimary:
 
     def test_pr03_resolve_geo_ignores_target_screen(self):
         """pr03:_resolve_geo(target_screen=副屏) 仍给主屏右下几何。
+        ISS-0111:期望几何按**实测主屏**(toast_placement 同源)计算,
+        不写死 1920×1080(CI 跑机非 1080p 屏实证 +588+526)。
         红态(现状):按副屏算。"""
         geo = ww._resolve_geo(420, 130, SECOND)
-        exp_x, _ys, exp_y = toast_placement(PRIMARY, 420, 130)
-        assert geo == f"420x130+{exp_x}+{exp_y}"  # 主屏公式值(直出)
+        exp_x, _ys, exp_y = toast_placement(_primary(), 420, 130)
+        assert geo == f"420x130+{exp_x}+{exp_y}"  # 实测主屏公式值(直出)
         bad_x, _b, bad_y = toast_placement(SECOND, 420, 130)
         assert geo != f"420x130+{bad_x}+{bad_y}"  # 不是副屏
 
