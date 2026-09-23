@@ -507,24 +507,10 @@ def _stage_daemon_precheck(audit: AuditLogger) -> int | None:
     return None
 
 
-def main() -> int:
-    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
-    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
-    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
-    rc, bundle = _stage_load_policy()
-    if rc is not None:
-        return rc
-    policy_path, local_path = bundle["policy_path"], bundle["local_path"]
-    base_policy, policy = bundle["base_policy"], bundle["policy"]
-
-    rc, audit = _stage_audit(policy, policy_path)
-    if rc is not None:
-        return rc
-
-    rc = _stage_daemon_precheck(audit)
-    if rc is not None:
-        return rc
-
+def _stage_whitelist(policy, base_policy, policy_path, local_path,
+                     audit: AuditLogger):
+    """白名单段(ISS-0064 S3,纯重构):双轨指纹审计+守望线程+
+    WhitelistAdmin 装配+暖名称/描述缓存线程。返回 WhitelistAdmin。"""
     # ISS-0012 C：策略指纹入审计 + 运行期外部修改留痕
     fp = policy_sha256_audit(str(policy_path), audit)
     _start_policy_watch(str(policy_path), audit, fingerprint=fp)
@@ -549,6 +535,29 @@ def main() -> int:
     # ISS-0095 O4:暖机计时埋点包层(失败记 ok=False 不阻断启动)
     threading.Thread(target=_warm_caches_with_audit, kwargs={"audit": audit},
                      daemon=True, name="deskpilot-warm-caches").start()
+    return whitelist_admin
+
+
+def main() -> int:
+    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
+    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
+    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
+    rc, bundle = _stage_load_policy()
+    if rc is not None:
+        return rc
+    policy_path, local_path = bundle["policy_path"], bundle["local_path"]
+    base_policy, policy = bundle["base_policy"], bundle["policy"]
+
+    rc, audit = _stage_audit(policy, policy_path)
+    if rc is not None:
+        return rc
+
+    rc = _stage_daemon_precheck(audit)
+    if rc is not None:
+        return rc
+
+    whitelist_admin = _stage_whitelist(policy, base_policy, policy_path,
+                                       local_path, audit)
 
     from .dialog_service import get_dialog_service
     dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
