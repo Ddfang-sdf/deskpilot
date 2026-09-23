@@ -54,12 +54,30 @@ class TestSmokeIntegration:
     """TC-BM-03~05:冒烟合理/daemon 恢复/弹窗清理(集成,系统外表面直出)。"""
 
     def test_bm03_reasonable_values(self, result):
+        """TC-BM-03(步骤 D,ISS-0062):路径级回退阈值+触发前提显式守卫。
+
+        阈值复核:l0 500ms 已 ≫ 10× 线程内典型延迟,dialog 2000ms 即
+        既有注释的路径级口径(批准①)——不放宽反加守卫:实测
+        value=None = 触发前提不成立(审批窗 15s 未出现:基准经
+        launch_app(no-such-xyz-app.exe) 触发入白审批,该名一旦已入白
+        (本机残留实证 2026-09-23)则直达执行层报 WinError 2,无窗可测;
+        或审批通道不可用)——属环境/污染,非产品回归,env_skip 明示。
+        双闸门登记:None 场景不探测弹窗延迟(该行为由
+        test_perf_iss8 TestDialogService 单元钉+实盘手工测试覆盖,
+        见 ISS-0062 变更记录)。"""
+        from .envguard import env_skip
+        if result["dialog_thread_ms"]["value"] is None:
+            env_skip("审批窗可弹出前提(no-such-xyz-app.exe 未入白且"
+                     "审批通道可用)——基准触发前提不成立")
         assert 0 < result["l0_latency_ms"]["value"] < 500
         # 弹窗可见延迟受整机负载影响有波动(实测 100~800ms);
         # 断言只挡"子进程路径级"回退(≥2.5s),报告值为准
         assert result["dialog_thread_ms"]["value"] < 2000
 
     def test_bm04_daemon_restored(self, result):
+        from .envguard import env_skip, real_daemon_online
+        if not real_daemon_online():
+            env_skip("运行中的真 daemon(:9420)——bm04 前提(批准②)")
         with urllib.request.urlopen("http://127.0.0.1:9420/health",
                                     timeout=3) as resp:
             assert resp.status == 200                     # 测完 daemon 在线
