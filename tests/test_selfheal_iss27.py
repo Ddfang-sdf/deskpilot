@@ -96,6 +96,7 @@ class TestFuzzyRealOcr:
     def test_fuzz04_real_ocr_suggestion(self, policy, audit_log, tmp_path):
         import time
         from .test_clicktext_iss21 import TestClickTextIntegration
+        from .envguard import dismiss_xaml_save_prompt, env_skip
 
         tc = TestClickTextIntegration()
         proc, new = tc._spawn_notepad()
@@ -115,10 +116,15 @@ class TestFuzzyRealOcr:
                 # 拼成巨行,吞并 OCR 条目致相似度失效(实证)
                 k = tc._call(d.port, "key",
                              {"token": token, "key": "ctrl+end"})
+                # ISS-0062 步骤 C:前置受限从裸红转显式环境守卫
+                if not k["ok"] and "无法前置" in k.get("message", ""):
+                    env_skip("可前置的记事本窗口(前台锁受限)")
                 assert k["ok"] is True, k.get("message")
                 magic = f"dp相似串{int(time.time()) % 100000}"
                 t = tc._call(d.port, "type_text",
                              {"token": token, "text": "\r\n" + magic})
+                if not t["ok"] and "无法前置" in t.get("message", ""):
+                    env_skip("可前置的记事本窗口(前台锁受限)")
                 assert t["ok"] is True, t.get("message")
                 time.sleep(0.5)
                 r = tc._call(d.port, "click_text",
@@ -133,6 +139,7 @@ class TestFuzzyRealOcr:
         finally:
             proc.terminate()
             from .test_uia_com_iss16 import _close_all_and_wait
+            dismiss_xaml_save_prompt([w["hwnd"] for w in new])
             closed = _close_all_and_wait([w["hwnd"] for w in new])
         # 卫生断言(泄漏即红):打字类测试同样零残留
         assert closed is True, "测试残留记事本窗口(未保存关窗失败)"

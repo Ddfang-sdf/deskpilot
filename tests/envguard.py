@@ -64,3 +64,54 @@ def pick_unoccluded_desktop_icon(items) -> dict | None:
         if is_unoccluded_point(cx, cy):
             return it
     return None
+
+
+def dismiss_xaml_save_prompt(hwnds, timeout: float = 6.0) -> None:
+    """Store 记事本未保存关窗的 XAML 内嵌保存提示消除(ISS-0104 二次裁决
+    形态,自 test_typefocus_iss104 收敛共享,ISS-0062 步骤 C)。
+
+    本机实证 '*' 永不消退(30s 观察),WM_CLOSE 必弹 XAML 提示(非经典
+    #32770);UIA 找提示三键(保存/不保存/取消,序位实证)并 Invoke 序位
+    第二「不保存」。找不到提示即静默跳过(无提示=无阻塞)。"""
+    import ctypes
+    import ctypes.wintypes  # noqa: F401
+    import time
+
+    import uiautomation as uia
+
+    u32 = ctypes.windll.user32
+    for h in hwnds:
+        u32.PostMessageW(h, 0x0010, 0, 0)              # WM_CLOSE
+    deadline = time.monotonic() + timeout
+    pending = set(hwnds)
+    while pending and time.monotonic() < deadline:
+        for h in list(pending):
+            if not u32.IsWindow(h):
+                pending.discard(h)
+                continue
+            try:
+                btns = []
+
+                def walk(c, d=0):
+                    if c is None or d > 14:
+                        return
+                    try:
+                        if c.ControlTypeName == "ButtonControl" and c.Name:
+                            btns.append(c)
+                    except Exception:
+                        pass
+                    try:
+                        ch = c.GetChildren()
+                    except Exception:
+                        return
+                    for x in ch:
+                        walk(x, d + 1)
+
+                walk(uia.ControlFromHandle(h))
+                if (len(btns) >= 3
+                        and btns[0].Name in ("保存", "Save")
+                        and btns[1].Name in ("不保存", "Don't save")):
+                    btns[1].GetInvokePattern().Invoke()   # 不保存
+            except Exception:
+                pass
+        time.sleep(0.6)

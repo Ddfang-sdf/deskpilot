@@ -39,56 +39,6 @@ from deskpilot.errors import READBACK_UNAVAILABLE, ExecutorError
 from deskpilot.executor.core import Executor
 
 
-def _dismiss_xaml_save_prompt(hwnds, timeout: float = 6.0) -> None:
-    """测试局部(2026-09-22 二次裁决方案①):Store 记事本未保存关窗的
-    XAML 内嵌保存提示消除——本机实证 '*' 永不消退(30s 观察+10min 残留),
-    WM_CLOSE 必弹 XAML 提示(非经典 #32770,共享 helper 的「不保存」
-    处置不覆盖);UIA 找提示三键(保存/不保存/取消,序位实证 4+ 次)并
-    Invoke 序位第二「不保存」。找不到提示即静默跳过(无提示=无阻塞);
-    仅本测试 finally 使用,共享 helper 不改(爆炸半径控制)。"""
-    import ctypes
-    import ctypes.wintypes  # noqa: F401
-
-    import uiautomation as uia
-
-    u32 = ctypes.windll.user32
-    for h in hwnds:
-        u32.PostMessageW(h, 0x0010, 0, 0)              # WM_CLOSE
-    deadline = time.monotonic() + timeout
-    pending = set(hwnds)
-    while pending and time.monotonic() < deadline:
-        for h in list(pending):
-            if not u32.IsWindow(h):
-                pending.discard(h)
-                continue
-            try:
-                btns = []
-
-                def walk(c, d=0):
-                    if c is None or d > 14:
-                        return
-                    try:
-                        if c.ControlTypeName == "ButtonControl" and c.Name:
-                            btns.append(c)
-                    except Exception:
-                        pass
-                    try:
-                        ch = c.GetChildren()
-                    except Exception:
-                        return
-                    for x in ch:
-                        walk(x, d + 1)
-
-                walk(uia.ControlFromHandle(h))
-                if (len(btns) >= 3
-                        and btns[0].Name in ("保存", "Save")
-                        and btns[1].Name in ("不保存", "Don't save")):
-                    btns[1].GetInvokePattern().Invoke()   # 不保存
-            except Exception:
-                pass
-        time.sleep(0.6)
-
-
 class _FocusNode:
     """UIA 替身节点:ControlTypeName 可配;SetFocus 调用记入统一时序。"""
 
@@ -284,7 +234,8 @@ class TestNotepadFocusIntegration:
 
     def test_tc104_03_notepad_focused_paste_readback(self, policy, audit_log,
                                                      tmp_path):
-        from .envguard import env_skip, real_daemon_online
+        from .envguard import (dismiss_xaml_save_prompt, env_skip,
+                           real_daemon_online)
         from .test_uia_com_iss16 import _close_all_and_wait
 
         if os.environ.get("ISS104_FORCE_E2E") != "1" and \
@@ -322,6 +273,6 @@ class TestNotepadFocusIntegration:
             proc.terminate()
             # 二次裁决方案①:XAML「不保存」消除(本机实证 '*' 永不消退,
             # 浸泡不足以让提示不出现,须主动消除;详见函数 docstring)
-            _dismiss_xaml_save_prompt([w["hwnd"] for w in new])
+            dismiss_xaml_save_prompt([w["hwnd"] for w in new])
             closed = _close_all_and_wait([w["hwnd"] for w in new])
         assert closed is True, "测试残留记事本窗口(关窗失败)"
