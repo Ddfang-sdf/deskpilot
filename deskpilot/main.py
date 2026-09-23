@@ -564,34 +564,10 @@ def _stage_dialogs(policy, audit: AuditLogger) -> dict:
             "shared_dir": _shared_dir, "notifier": notifier, "estop": estop}
 
 
-def main() -> int:
-    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
-    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
-    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
-    rc, bundle = _stage_load_policy()
-    if rc is not None:
-        return rc
-    policy_path, local_path = bundle["policy_path"], bundle["local_path"]
-    base_policy, policy = bundle["base_policy"], bundle["policy"]
-
-    rc, audit = _stage_audit(policy, policy_path)
-    if rc is not None:
-        return rc
-
-    rc = _stage_daemon_precheck(audit)
-    if rc is not None:
-        return rc
-
-    whitelist_admin = _stage_whitelist(policy, base_policy, policy_path,
-                                       local_path, audit)
-
-    dialogs = _stage_dialogs(policy, audit)
-    dialog_service = dialogs["dialog_service"]
-    audit_paths = dialogs["audit_paths"]
-    _shared_dir = dialogs["shared_dir"]
-    notifier = dialogs["notifier"]
-    estop = dialogs["estop"]
-
+def _stage_runtime(policy, policy_path, estop, audit: AuditLogger,
+                   dialog_service, audit_paths, whitelist_admin) -> dict:
+    """执行器强制层子段(ISS-0064 S4b,纯重构):探针/绑定/审批通道/
+    权重目录/允许根/执行器/检测器与 OCR 懒工厂/强制层/撤回通道/ToolContext。"""
     probe = DesktopProbe()
     bindings = BindingManager(probe, policy.binding_ttl, time.monotonic)
     approvals = ApprovalManager(DenyAllChannel(), policy.approval_ttl, time.monotonic)
@@ -657,6 +633,41 @@ def main() -> int:
                       whitelist_admin=whitelist_admin,
                       revoke_channel=revoke_channel,
                       secure_guard=SecureDesktopGuard(audit=audit))
+    return {"executor": executor, "ctx": ctx}
+
+
+def main() -> int:
+    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
+    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
+    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
+    rc, bundle = _stage_load_policy()
+    if rc is not None:
+        return rc
+    policy_path, local_path = bundle["policy_path"], bundle["local_path"]
+    base_policy, policy = bundle["base_policy"], bundle["policy"]
+
+    rc, audit = _stage_audit(policy, policy_path)
+    if rc is not None:
+        return rc
+
+    rc = _stage_daemon_precheck(audit)
+    if rc is not None:
+        return rc
+
+    whitelist_admin = _stage_whitelist(policy, base_policy, policy_path,
+                                       local_path, audit)
+
+    dialogs = _stage_dialogs(policy, audit)
+    dialog_service = dialogs["dialog_service"]
+    audit_paths = dialogs["audit_paths"]
+    _shared_dir = dialogs["shared_dir"]
+    notifier = dialogs["notifier"]
+    estop = dialogs["estop"]
+
+    runtime = _stage_runtime(policy, policy_path, estop, audit,
+                             dialog_service, audit_paths, whitelist_admin)
+    executor = runtime["executor"]
+    ctx = runtime["ctx"]
 
     # ---------- ISS-0084 属主权装配(①②③⑤⑥) ----------
     from .ownership import (RoleSupervisor, ensure_autostart,  # noqa: F401
