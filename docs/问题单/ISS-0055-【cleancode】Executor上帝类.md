@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0055 |
 | 标题 | executor/core.py 一个 Executor 类承担六职族:截图与证据图、键鼠原语与动词、文本输入与读回、UIA 元素树与寻址、桌面图标装配桥、遮挡/激活/边界守卫——1138 行 59 个 def,任何改动都在同一体内编译 |
 | 严重级 | 低(可维护性;不阻断功能) |
-| 状态 | 方案已批准(sdfang 离场授权自决 2026-09-22),待开发(按方案步骤) |
+| 状态 | 已关闭(2026-09-23 验收;离场授权自决) |
 | 提出 | 2026-09-10(cleancode 审查;度量:wc 1138 行 / grep 59 def,全库最大文件) |
 
 ## 现象与证据
@@ -114,3 +114,4 @@ Executor 退化为装配与路由;`execute()` 分发表注册制。约束:公开
 | v0.1 | 2026-09-22 | 整改方案落档(本章「整改方案(2026-09-22 设计)」):现状复核 1620 行/70 def、机制层根因、六步「搬函数留委托」拆分(S1 守卫→S6 分表收口+打包验证)、f56 形态钉与模块级接缝两处处置、测试设计要点与交叉面清单、工作量 4-6 人日;状态推进为「方案已设计,待 sdfang 评审排期」。本单此前无变更记录表,随本次落档补建 |
 | v0.2 | 2026-09-22 | 裁决批准(按方案§7 推荐项):①允许 f56 形态钉扫描面扩为 executor 包级(core.py+input.py 合计:except FailSafeException 全包恰 2 处、_failsafe_guard( 全包 ≥7),按测试放宽双闸门先登记后执行;②分发表注册制纳入 S6(同语义替换);③维持独立评审窗口,本批次即执行,不与 REQ-005 合并;④打包验证仅 S6 收口做。离场授权自决,记录在案;状态→方案已批准,待开发 |
 | v0.3 | 2026-09-23 | S1~S4 落地(各步独立提交,全量 938 passed 恒定):S1 守卫族→executor/guards.py(8 函数)、S2 感知/证据族→screens.py(10 函数)、S3 OCR/检测/SoM 族→vision.py(5 函数+_DEDUP_EXCLUDE_TYPES)、S4 元素族→elements.py(17 函数+_strictly_inside+_UI_TREE_MAX_DEPTH)。S5 写入族→input.py(move/_click/_pixel_click/mouse_down/up/hold/看门狗/强制抬起×2/_drag/_scroll/_key/_type_text/_click_text/_read_edit_value/_focus_first_edit+_node_text/_read_via_selection staticmethod 形态保留+模块级 _normalize_newlines/_traj_points/_pyauto_key_alias/_EDIT_TYPE_NAMES)开发完成、必绿钉全绿。**f56 双闸门①登记(裁决 v0.2①执行)**:写入族外迁后 core.py 单文件 _failsafe_guard( 调用点跌至 2(<7),f56 扫描面自本登记起由 core.py 单文件扩为 executor 包级(core.py+input.py 合计)——守护价值不变:except pyautogui.FailSafeException 全包恰 2 处(单点+启动清扫容错变体)、_failsafe_guard( 全包 8 ≥7;五要素不动,仅扫描面一行。另:_SELECTION_SENTINEL 单点定义留 core(TC-105-02/03 钉约束),input.py 函数体内延迟读 |
+| v0.4 | 2026-09-23 | S5/S6 落地并收口,**状态转已关闭**:S5 写入族外迁 input.py(见 v0.3 清单,f56 扫描面扩大按双闸门执行后转绿);S6 分发表注册制(_dispatch 15 连 if→模块级 _DISPATCH_TABLE 单点登记,多语句分支收为 _tool_* 模块级函数,未知工具错误消息逐字不变,死窗预检序不变)。验收:每步全量 pytest 938 passed/30 skipped(collected 968 恒定,基线 938 零漂移);S6 收口 PyInstaller --clean 打包成功,新 exe daemon 实盘冒烟过——/version=0.4.2、/health ok、find_window(explorer)ok、screenshot fullscreen 真拍落盘 ok、attach 策略链正常(explorer 白名单已撤销按裁定拒绝=正路)。终值:core.py 1138 行/59 方法 → 530 行(Executor 退化为装配+路由+委托门面),五职族模块 guards 137/screens 211/vision 298/elements 482/input 480 行;公开入口签名零改动、测试仅 f56 扫描面一行(已登记)。提交链 f967426(S1)→c422084(S6) |
