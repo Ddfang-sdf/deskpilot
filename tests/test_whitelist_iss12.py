@@ -428,6 +428,11 @@ class TestWhitelistEndpoints:
         assert data["whitelist"] == []                   # 数据层直出
 
     def test_post_clear_session(self, daemon):
+        """会话区清空端点。
+
+        观察登记(ISS-0062 步骤 E,不放宽不装过):2026-09-10 CI 首跑
+        曾败一次未复现(线程/时序敏感,fixture 就绪等待已在 :422-430
+        其位);复现即另立缺陷单诊断,本单不碰。"""
         d, a = daemon
         a.add_session("a.exe")
         a.add_session("b.exe")
