@@ -659,6 +659,8 @@ def main() -> int:
                       secure_guard=SecureDesktopGuard(audit=audit))
 
     # ---------- ISS-0084 属主权装配(①②③⑤⑥) ----------
+    from .ownership import (RoleSupervisor, ensure_autostart,  # noqa: F401
+                            is_daemon_alive)
     supervisor: "RoleSupervisor | None" = None
     owner_httpd: dict = {"d": None}
     owner_tray: dict = {"t": None}
