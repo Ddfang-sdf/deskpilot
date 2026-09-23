@@ -139,6 +139,7 @@ FREEZE: dict[str, str] = {
     "EV_WHITELIST_DATA_ASSEMBLED": "白名单数据装配",
     "EV_MANAGER_WINDOW_LAUNCH": "管理窗拉起",
     "EV_NAME_CACHE_WARMED": "名称缓存暖机",
+    "EV_STARTUP_STAGE": "启动段",
 }
 
 

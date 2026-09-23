@@ -64,6 +64,9 @@ EV_SECURE_DESKTOP_CHECK_FAILED = "安全桌面检测失效"
 EV_SECURE_DESKTOP_ACTIVATED = "安全桌面激活"
 EV_SECURE_DESKTOP_EXITED = "安全桌面退出"
 
+# ---- 启动装配观测(ISS-0064) ----
+EV_STARTUP_STAGE = "启动段"
+
 # ---- 清理与观测(janitor/ISS-0095) ----
 EV_SCREENSHOT_CLEANUP = "截图清理"
 EV_SCREENSHOT_CLEANUP_ERROR = "截图清理异常"

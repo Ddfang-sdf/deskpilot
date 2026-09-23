@@ -80,7 +80,7 @@ from .audit_events import (
     EV_POLICY_LOCAL_FINGERPRINT, EV_PROXY_SKIPS_HOTKEY,
     EV_MANAGER_WINDOW_LAUNCH, EV_NAME_CACHE_WARMED,
     EV_SCREENSHOT_CLEANUP_ERROR, EV_SERVICE_START,
-    EV_SERVICE_STOP, EV_STDIO_BECOME_OWNER)
+    EV_SERVICE_STOP, EV_STDIO_BECOME_OWNER, EV_STARTUP_STAGE)
 from .audit import AuditLogger
 from .binding import BindingManager
 from .enforcement import Enforcement
@@ -825,13 +825,19 @@ def main() -> int:
     rc, audit = _stage_audit(policy, policy_path)
     if rc is not None:
         return rc
+    # ISS-0064 S7(行为面,批准①):启动逐段审计落点——每段产出有审计
+    # 可查(装配观测口,防 ISS-0051 类整块失明)
+    audit.record_event(EV_STARTUP_STAGE, "策略")
+    audit.record_event(EV_STARTUP_STAGE, "审计")
 
     rc = _stage_daemon_precheck(audit)
     if rc is not None:
         return rc
+    audit.record_event(EV_STARTUP_STAGE, "单例预检")
 
     whitelist_admin = _stage_whitelist(policy, base_policy, policy_path,
                                        local_path, audit)
+    audit.record_event(EV_STARTUP_STAGE, "白名单")
 
     dialogs = _stage_dialogs(policy, audit)
     dialog_service = dialogs["dialog_service"]
@@ -839,11 +845,13 @@ def main() -> int:
     _shared_dir = dialogs["shared_dir"]
     notifier = dialogs["notifier"]
     estop = dialogs["estop"]
+    audit.record_event(EV_STARTUP_STAGE, "急停弹窗")
 
     runtime = _stage_runtime(policy, policy_path, estop, audit,
                              dialog_service, audit_paths, whitelist_admin)
     executor = runtime["executor"]
     ctx = runtime["ctx"]
+    audit.record_event(EV_STARTUP_STAGE, "执行器强制层")
 
     # ---------- ISS-0084 属主权装配(①②③⑤⑥) ----------
     rt = OwnershipRuntime(ctx=ctx, estop=estop, notifier=notifier,
@@ -854,6 +862,7 @@ def main() -> int:
     if rc is not None:
         return rc
     supervisor = rt.supervisor
+    audit.record_event(EV_STARTUP_STAGE, "属主权")
 
     audit.record_event(EV_SERVICE_START, _startup_detail("MCP stdio 就绪"))
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
