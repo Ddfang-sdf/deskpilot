@@ -771,6 +771,47 @@ def _stage_ownership(rt: OwnershipRuntime) -> int | None:
     return None
 
 
+def _run_daemon_loop(ctx, estop, audit, audit_paths, policy,
+                     whitelist_admin, supervisor) -> int:
+    """daemon 常驻收尾段(ISS-0064 S6,纯重构):HTTP 常驻+托盘+主循环;
+    绑定竞态败者干净退出(rc 4);返回进程退出码。"""
+    from .httpd import HttpDaemon
+    daemon = HttpDaemon(ctx, estop=estop,
+                        idle_timeout_s=policy.idle_timeout_minutes * 60,
+                        whitelist_admin=whitelist_admin)
+    try:
+        daemon.start()
+    except RuntimeError as e:
+        # ISS-0046 A:预检→绑定竞态的败者干净退出(不抛栈、不僵尸)
+        audit.record_event(EV_DAEMON_SINGLETON_EXIT, f"端口绑定失败: {e}")
+        print(f"daemon 启动退出: {e}", file=sys.stderr)
+        return 4
+    audit.record_event(EV_SERVICE_START, _startup_detail(
+        f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}"))
+    print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
+          file=sys.stderr)
+    # ISS-0012 E1：系统托盘图标（白名单管理可视化入口；托盘即在跑;
+    # ISS-0084 ②:托盘随属主——daemon 属主形态此处,stdio 属主见
+    # OwnershipRuntime.become_owner)
+    from .tray import TrayIcon
+    base_url = f"http://127.0.0.1:{daemon.port}"
+
+    tray = TrayIcon(on_manage=_open_manager_for(
+        daemon.port, audit=audit,
+        stderr_log=audit_paths.logs / "manager-window.log"))
+    tray.start()
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        tray.stop()
+        daemon.stop()
+        if supervisor is not None:
+            supervisor.stop()
+        audit.record_event(EV_SERVICE_STOP, "常驻服务停止")
+        return 0
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
@@ -817,42 +858,8 @@ def main() -> int:
     audit.record_event(EV_SERVICE_START, _startup_detail("MCP stdio 就绪"))
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
     if "--daemon" in sys.argv:
-        # 常驻形态（ISS-0001）：内部 HTTP 服务，状态跨调用保持
-        from .httpd import HttpDaemon
-        daemon = HttpDaemon(ctx, estop=estop,
-                            idle_timeout_s=policy.idle_timeout_minutes * 60,
-                            whitelist_admin=whitelist_admin)
-        try:
-            daemon.start()
-        except RuntimeError as e:
-            # ISS-0046 A:预检→绑定竞态的败者干净退出(不抛栈、不僵尸)
-            audit.record_event(EV_DAEMON_SINGLETON_EXIT, f"端口绑定失败: {e}")
-            print(f"daemon 启动退出: {e}", file=sys.stderr)
-            return 4
-        audit.record_event(EV_SERVICE_START, _startup_detail(
-            f"常驻 HTTP 服务 http://127.0.0.1:{daemon.port}"))
-        print(f"DeskPilot 常驻服务已启动: http://127.0.0.1:{daemon.port}",
-              file=sys.stderr)
-        # ISS-0012 E1：系统托盘图标（白名单管理可视化入口；托盘即在跑;
-        # ISS-0084 ②:托盘随属主——daemon 属主形态此处,stdio 属主见
-        # _become_owner)
-        from .tray import TrayIcon
-        base_url = f"http://127.0.0.1:{daemon.port}"
-
-        tray = TrayIcon(on_manage=_open_manager_for(
-            daemon.port, audit=audit,
-            stderr_log=audit_paths.logs / "manager-window.log"))
-        tray.start()
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            tray.stop()
-            daemon.stop()
-            if supervisor is not None:
-                supervisor.stop()
-            audit.record_event(EV_SERVICE_STOP, "常驻服务停止")
-            return 0
+        return _run_daemon_loop(ctx, estop, audit, audit_paths, policy,
+                                whitelist_admin, supervisor)
     serve(ctx)                                   # 阻塞于 stdio
     audit.record_event(EV_SERVICE_STOP, "stdio 关闭")
     return 0
