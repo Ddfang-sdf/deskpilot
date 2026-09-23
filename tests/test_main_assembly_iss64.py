@@ -41,6 +41,40 @@ def _main_fn(tree: ast.Module) -> ast.FunctionDef:
     raise AssertionError("main() 函数不存在")
 
 
+class TestStartupStageAudit:
+    """S7(行为面,本单唯一,先红后绿):启动逐段审计落点(批准①)。
+
+    场景:启动装配逐段留痕——每段产出有审计可查(问题单「方向」原意,
+    ISS-0051 潜伏数周的直接药方:整块装配无段间观测口)。
+    前提:临时策略目录+全替身装配(同 test_freezesingle_iss46
+    ._main_stubs 模式:探活 False+FakeDaemon 绑定失败路径 rc 4)。
+    步骤:main()。
+    预期:审计 JSONL 含「启动段」事件且顺序固定=策略→审计→单例预检→
+    白名单→急停弹窗→执行器强制层→属主权(七段,收尾两形态各有
+    「服务启动」既有事件承托,不再重复落点)。
+    断言:read_audit 事件序列直出(event/detail 字段直读)。
+    红态:现状无「启动段」事件(序列空)。
+    """
+
+    def test_s7_stage_events_in_fixed_order(self, tmp_path, monkeypatch):
+        import sys
+
+        from .conftest import read_audit
+        from .test_freezesingle_iss46 import _main_stubs
+
+        monkeypatch.setattr(sys, "argv", ["deskpilot", "--daemon"])
+        m, _rec = _main_stubs(
+            monkeypatch, tmp_path, probe_online=False,
+            daemon_start_raises=RuntimeError("端口被占"))
+        rc = m.main()
+        assert rc == 4                            # 路径前提(绑定竞态败者)
+        events = read_audit(str(tmp_path / "audit"))
+        stages = [e["detail"] for e in events if e["event"] == "启动段"]
+        assert stages == ["策略", "审计", "单例预检", "白名单", "急停弹窗",
+                          "执行器强制层", "属主权"], \
+            f"启动段事件序列(直读): {stages}"
+
+
 class TestMainAssemblyShape:
     """S0 形态钉:行数只减不增 + 接缝符号存在性。"""
 
