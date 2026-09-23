@@ -538,6 +538,32 @@ def _stage_whitelist(policy, base_policy, policy_path, local_path,
     return whitelist_admin
 
 
+def _stage_dialogs(policy, audit: AuditLogger) -> dict:
+    """急停弹窗子段(ISS-0064 S4a,纯重构):弹窗服务/审计路径/共享目录/
+    冻结通知/急停装配/遗嘱挂钩。返回运行时束 dict。"""
+    from .dialog_service import get_dialog_service
+    dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
+    from .audit_paths import AuditPaths
+    audit_paths = AuditPaths(policy.audit_dir)    # ISS-0010 B：受管目录归队
+    # ISS-0084:属主面文件与急停邮箱锚定 LOCALAPPDATA\DeskPilot(跨形态共享
+    # ——daemon(dist)与 stdio(repo)的审计目录分离,属主面/邮箱若跟随审计
+    # 目录则双世界分裂,v0.2 实证),与各形态自己的审计**日志**目录分离
+    from .ownership import install_last_will
+    _shared_dir = str(Path(os.environ.get("LOCALAPPDATA")
+                           or str(Path.home())) / "DeskPilot")
+    notifier = FreezeNotifier(_shared_dir,
+                              remind_interval=policy.freeze_remind_interval,
+                              dialog_service=dialog_service, audit=audit)
+    estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
+                         on_state_change=notifier.on_state_change)
+    # ISS-0093 §9.1:freeze payload 注入进程内直调回调(模式同构
+    # enroll_notice 的 payload["on_undo"] 先例)
+    notifier.on_reset = estop.dialog_reset
+    install_last_will(audit, "daemon" if "--daemon" in sys.argv else "stdio")
+    return {"dialog_service": dialog_service, "audit_paths": audit_paths,
+            "shared_dir": _shared_dir, "notifier": notifier, "estop": estop}
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
@@ -559,26 +585,12 @@ def main() -> int:
     whitelist_admin = _stage_whitelist(policy, base_policy, policy_path,
                                        local_path, audit)
 
-    from .dialog_service import get_dialog_service
-    dialog_service = get_dialog_service()         # ISS-0008 P6：弹窗线程常驻
-    from .audit_paths import AuditPaths
-    audit_paths = AuditPaths(policy.audit_dir)    # ISS-0010 B：受管目录归队
-    # ISS-0084:属主面文件与急停邮箱锚定 LOCALAPPDATA\DeskPilot(跨形态共享
-    # ——daemon(dist)与 stdio(repo)的审计目录分离,属主面/邮箱若跟随审计
-    # 目录则双世界分裂,v0.2 实证),与各形态自己的审计**日志**目录分离
-    from .ownership import (RoleSupervisor, ensure_autostart,  # noqa: F401
-                            install_last_will, is_daemon_alive)
-    _shared_dir = str(Path(os.environ.get("LOCALAPPDATA")
-                           or str(Path.home())) / "DeskPilot")
-    notifier = FreezeNotifier(_shared_dir,
-                              remind_interval=policy.freeze_remind_interval,
-                              dialog_service=dialog_service, audit=audit)
-    estop = EstopMonitor(policy.corner_hold_ms, time.monotonic, audit,
-                         on_state_change=notifier.on_state_change)
-    # ISS-0093 §9.1:freeze payload 注入进程内直调回调(模式同构
-    # enroll_notice 的 payload["on_undo"] 先例,见 :556-559)
-    notifier.on_reset = estop.dialog_reset
-    install_last_will(audit, "daemon" if "--daemon" in sys.argv else "stdio")
+    dialogs = _stage_dialogs(policy, audit)
+    dialog_service = dialogs["dialog_service"]
+    audit_paths = dialogs["audit_paths"]
+    _shared_dir = dialogs["shared_dir"]
+    notifier = dialogs["notifier"]
+    estop = dialogs["estop"]
 
     probe = DesktopProbe()
     bindings = BindingManager(probe, policy.binding_ttl, time.monotonic)
