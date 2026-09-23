@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from http.server import ThreadingHTTPServer
 from typing import Any
 
 from .audit_events import EV_WHITELIST_DATA_ASSEMBLED
@@ -25,6 +27,21 @@ from .models import (RETRY_AFTER_MS, RETRY_MAX, TOOL_BUDGET_OVERRIDES,
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9420
 VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
+
+
+class _DaemonHTTPServer(ThreadingHTTPServer):
+    """ISS-0108:Windows 下监听 socket 独占绑定——SO_EXCLUSIVEADDRUSE
+    (server_bind 内的 bind 之前设置),并清掉 HTTPServer 默认的
+    allow_reuse_address=1(SO_REUSEADDR):否则第三方进程可以
+    SO_REUSEADDR 同址双绑 9420(会话内实证,双属主/影子服务潜伏路径)。
+    非 Windows 平台保持默认语义不动。"""
+
+    def server_bind(self):
+        if sys.platform == "win32":
+            self.allow_reuse_address = 0    # 先清 REUSE(与独占互斥)
+            self.socket.setsockopt(socket.SOL_SOCKET,
+                                   socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 def resolve_budget(tool: str, level: str, policy) -> float:
@@ -106,16 +123,14 @@ class HttpDaemon:
         return self._last_activity
 
     def start(self) -> None:
-        from http.server import ThreadingHTTPServer
-
         from .tools import call_tool
 
         self._write_lock = threading.Lock()       # ISS-0008 P1：写路径互斥
         self._inflight_writes = 0                 # ISS-0008 P8：写中计数（豁免用）
         handler_cls = self._make_handler()
         try:
-            self._httpd = ThreadingHTTPServer((self._host, self._port),
-                                              handler_cls)
+            self._httpd = _DaemonHTTPServer((self._host, self._port),
+                                            handler_cls)
         except OSError as e:
             raise RuntimeError(
                 f"常驻服务端口 {self._host}:{self._port} 已被占用"
