@@ -220,6 +220,17 @@ def read_audit(audit_dir: str) -> list[dict]:
 # ---------- fixtures ----------
 
 @pytest.fixture
+def pin_zh_locale(monkeypatch):
+    """ISS-0111:中文文案钉显式钉 zh-CN 环境。
+
+    这批钉断言的是中文语义面(REQ-007 中文路径);CI 跑机 en-US 下
+    文案走英文会整族转红——环境经 DESKPILOT_LOCALE 强制开关固定
+    (i18n._detect_locale 每次取词先读 env 覆盖通道,无需重载目录)。
+    """
+    monkeypatch.setenv("DESKPILOT_LOCALE", "zh-CN")
+
+
+@pytest.fixture
 def clock() -> FakeClock:
     return FakeClock()
 

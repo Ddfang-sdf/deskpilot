@@ -6,11 +6,22 @@
 
 from __future__ import annotations
 
+
+from deskpilot.audit_events import (
+    EV_APPROVAL_SHOT_FAILED)
+
+import pytest
+
 from deskpilot.models import OperationRequest
 
 
 def _describe(enforcement, tool, params, binding=None):
     return enforcement._describe(OperationRequest(tool, params, None), binding)
+
+
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
 
 
 class TestContentHeadline:
@@ -162,4 +173,4 @@ class TestCaptureReverseLookup:
         day = time.strftime("%Y%m%d")
         log = tmp_path / "audit" / "logs" / f"audit-{day}.jsonl"
         text = log.read_text(encoding="utf-8") if log.exists() else ""
-        assert "审批取图失败" in text
+        assert EV_APPROVAL_SHOT_FAILED in text

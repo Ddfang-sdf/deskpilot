@@ -7,6 +7,9 @@ policy.migrate_whitelist / main.local_policy_sha256_audit。
 
 from __future__ import annotations
 
+from deskpilot.audit_events import (
+    EV_POLICY_LOCAL_FINGERPRINT,
+    EV_POLICY_MIGRATED)
 import json
 from pathlib import Path
 
@@ -116,7 +119,7 @@ class TestMigrationAndFingerprint:
         data = yaml.safe_load(Path(local).read_text(encoding="utf-8"))
         assert {"process": "seeyou.exe", "max_level": "L2"} in \
             data["whitelist"]
-        assert ("入白迁移", "seeyou.exe") in audit.events
+        assert (EV_POLICY_MIGRATED, "seeyou.exe") in audit.events
 
     def test_sp06b_no_difference_no_touch(self, tmp_path):
         old = _write(tmp_path / "old.yml", BASE)
@@ -134,7 +137,7 @@ class TestMigrationAndFingerprint:
         audit = AuditLogger(str(tmp_path / "audit"))
         local_policy_sha256_audit(local, audit)
         events = [r["event"] for r in _read_audit(tmp_path / "audit")]
-        assert "用户策略数据指纹" in events          # 双轨事件(持久化直出)
+        assert EV_POLICY_LOCAL_FINGERPRINT in events          # 双轨事件(持久化直出)
 
 
 def _read_audit(audit_dir: Path) -> list[dict]:

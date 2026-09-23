@@ -14,7 +14,8 @@
   步骤=_type_text;预期=恰 1 次粘贴、5 次读回、note 一致;
   断言=计数直出(旧窗口 3 拍必重贴,可区分)。
 - TC-45-02 场景=窗口封顶 20 拍;前提=200k 字符+读回恒不命中;
-  步骤=_type_text;预期=INTERNAL_ERROR、粘贴 2、读回 40;断言=计数直出。
+  步骤=_type_text;预期=TYPE_MISMATCH(ISS-0100 §8 适配,原 INTERNAL_ERROR)、
+  粘贴 2、读回 40;断言=计数直出。
 - TC-45-03 场景=超限校验锁外前置;前提=写锁被测试线程占住不放;
   步骤=_call_with_budget(type_text, 65537 字符);预期=立即 ToolResult
   INVALID_PARAMS(非 _BUDGET_EXCEEDED),耗时 < 1s;断言=返回值+耗时直出。
@@ -28,7 +29,7 @@ import time
 
 import pytest
 
-from deskpilot.errors import INTERNAL_ERROR, INVALID_PARAMS, ExecutorError
+from deskpilot.errors import INVALID_PARAMS, TYPE_MISMATCH, ExecutorError
 
 from .conftest import FIXTURE_HWND  # noqa: F401
 
@@ -66,11 +67,14 @@ class TestReadbackWindowScaling:
         assert r["note"] == "读回校验一致"
 
     def test_tc45_02_window_capped_at_20(self, monkeypatch):
-        """200k 字符:ceil(25) 封顶 20 拍×2 轮=40 读,重贴 2 次后报。"""
+        """200k 字符:ceil(25) 封顶 20 拍×2 轮=40 读,重贴 2 次后报。
+
+        ISS-0100 §8 适配:比对失败泛码 INTERNAL_ERROR → TYPE_MISMATCH
+        (读回校验修真);窗口缩放/重试上限语义不放宽。"""
         ex, pastes, reads = _typed_executor(monkeypatch, [])
         with pytest.raises(ExecutorError) as ei:
             ex._type_text("中" * 200000, 42)
-        assert ei.value.code == INTERNAL_ERROR
+        assert ei.value.code == TYPE_MISMATCH
         assert len(pastes) == 2
         assert len(reads) == 40                  # 20 拍 × 2 轮(直出)
 

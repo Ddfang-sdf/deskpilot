@@ -113,7 +113,9 @@ class DialogService:
             from .freeze_dialog import build_window
             build_window(self._tk_root, payload["audit_dir"],
                          payload["interval"],
-                         target_screen=payload.get("target_screen"))
+                         target_screen=payload.get("target_screen"),
+                         # ISS-0093 §9.1:「立即解冻」进程内直调回调透传
+                         on_reset=payload.get("on_reset"))
         elif kind == "enroll_notice":
             # ISS-0012 E4：入白确认 toast（[撤销] 回调由装配侧注入）
             # ISS-0097:落位一律主屏,不再透传 target_screen

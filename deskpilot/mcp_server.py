@@ -100,11 +100,14 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "screenshot": {
         # ISS-0089 A3 + ISS-0090 #5:降采样/scale/path 语义入描述
         # (受 ISS-0015 长度闸门 ≤200 + ISS-0037 sv06「图像不可见」子串约束)
-        # ISS-0096:屏号语义入描述(0=主屏,余左到右)——AI 不再靠猜
-        "description": "拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=屏号(0=主屏,余左到右)、window=绑定窗口、region=rect(精读/局部,含 coverage)。长边>2000 等比缩:scale=缩放比,图坐标 /scale 还原;path 为全分辨率原图供回读。图像不可见改调 ocr;ocr:true 附文字清单。",
+        # ISS-0096:屏号语义入描述(0=主屏)——AI 不再靠猜
+        # ISS-0102:path 落盘参数语义入描述(194/200;原文见单据 v0.4)
+        "description": "拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=屏号(0=主屏)、window=绑定窗口、region=rect(精读/局部,含 coverage)。path=落盘路径(仅仓库/审计根)。长边>2000 等比缩:图坐标/scale 还原;返回 path 为原图。图像不可见改调 ocr;ocr:true 附文字清单。",
         "required": {"scope": ("enum", ["fullscreen", "screen", "region", "window"])},
         "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",),
-                     "screen": ("int",)},
+                     "screen": ("int",),
+                     # ISS-0102 §3.1(P1 空壳:纯声明;描述改写与透传属 P3)
+                     "path": ("str",)},
         "conditional": {"region": ["rect"], "window": ["window"],
                         "screen": ["screen"]},
     },
@@ -192,6 +195,11 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "activate_window": {
         "description": "把绑定的 Windows 窗口置前台(多数写操作要求窗口在前台;最大化窗口保持最大化不被打回)。token=attach 返回令牌。窗口最大化/移动/缩放等几何变化后,既有截图与坐标即作废,请先重新感知再操作。",
         "required": {"token": ("str",)}, "optional": {}},
+    "set_window_rect": {
+        # ISS-0101:窗口几何摆放原语(P1 空壳=纯声明;138/200 闸门,
+        # 执行链/tools 分派属 P3)
+        "description": "调整绑定的 Windows 窗口位置与尺寸(演示摆位/多窗并排)。attach 绑定后使用。token+rect=[l,t,r,b](虚拟桌面坐标,与 screenshot 同坐标系);最大化/最小化窗先还原再摆;返回新 rect;落点合理性请用 screenshot 自核。",
+        "required": {"token": ("str",), "rect": ("rect",)}, "optional": {}},
     "click_element": {
         # ISS-0091 整改④:拒绝语义入描述(退化矩形/遮挡);受 ISS-0015 描述
         # 长度闸门(≤200)约束,错误码全称由拒绝时的错误消息承载(附自愈指引)
@@ -232,9 +240,12 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "token+text。读取用 get_clipboard(无需绑定)。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "drag": {
-        "description": "在 Windows 桌面拖拽鼠标(起点→终点,虚拟桌面坐标系)。token+start/end(各 [x,y]);button=left/right/middle(默认 left)。起点须在绑定窗内(防误射);终点可为虚拟桌面任意点(移动窗口/跨屏拖拽允许,越出所有屏拒)。",
+        # REQ-004:via 途经点(≤32 可拐弯)+duration_ms(按弧长分配)——
+        # P1 空壳=schema/type_map 声明;validate coords 型与执行链属 P3
+        "description": "在 Windows 桌面拖拽鼠标(虚拟桌面坐标系)。token+start/end(各 [x,y]);via=途经点列表(可选,≤32,可拐弯画折线);duration_ms=总时长(可选,按弧长分配到各段);button=left/right/middle(默认 left)。起点须在绑定窗内(防误射);终点与途经点可为虚拟桌面任意点(越出所有屏拒)。",
         "required": {"token": ("str",), "start": ("coord",), "end": ("coord",)},
-             "optional": {"button": ("enum", ["left", "right", "middle"])}},
+             "optional": {"button": ("enum", ["left", "right", "middle"]),
+                          "via": ("coords",), "duration_ms": ("int",)}},
     # ---- REQ-001 原语层(组合基座,详设 §5.1~5.3)----
     "mouse_down": {
         "description": "在 Windows 桌面按下鼠标指定键不松(原语层,组合基座:down+move+up=按住拖动,左右键可同按)。token+button(left/right/middle)。光标态操作,按前请先激活目标窗口或移动光标就位。安全网:30s 看门狗自动抬/急停强抬/启动清扫。",
@@ -290,6 +301,17 @@ def _check_type(name: str, value: Any, spec: tuple, policy: Policy) -> None:
                        for v in value)):
             raise InvalidParamsError(f"参数 {name} 必须为 {want} 元数值坐标")
         return
+    if typ == "coords":
+        # REQ-004:途经点列表——元素须各为 2 元数值坐标(coord 判定复用)
+        if (not isinstance(value, (list, tuple))
+                or any(not isinstance(p, (list, tuple)) or len(p) != 2
+                       or any(isinstance(v, bool)
+                              or not isinstance(v, (int, float))
+                              for v in p)
+                       for p in value)):
+            raise InvalidParamsError(
+                f"参数 {name} 必须为坐标数组（各元素为 2 元数值坐标）")
+        return
     raise InvalidParamsError(f"参数 {name} 模式声明非法: {typ}")
 
 
@@ -342,7 +364,11 @@ def _input_schema(schema: Mapping[str, Any]) -> dict:
                 "bool": {"type": "boolean"},
                 "any": {}, "enum": {"type": "string"},
                 "coord": {"type": "array", "items": {"type": "number"}},
-                "rect": {"type": "array", "items": {"type": "number"}}}
+                "rect": {"type": "array", "items": {"type": "number"}},
+                # REQ-004:途经点列表(坐标数组;校验分支随 P3)
+                "coords": {"type": "array",
+                           "items": {"type": "array",
+                                     "items": {"type": "number"}}}}
     props: dict[str, Any] = {}
     for group in ("required", "optional"):
         for name, spec in schema[group].items():

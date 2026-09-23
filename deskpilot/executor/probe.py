@@ -18,6 +18,21 @@ _SW_SHOWMAXIMIZED = 3                     # ISS-0041:最大化窗激活且保持
 _SW_SHOW = 5                              # ISS-0041:普通窗按当前尺寸显示(不恢复)
 
 
+def set_window_rect(hwnd: int, left: int, top: int,
+                    width: int, height: int) -> bool:
+    """ISS-0101 §4.2：窗口几何摆放 OS 接缝（模块级 user32 单层,
+    测试 monkeypatch 替身,同 iss41 先例）。
+
+    动作序：ShowWindow(SW_RESTORE) 恒定先发（最大化/最小化先还原再摆
+    防打回;与 DesktopProbe.activate 的 IsZoomed→SW_SHOWMAXIMIZED 命令
+    选择语义相反,不复用）→ MoveWindow（坐标=虚拟桌面物理像素,
+    PMv2 零换算）。返回 MoveWindow 成功布尔（False=死窗,调用方判
+    WINDOW_GONE）。
+    """
+    user32.ShowWindow(hwnd, _SW_RESTORE)         # 恒定先发
+    return bool(user32.MoveWindow(hwnd, left, top, width, height, True))
+
+
 def _process_name_of(pid: int) -> str:
     handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:

@@ -10,6 +10,8 @@ whitelist_window._GraphicButton/fade_in/focus_existing_or_exit/build_window/main
 
 from __future__ import annotations
 
+from .envguard import env_skip
+
 import sys
 
 import pytest
@@ -54,7 +56,7 @@ class TestResolveRegistry:
             pytest.fail("源函数未实现(P1 红阶段预期)")
         path = appnames._from_start_menu_lnk("weixin.exe")
         if not path:
-            pytest.skip("本机无微信快捷方式(环境守卫)")
+            env_skip("本机无微信快捷方式")
         assert "weixin.exe" in path.lower()
 
     def test_resolve03_uninstall_icon(self):
@@ -63,7 +65,7 @@ class TestResolveRegistry:
             pytest.fail("源函数未实现(P1 红阶段预期)")
         path = appnames._from_uninstall_icon("seeyou.exe")
         if not path:
-            pytest.skip("本机无西柚 Uninstall 项(环境守卫)")
+            env_skip("本机无西柚 Uninstall 项")
         assert "seeyou.exe" in path.lower()
 
     def test_resolve05_description_chain(self):
@@ -73,7 +75,7 @@ class TestResolveRegistry:
         无微信则回退进程名——按同文件 resolve02/03 惯例 skip)。"""
         d = appnames.app_description("weixin.exe")
         if "weixin.exe" == d:
-            pytest.skip("本机无微信描述源(环境守卫)")
+            env_skip("本机无微信描述源")
         assert d and d != "weixin.exe"
 
     def test_resolve06_honest_fallback(self):
@@ -101,48 +103,14 @@ class TestFadeIn:
     断言:attributes 记录与 after 调度(替身直出)。"""
 
     def _make(self, monkeypatch):
+        """ISS-0059 步骤6:本地 W 替身收编 tests/faketk.install;
+        rec[...] 观测形保持(alphas/afters 活引用,断言零改动)。"""
         import deskpilot.whitelist_window as ww
-        rec = {"alphas": [], "afters": []}
-
-        class W:
-            def __init__(self, *a, **k): pass
-            def pack(self, *a, **k): pass
-            def bind(self, *a, **k): pass
-            def bind_all(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def title(self, *a): pass
-            def geometry(self, *a): pass
-            def minsize(self, *a): pass
-            def create_window(self, *a, **k): return 1
-            def itemconfig(self, *a, **k): pass
-            def bbox(self, *a, **k): return (0, 0, 0, 0)
-            def yview(self, *a, **k): pass
-            def yview_scroll(self, *a, **k): pass
-            def winfo_children(self): return []
-            def destroy(self): pass
-            def pack_forget(self): pass
-            def get(self): return ""
-            def create_line(self, *a, **k): pass
-            def create_rectangle(self, *a, **k): pass
-            def create_oval(self, *a, **k): pass
-            def delete(self, *a, **k): pass
-            def after(self, ms, fn=None):
-                rec["afters"].append(ms)
-                return "a1"
-            def attributes(self, flag, val=None):
-                if flag == "-alpha":
-                    rec["alphas"].append(val)
-
-        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Scrollbar", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Entry", lambda *a, **k: W(*a, **k))
+        from .faketk import install
+        _rec = install(monkeypatch, ww.tk)
         ww.build_window(object(), {"static": {}, "session": {}},
                         on_remove=lambda p: None, on_clear_session=lambda: None)
+        rec = {"alphas": _rec.alphas, "afters": _rec.after_ms}
         return rec
 
     def test_anim01_fadein_scheduled(self, monkeypatch):
@@ -151,12 +119,14 @@ class TestFadeIn:
         assert any(ms <= 20 for ms in rec["afters"])       # ≤20ms 步进(直出)
 
     def test_anim02_final_alpha_one(self, monkeypatch):
+        """ISS-0059 步骤6:内联 type("W") 替身收编 faketk.FakeWidget
+        (alphas 记录归 recorder;断言零改动)。"""
         from deskpilot.whitelist_window import fade_in
-        alphas = []
-        win = type("W", (), {"attributes": lambda self, f, v:
-                             alphas.append(v)})()
+        from .faketk import FakeWidget, _Recorder
+        rec = _Recorder((2560, 1440), 100)
+        win = FakeWidget(rec)
         frames = list(fade_in(win, total_ms=60, step_ms=20))
-        assert alphas[-1] == 1.0                            # 终态 1.0(直出)
+        assert rec.alphas[-1] == 1.0                        # 终态 1.0(直出)
 
 
 # ---------- TC-SA shell 注册源中文名（2026-09-01 评审通过） ----------
@@ -241,17 +211,17 @@ class TestSingleton:
         rec = {"tk": 0, "focus": []}
         monkeypatch.setattr(ww, "focus_existing_or_exit",
                             lambda title: rec["focus"].append(title) or exists)
-        monkeypatch.setattr(ww.tk, "Tk",
-                            lambda *a, **k: rec.__setitem__("tk", rec["tk"] + 1)
-                            or type("T", (), {"withdraw": lambda s: None,
-                                              "mainloop": lambda s: None,
-                                              "quit": lambda s: None})())
+        # ISS-0109:Tk 根窗壳收编 tests/faketk.install;Tk 创建计数经
+        # of_class("Tk") 观测口回填(断言行零改动)
+        from .faketk import FakeWidget, _Recorder, install
+        tk_rec = install(monkeypatch, ww.tk)
         # 建窗本体打桩:本用例只验单例分支,不验窗口装配
         monkeypatch.setattr(ww, "build_window",
-                            lambda *a, **k: type("W", (), {
-                                "protocol": lambda s, *a: None})())
+                            lambda *a, **k: FakeWidget(
+                                _Recorder((2560, 1440), 100)))
         monkeypatch.setattr(sys, "argv", ["x", "http://127.0.0.1:1"])
         ww.main()
+        rec["tk"] = len(tk_rec.of_class("Tk"))
         return rec
 
     def test_single01_existing_focuses_and_exits(self, monkeypatch):

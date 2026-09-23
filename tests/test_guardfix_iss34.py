@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from deskpilot.audit_events import (
+    EV_POLICY_LOCAL_EXTERNALLY_MODIFIED)
 import time
 from pathlib import Path
 
@@ -25,7 +27,7 @@ def _audit_events(d: Path) -> str:
 class TestWatcherInternalWrite:
     """TC-GD-01/02:内部写入刷新后零假警;真外部改动仍报警(事件直出)。"""
 
-    def _make_watch(self, tmp_path, audit, event_name="用户策略数据被外部修改"):
+    def _make_watch(self, tmp_path, audit, event_name=EV_POLICY_LOCAL_EXTERNALLY_MODIFIED):
         from deskpilot.main import _PolicyWatchThread
         target = tmp_path / "policy.local.yml"
         target.write_text("whitelist: []\n", encoding="utf-8")
@@ -54,7 +56,7 @@ class TestWatcherInternalWrite:
         target.write_text("whitelist:\n  - { process: evil.exe, max_level: L2 }\n",
                           encoding="utf-8")
         t.check_once()
-        assert "用户策略数据被外部修改" in _audit_events(tmp_path / "audit")
+        assert EV_POLICY_LOCAL_EXTERNALLY_MODIFIED in _audit_events(tmp_path / "audit")
 
 
 class TestOnWrittenCallback:

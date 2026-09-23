@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from http.server import ThreadingHTTPServer
 from typing import Any
 
+from .audit_events import EV_WHITELIST_DATA_ASSEMBLED
 from . import errors
 from .models import (RETRY_AFTER_MS, RETRY_MAX, TOOL_BUDGET_OVERRIDES,
                      TOOL_TIME_BUDGETS)
@@ -24,6 +27,21 @@ from .models import (RETRY_AFTER_MS, RETRY_MAX, TOOL_BUDGET_OVERRIDES,
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9420
 VERSION_FILE = "daemon.version"          # ISS-0009 §6：daemon 版本号文件
+
+
+class _DaemonHTTPServer(ThreadingHTTPServer):
+    """ISS-0108:Windows 下监听 socket 独占绑定——SO_EXCLUSIVEADDRUSE
+    (server_bind 内的 bind 之前设置),并清掉 HTTPServer 默认的
+    allow_reuse_address=1(SO_REUSEADDR):否则第三方进程可以
+    SO_REUSEADDR 同址双绑 9420(会话内实证,双属主/影子服务潜伏路径)。
+    非 Windows 平台保持默认语义不动。"""
+
+    def server_bind(self):
+        if sys.platform == "win32":
+            self.allow_reuse_address = 0    # 先清 REUSE(与独占互斥)
+            self.socket.setsockopt(socket.SOL_SOCKET,
+                                   socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 def resolve_budget(tool: str, level: str, policy) -> float:
@@ -88,7 +106,7 @@ class HttpDaemon:
     def __init__(self, ctx, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
                  estop=None, idle_timeout_s: float = 0.0, whitelist_admin=None):
         self._ctx = ctx
-        self._estop = estop            # 急停复位端点用（ISS-0002，段3 接线）
+        self._estop = estop            # idle 豁免用（ISS-0093:复位端点已删）
         self._whitelist_admin = whitelist_admin   # 白名单管理端点用（ISS-0012 E2）
         self._host = host
         self._port = port
@@ -105,16 +123,14 @@ class HttpDaemon:
         return self._last_activity
 
     def start(self) -> None:
-        from http.server import ThreadingHTTPServer
-
         from .tools import call_tool
 
         self._write_lock = threading.Lock()       # ISS-0008 P1：写路径互斥
         self._inflight_writes = 0                 # ISS-0008 P8：写中计数（豁免用）
         handler_cls = self._make_handler()
         try:
-            self._httpd = ThreadingHTTPServer((self._host, self._port),
-                                              handler_cls)
+            self._httpd = _DaemonHTTPServer((self._host, self._port),
+                                            handler_cls)
         except OSError as e:
             raise RuntimeError(
                 f"常驻服务端口 {self._host}:{self._port} 已被占用"
@@ -257,32 +273,43 @@ class HttpDaemon:
                     # ISS-0012 E2：白名单管理窗口数据源（仅 127.0.0.1）；
                     # 附带 display/desc（daemon 内缓存解析，管理窗口零解析提速）
                     from .appnames import app_description, app_display_name
+                    _t0 = time.monotonic()
                     data = {}
+                    slow: list[str] = []
+                    n = 0
                     for group, items in daemon._whitelist_admin.entries().items():
-                        data[group] = [
-                            {"process": p, "level": lv,
-                             "display": app_display_name(p),
-                             "desc": app_description(p)}
-                            for p, lv in items.items()]
+                        data[group] = []
+                        for p, lv in items.items():
+                            n += 1
+                            _e0 = time.monotonic()
+                            disp = app_display_name(p)
+                            desc = app_description(p)
+                            _ems = (time.monotonic() - _e0) * 1000
+                            if _ems > 200:      # ISS-0095 O3:慢条目留名
+                                slow.append(f"{p}@{_ems:.0f}ms")
+                            data[group].append(
+                                {"process": p, "level": lv,
+                                 "display": disp, "desc": desc})
                     self._send(200, {"ok": True, "error_code": "",
                                      "message": "ok", "data": data})
+                    # ISS-0095 O3:装配计时审计(埋点失败不阻断响应)
+                    _audit = getattr(daemon._ctx, "audit", None)
+                    if _audit is not None:
+                        try:
+                            _dur = (time.monotonic() - _t0) * 1000
+                            _audit.record_event(
+                                EV_WHITELIST_DATA_ASSEMBLED,
+                                f"dur_ms={_dur:.0f} n={n}"
+                                + (f" slow={slow}" if slow else ""))
+                        except Exception:                # noqa: BLE001
+                            pass
                 else:
                     self._send(404, {"ok": False, "error_code": "NOT_FOUND",
                                      "message": "端点不存在"})
 
             def do_POST(self):
-                estop = daemon._estop
-                if self.path == "/estop/reset" and estop is not None:
-                    # 本地人类复位通道（详细设计 §11.8，ISS-0002）：
-                    # 无论是否改变状态都返回 200 + was_frozen；审计由 estop 侧记录
-                    was = estop.is_frozen()
-                    estop.cli_reset()
-                    daemon._touch()
-                    self._send(200, {"ok": True, "error_code": "",
-                                     "message": ("急停已复位" if was
-                                                 else "复位请求已记录（当前未冻结）"),
-                                     "data": {"was_frozen": was, "frozen": False}})
-                    return
+                # ISS-0093 §9.3：急停复位端点已收口删除(localhost 接口
+                # AI 可 curl 自行解冻);estop 注入保留(idle 豁免在用)。
                 admin = daemon._whitelist_admin
                 if admin is not None and self.path in (
                         "/whitelist/remove", "/whitelist/clear_session"):

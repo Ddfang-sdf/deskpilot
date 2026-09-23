@@ -20,6 +20,8 @@ from deskpilot import errors
 from deskpilot.executor.textclick import resolve_click
 
 from .test_uia_com_iss16 import _close_all_and_wait
+from .envguard import (dismiss_xaml_save_prompt, env_skip,
+                           notepad_mains)
 
 RECT = (1000, 1000, 1800, 1600)          # 绑定窗 rect 800×600
 ITEMS = [{"text": "保存文档", "position": [100, 50, 160, 80]}]
@@ -84,21 +86,20 @@ class TestClickTextIntegration:
     """TC-CT-07/08:真 daemon+真记事本。断言:HTTP 响应体(外表面直出)。"""
 
     def _spawn_notepad(self):
+        """ISS-0062 步骤 A:内联窗口枚举收敛 envguard.notepad_mains(纯重构)。"""
         import subprocess
-        from deskpilot.executor import DesktopProbe
 
-        def mains():
-            return [w for w in DesktopProbe().find_windows(
-                process="notepad.exe", include_hidden=True)
-                if w.get("title")
-                and (w["rect"][2] - w["rect"][0]) > 100
-                and (w["rect"][3] - w["rect"][1]) > 100]
+        from .envguard import notepad_mains
 
-        before = {w["hwnd"] for w in mains()}
+        before = {w["hwnd"] for w in notepad_mains()}
         proc = subprocess.Popen(["notepad.exe"])
         time.sleep(3.0)
-        new = [w for w in mains() if w["hwnd"] not in before]
-        assert new, "记事本窗口未出现"
+        new = [w for w in notepad_mains() if w["hwnd"] not in before]
+        if not new:
+            # ISS-0062 步骤 C:记事本主窗口未出现 → 显式环境守卫
+            # (原 assert 裸红;ct07/ct08/fuzz04 共用本 helper)
+            proc.terminate()
+            env_skip("可拉起的记事本窗口")
         return proc, new
 
     def _make_daemon(self, policy, audit_log, tmp_path, ocr_factory=None):
@@ -165,9 +166,29 @@ class TestClickTextIntegration:
                 d.stop()
         finally:
             proc.terminate()
+            # ISS-0062 步骤 C:Store 未保存 '*' 本机不消退,XAML 保存提示
+            # 会阻塞关窗——先按 ISS-0104 二次裁决形态消除(不保存),
+            # 再交 _close_all_and_wait 判定(打字类测试零残留卫生)
+            dismiss_xaml_save_prompt([w["hwnd"] for w in new])
             closed = _close_all_and_wait([w["hwnd"] for w in new])
         # 卫生断言(泄漏即红):打字类测试同样零残留
         assert closed is True, "测试残留记事本窗口(未保存关窗失败)"
+
+@pytest.mark.integration
+class TestClickTextAssembly(TestClickTextIntegration):
+    """TC-CT-08(assembly,SDD §3.2 标签判定降级正名,ISS-0062 步骤 C)。
+
+    真实部件清单:真 HttpDaemon(临时端口)/真记事本/真 RapidOCR/
+    真 UIA/真屏幕实拍/真键鼠注入(type_text 剪贴板桥)。
+    替身清单:Executor._check_occlusion 桩(遮挡判定——非本用例被测对象,
+    由 click 系专测+实盘覆盖;CI 无前台桌面 runner 上 WindowFromPoint
+    语义失真,留着必假红)。
+    断层面:遮挡校验支路(唯一被桩点);被测链(attach→key→type_text→
+    click_text OCR 定位→落点)全真。
+    integration 标记保留理由:调度用途——真桌面副作用(真窗口/真 OCR/
+    分钟级),默认层零副作用纪律要求其只在 --run-integration 运行;
+    标签正名=类名 Assembly 如实声明含替身接缝。
+    """
 
     def test_ct08_real_ocr_click(self, policy, audit_log, tmp_path, monkeypatch):
         """TC-CT-08:真 OCR 点击独特字符串 → ok 且落点在窗口 rect 内。
@@ -175,6 +196,8 @@ class TestClickTextIntegration:
         CI 实证:无前台桌面的 runner 上 SetForegroundWindow 受限,遮挡
         校验(真实屏幕 WindowFromPoint)必挂——遮挡语义非本用例被测对象
         (由 click 系专测+实盘覆盖),打桩隔离,聚焦真链:实拍+OCR+换算。
+        ISS-0062 步骤 C:补「可前置记事本窗口」显式守卫(前台锁受限时
+        从裸红转明示 skip)。
         """
         from deskpilot.executor.core import Executor
         monkeypatch.setattr(Executor, "_check_occlusion",
@@ -200,10 +223,14 @@ class TestClickTextIntegration:
                 # 行(恢复文档可能把历次串拼成巨行,吞并 OCR 条目)
                 k = self._call(d.port, "key",
                                {"token": token, "key": "ctrl+end"})
+                if not k["ok"] and "无法前置" in k.get("message", ""):
+                    env_skip("可前置的记事本窗口(前台锁受限)")
                 assert k["ok"] is True, k.get("message")
                 magic = f"dp测试串{int(time.time()) % 100000}"
                 t = self._call(d.port, "type_text",
                                {"token": token, "text": "\r\n" + magic})
+                if not t["ok"] and "无法前置" in t.get("message", ""):
+                    env_skip("可前置的记事本窗口(前台锁受限)")
                 assert t["ok"] is True, t.get("message")
                 time.sleep(0.5)
                 c = self._call(d.port, "click_text",
@@ -217,6 +244,10 @@ class TestClickTextIntegration:
                 d.stop()
         finally:
             proc.terminate()
+            # ISS-0062 步骤 C:Store 未保存 '*' 本机不消退,XAML 保存提示
+            # 会阻塞关窗——先按 ISS-0104 二次裁决形态消除(不保存),
+            # 再交 _close_all_and_wait 判定(打字类测试零残留卫生)
+            dismiss_xaml_save_prompt([w["hwnd"] for w in new])
             closed = _close_all_and_wait([w["hwnd"] for w in new])
         # 卫生断言(泄漏即红):打字类测试同样零残留
         assert closed is True, "测试残留记事本窗口(未保存关窗失败)"

@@ -1,15 +1,17 @@
-"""冻结通知 owner 侧（详细设计 §11.6，ISS-0004 / ISS-0006 / ISS-0092）。
+"""冻结通知 owner 侧（详细设计 §11.6，ISS-0004 / ISS-0006 / ISS-0092 / ISS-0093）。
 
 estop 持有进程（daemon / 本地直跑）装配本类：
 - on_state_change：seq 共享单调自增，随 estop 置位/复位原子重写状态文件
   （ISS-0092 ②：经 _write_shared_state 有限重试，终败审计不上抛）；
-  置位时拉起弹窗（不做存活猜测，单例由子进程命名互斥体兜底）；
-- check_reset_request：由甩角轮询线程 50ms tick 兼任调用，按 ISS-0006 §6
-  协议（先验后删；ISS-0092 ③：复位成功才删，失败保留下轮重试）消费弹窗的
-  "立即解冻"请求；
-- sync_local_with_shared_state：本地 frozen ∧ 共享 frozen=false 时本地复位
-  （解冻全局生效）；ISS-0092 ④反向对账：本地未冻 ∧ 共享 frozen=true →
-  以本地内存态为权威修复共享 frozen=false（禁止反向灌回=绕过人类解冻通道）。
+  置位时拉起弹窗（不做存活猜测，单例由子进程命名互斥体兜底），并持有
+  本轮子进程 Popen 句柄（只存属主内存,每轮新起=一次性）；
+- check_dialog_exit：由甩角轮询线程 50ms tick 兼任调用（ISS-0093 §9.2
+  退出码通道——子进程点「立即解冻」= 关窗 + 退出码 EXIT_RESET(73)；
+  零文件、零 socket、零命名管道,req 文件邮箱已整体废止）；
+- sync_local_with_shared_state：单向对账（ISS-0093 §9.4 v0.5）——本地
+  内存态恒为权威：shared frozen=false ∧ 本地冻结 → 修共享回 true,
+  **绝不本地复位**（E7 旁路关闭,任何进程写 state 文件不再能解冻）；
+  本地未冻 ∧ shared frozen=true → 修共享为 false（ISS-0092 ④ fg04 语义）。
 """
 
 from __future__ import annotations
@@ -23,10 +25,12 @@ from datetime import datetime
 from pathlib import Path
 
 from .policy import DEFAULT_FREEZE_REMIND_INTERVAL
+from .audit_events import (EV_SHARED_STATE_RECONCILED,
+                           EV_SHARED_STATE_WRITE_FAILED)
 
 STATE_FILE = "estop-state.json"
-REQ_FILE = "estop-reset.req"
-REQ_PREFIX = "estop-reset-"       # ISS-0006 §6：req 文件名 <REQ_PREFIX><seq>.req
+# ISS-0093:req 文件邮箱协议(命名常量+消费方法)整体废止——文件的存在
+# 不构成人类意愿的证明,持 MCP 的 AI 可自行复现解冻。
 # ISS-0061:弹窗心跳锁两常量已删(孤儿死代码)——弹窗单例自 ISS-0046 B
 # 起收口到命名互斥体,锁文件机制整体退役,勿再引入
 
@@ -36,13 +40,18 @@ class FreezeNotifier:
 
     def __init__(self, audit_dir: str, clock=time.monotonic, spawn=None,
                  remind_interval: float = DEFAULT_FREEZE_REMIND_INTERVAL,
-                 dialog_service=None, audit=None):
+                 dialog_service=None, audit=None, on_reset=None):
         self._dir = Path(audit_dir)
         self._clock = clock
         self._spawn = spawn or self._default_spawn
         self._remind = remind_interval
         self._dialog_service = dialog_service   # ISS-0008 P6：线程弹窗（可选）
         self._audit = audit          # ISS-0092 ⑤：写失败/对账修复审计（可选）
+        # ISS-0093 §9.1：进程内形态「立即解冻」直调回调（装配侧注入
+        # estop.dialog_reset）；§9.2：本轮子进程 Popen 句柄（退出码通道,
+        # 只存属主内存,每轮冻结新起新句柄=一次性）
+        self.on_reset = on_reset
+        self._dialog_proc = None
         self._seq = 0
         self._state_cache: dict | None = None    # ISS-0008 P7：读缓存（仅读时更新）
         self._state_mtime: float | None = None
@@ -71,80 +80,64 @@ class FreezeNotifier:
                  "ts": datetime.now().astimezone().isoformat()}
         self._write_shared_state(state)
         if frozen:
-            self._spawn(str(self._dir))
+            # ISS-0093 §9.2：持有本轮 Popen 句柄(一次性;spawn 替身/线程
+            # 弹窗形态返回 None,退出码消费自然空转)
+            self._dialog_proc = self._spawn(str(self._dir))
 
-    def check_reset_request(self, estop) -> None:
-        """50ms tick：消费弹窗解冻请求（ISS-0006 §6 协议，先验后删）。
+    def check_dialog_exit(self, estop) -> None:
+        """50ms tick：子进程弹窗退出码消费（ISS-0093 §9.2，定案通道）。
 
-        设共享 seq 为 S、req 序号为 N：
-        N<S → 删除（陈旧清理）；N=S ∧ estop 已冻结 → 复位成功才删除
-        （ISS-0092 ③：先复位后删——复位失败 req 保留下轮重试，_reset
-        未冻结时 no-op 幂等，estop.py 复位语义；失败审计「解冻请求复位
-        失败」，异常不上抛：调用线程不许死）；
-        N=S ∧ estop 未冻结 ∧ 共享 frozen=false → 删除（请求作废）；
-        N=S ∧ estop 未冻结 ∧ 共享 frozen=true → 保留（留给冻结中的 owner）；
-        N>S → 保留（异常时序，不得删除）。
+        poll 本轮 Popen 句柄：退出码==EXIT_RESET(73)=人类点击「立即解冻」
+        → estop.dialog_reset()；其余退出码（关窗/snooze/被杀）与 None
+        （仍在运行）不具解冻语义，维持既有重提醒逻辑。句柄一次性：
+        进程终态即消费完毕释放，等下轮冻结边沿新起。
+        """
+        proc = self._dialog_proc
+        if proc is None:
+            return
+        from .freeze_dialog import EXIT_RESET
+        code = proc.poll()
+        if code is None:
+            return                              # 子进程仍在运行
+        self._dialog_proc = None                # 一次性：终态即消费
+        if code == EXIT_RESET:
+            estop.dialog_reset()
+
+    def sync_local_with_shared_state(self, estop) -> bool:
+        """共享状态单向对账（ISS-0093 §9.4 v0.5）：本地内存态恒为权威，
+        两个方向都只修共享、绝不改本地。
+
+        本地冻结 ∧ 共享 frozen=false → 修共享回 true（E7 旁路关闭：
+        任何进程直写 state 文件 false 不再能解冻；「复位-共享同步」
+        事件与 shared_sync_reset 已退役，绝不本地复位）；
+        本地未冻 ∧ 共享 frozen=true → 修共享为 false（ISS-0092 ④ fg04
+        语义沿用：本地权威防假象）。
+        修复成功返回 True；写失败返回 False 下轮再试；无对账需求 False。
         """
         shared = self._read_shared_state()
         if shared is None:
-            return
-        s = int(shared.get("seq", 0))
+            return False
+        local = estop.is_frozen()
         shared_frozen = bool(shared.get("frozen"))
-        for req in sorted(self._dir.glob(f"{REQ_PREFIX}*.req")):
-            try:
-                n = int(req.stem.removeprefix(REQ_PREFIX))
-            except ValueError:
-                req.unlink(missing_ok=True)          # 非协议命名，按垃圾清理
-                continue
-            if n < s:
-                req.unlink(missing_ok=True)
-            elif n == s:
-                if estop.is_frozen():
-                    try:
-                        estop.dialog_reset()
-                    except Exception as e:                    # noqa: BLE001
-                        if self._audit is not None:
-                            self._audit.record_event(
-                                "解冻请求复位失败",
-                                f"req={req.name}: {e!r}（保留待下轮重试）")
-                        continue
-                    req.unlink(missing_ok=True)
-                elif not shared_frozen:
-                    req.unlink(missing_ok=True)
-                # else: 共享仍冻结而本进程未冻结 → 保留给冻结中的 owner
-            # else: N > S → 保留
+        if local == shared_frozen:
+            return False
+        return self._repair_shared_frozen(local, shared)
 
-    def sync_local_with_shared_state(self, estop) -> bool:
-        """解冻全局同步（ISS-0006 §6）：本地 frozen ∧ 共享 frozen=false
-        → 调 estop.shared_sync_reset() 并返回 True。
-
-        ISS-0092 ④双向对账：本地未冻结 ∧ 共享 frozen=true → 以本地内存态
-        为权威（owner 协议单属主，ISS-0084）重写共享 frozen=false 并审计
-        「共享状态对账修复」，返回 True（写失败则 False 下轮再试）。
-        **禁止反向**：共享 true 灌回本地 = 绕过人类解冻通道（fail-closed
-        方向性，解冻仅人类通道：热键/CLI/弹窗）。
-        """
-        shared = self._read_shared_state()
-        if (estop.is_frozen() and shared is not None
-                and shared.get("frozen") is False):
-            estop.shared_sync_reset()
-            return True
-        if (not estop.is_frozen() and shared is not None
-                and shared.get("frozen") is True):
-            self._seq = int(shared.get("seq", 0)) + 1
-            state = {"frozen": False, "seq": self._seq,
-                     "source": "共享状态对账修复",
-                     "ts": datetime.now().astimezone().isoformat()}
-            if not self._write_shared_state(state):
-                return False
-            if self._audit is not None:
-                self._audit.record_event(
-                    "共享状态对账修复",
-                    f"本地未冻结而共享 frozen=true（原 seq="
-                    f"{shared.get('seq')},源={shared.get('source')}），"
-                    f"已重写 frozen=false seq={self._seq}")
-            return True
-        return False
+    def _repair_shared_frozen(self, frozen: bool, shared: dict) -> bool:
+        """以本地内存态为权威重写共享 frozen（单向对账的落盘半）。"""
+        self._seq = int(shared.get("seq", 0)) + 1
+        state = {"frozen": frozen, "seq": self._seq,
+                 "source": EV_SHARED_STATE_RECONCILED,
+                 "ts": datetime.now().astimezone().isoformat()}
+        if not self._write_shared_state(state):
+            return False
+        if self._audit is not None:
+            self._audit.record_event(
+                EV_SHARED_STATE_RECONCILED,
+                f"本地 frozen={frozen} 而共享 frozen={not frozen}"
+                f"（原 seq={shared.get('seq')},源={shared.get('source')}），"
+                f"已按本地权威重写 frozen={frozen} seq={self._seq}")
+        return True
 
     # ---- 内部 ----
 
@@ -171,7 +164,7 @@ class FreezeNotifier:
             return True
         if self._audit is not None:
             self._audit.record_event(
-                "共享状态写失败",
+                EV_SHARED_STATE_WRITE_FAILED,
                 f"重试 {attempt} 次仍失败: {last!r}; seq={state.get('seq')}")
         tmp.unlink(missing_ok=True)              # 清孤儿 tmp
         return False
@@ -202,16 +195,22 @@ class FreezeNotifier:
         self._state_cache = data
         return data
 
-    def _default_spawn(self, audit_dir: str) -> None:
+    def _default_spawn(self, audit_dir: str):
         """拉起弹窗（ISS-0008 P6：有 DialogService 走共享线程；
         否则回退子进程——onefile 经打包入口分发；剥离 _MEIPASS2，
-        与 approval_ui 同款约束）。"""
+        与 approval_ui 同款约束）。
+
+        返回值（ISS-0093 §9.2）：子进程形态返回 Popen 句柄（属主持有,
+        退出码通道）；线程弹窗形态返回 None（on_reset 进程内直调,无句柄）。
+        """
         if self._dialog_service is not None:
-            # ISS-0007 B：冻结弹窗按鼠标所在屏落位
+            # ISS-0093 §9.1：freeze payload 注入进程内回调 on_reset
+            # （模式同构 enroll_notice 的 payload["on_undo"] 先例）
             self._dialog_service.show(
                 "freeze", {"audit_dir": audit_dir, "interval": self._remind,
-                           "target_screen": self._mouse_screen()})
-            return
+                           "target_screen": self._mouse_screen(),
+                           "on_reset": self.on_reset})
+            return None
         if getattr(sys, "frozen", False):
             cmd = [sys.executable, "--freeze-notify", audit_dir,
                    f"{self._remind:.0f}"]
@@ -221,9 +220,9 @@ class FreezeNotifier:
                    f"{self._remind:.0f}"]
             env = None
         try:
-            subprocess.Popen(cmd, env=env)
+            return subprocess.Popen(cmd, env=env)
         except OSError:
-            pass                    # 弹窗是通知层，拉起失败不影响冻结语义
+            return None             # 弹窗是通知层，拉起失败不影响冻结语义
 
     @staticmethod
     def _mouse_screen() -> dict | None:

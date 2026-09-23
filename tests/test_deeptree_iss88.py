@@ -17,6 +17,8 @@ dt04b/dt06/dt08 红期即绿(边界钉:统一不过冲/兄弟歧义不变/800 �
 
 from __future__ import annotations
 
+from .envguard import env_skip
+
 import subprocess
 import time
 
@@ -206,7 +208,7 @@ class TestRealMspaint:
         try:
             proc = subprocess.Popen(["mspaint.exe"])
         except OSError:
-            pytest.skip("环境守卫:mspaint.exe 不可用")
+            env_skip("mspaint.exe 不可用")
         hwnd = None
         try:
             for _ in range(60):
@@ -217,7 +219,7 @@ class TestRealMspaint:
                     break
                 time.sleep(0.25)
             if hwnd is None:
-                pytest.skip("环境守卫:mspaint 窗口未出现")
+                env_skip("mspaint 窗口未出现")
             estop = EstopMonitor(policy.corner_hold_ms, time.monotonic,
                                  audit_log)
             ex = Executor(estop, str(tmp_path / "audit"), probe=probe)
@@ -226,7 +228,7 @@ class TestRealMspaint:
                        if n["control_type"] == "ButtonControl"
                        and n["name"] and n["depth"] >= 9]
             if not targets:
-                pytest.skip("环境守卫:画图树上无深度≥9 具名 ButtonControl")
+                env_skip("画图树上无深度≥9 具名 ButtonControl")
             t0 = targets[0]
             from deskpilot.errors import WINDOW_OCCLUDED
             try:
@@ -238,7 +240,7 @@ class TestRealMspaint:
                 # 环境守卫(CI 红实证):CI 桌面存在激活压不过的遮挡层时,
                 # 兜底像素点击被 WINDOW_OCCLUDED 拒绝=环境,非本单行为
                 if e.code == WINDOW_OCCLUDED:
-                    pytest.skip("环境守卫:落点被激活压不过的外来遮挡层覆盖")
+                    env_skip("落点被激活压不过的外来遮挡层覆盖")
                 raise
             assert r["status"] == "ok"                  # 响应直出
             assert r["element"]["control_type"] == "ButtonControl"  # 同目标

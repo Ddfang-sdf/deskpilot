@@ -36,7 +36,11 @@ class AuditLogger:
         self._write_line(record)
 
     def record_event(self, event: str, detail: str = "") -> None:
-        """记录特殊事件（服务启停、急停触发/复位、策略加载结果等）。"""
+        """记录特殊事件（服务启停、急停触发/复位、策略加载结果等）。
+
+        事件名词汇单源=deskpilot/audit_events.py EV_* 常量（ISS-0060：
+        调用点禁裸串字面量,新事件先注册再引用;值即落盘文本,改值须另立单）。
+        """
         self._write_line({"event": event, "detail": detail})
 
     def _write_line(self, record: dict) -> None:

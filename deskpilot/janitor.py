@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from .audit_events import EV_AUDIT_LOG_CLEANUP, EV_SCREENSHOT_CLEANUP
 from .audit_paths import AuditPaths
 
 
@@ -100,14 +101,14 @@ def run_janitor(audit_dir: str, now: float, logs_max_age_s: float,
     if audit_log is not None:
         try:
             audit_log.record_event(
-                "截图清理",
+                EV_SCREENSHOT_CLEANUP,
                 f"删除 {deleted} 个文件,释放 {freed} 字节,当前占用 {current} 字节")
         except Exception:
             pass
         if logs_deleted:
             try:
                 audit_log.record_event(
-                    "审计日志清理",
+                    EV_AUDIT_LOG_CLEANUP,
                     f"删除 {logs_deleted} 个文件,释放 {logs_freed} 字节")
             except Exception:
                 pass

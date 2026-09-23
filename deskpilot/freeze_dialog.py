@@ -2,7 +2,9 @@
 
 滑入弹出：冻结事实 + 触发来源 + [立即解冻] [稍后提醒] + 热键提示；
 250ms 轮询状态文件，任何来源复位后滑出自动消失。
-本模块的纯逻辑函数（状态读取/请求写入/重提醒判定/动画位移序列）
+「立即解冻」直达通道（ISS-0093）：进程内形态直调 on_reset 回调，
+子进程形态关窗并以退出码 EXIT_RESET 退出（零文件零接口）。
+本模块的纯逻辑函数（状态读取/重提醒判定/动画位移序列）
 不依赖 tkinter，可单独测试；main() 为生产弹窗入口。
 """
 
@@ -23,6 +25,10 @@ WIN_W = 440                 # 弹窗尺寸
 WIN_H = 210
 MARGIN_RIGHT = 16           # 落位：主屏右下角
 MARGIN_BOTTOM = TASKBAR_RESERVE  # 避开任务栏(ISS-0057:避让边距单源)
+
+# ISS-0093 §9.2：子进程形态「立即解冻」退出码通道（公开常量,非秘密）。
+# P1 空壳:仅常量定名,退出码语义(关窗 exit/属主 poll 消费)随 P3 实现。
+EXIT_RESET = 73
 
 # ---- 单例互斥（ISS-0006 §6）----
 SINGLETON_NAME = r"Local\DeskPilotFreezeDialog"
@@ -54,9 +60,9 @@ def release_singleton() -> None:
 
 
 def reset_click_action(state: str) -> str:
-    """乐观关闭决策（ISS-0006 §6）：
-    "SHOWN" → "write_req_and_slide_out"；其他 → "wait"。"""
-    return "write_req_and_slide_out" if state == "SHOWN" else "wait"
+    """「立即解冻」点击决策（ISS-0093 §9.1：req 邮箱废止,直调/退出码）：
+    "SHOWN" → "reset_and_slide_out"；其他 → "wait"。"""
+    return "reset_and_slide_out" if state == "SHOWN" else "wait"
 
 # ---- 视觉样式（ISS-0005，Tk 逻辑像素；改外观只动这里）----
 CHROMA = "#010101"          # 色键透明色：禁止与任何样式色相同（TC-N-EST-15）
@@ -89,12 +95,6 @@ def read_state(audit_dir: str) -> dict | None:
                           .read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-
-
-def write_reset_request(audit_dir: str, seq: int) -> None:
-    """写 estop-reset-<seq>.req（立即解冻请求，携带其响应的状态 seq）。"""
-    (Path(audit_dir) / f"estop-reset-{seq}.req").write_text(
-        json.dumps({"seq": seq}), encoding="utf-8")
 
 
 # ISS-0103：急停触发源显示侧翻译——state.source 携的是 estop 硬编码中文
@@ -165,13 +165,16 @@ def slide_out_xs(screen_w: int, win_w: int = WIN_W) -> list[int]:
 
 
 def build_window(parent, audit_dir: str, interval: float,
-                 target_screen: dict | None = None):
+                 target_screen: dict | None = None, on_reset=None):
     """在 parent（共享 Tk root）线程内构建冻结提示 toast（Toplevel，ISS-0008 P6）。
 
     状态机：SLIDE_IN → SHOWN ⇄ SNOOZED → SLIDE_OUT → 退出；
     状态文件 frozen=false（任何来源复位）即滑出退出。
     target_screen（ISS-0007 §6）：显示器 dict 时 toast 落该屏右下角
     （冻结调用方按鼠标所在屏传入；缺省保持主屏右下）。
+    on_reset（ISS-0093 §9.1）：进程内形态注入「立即解冻」直调回调
+    （装配侧=estop.dialog_reset；点击直调,不写 req 文件、不读 state seq）；
+    子进程形态缺省 None（§9.2 退出码通道：点击=关窗+EXIT_RESET）。
     """
     import math
     import tkinter as tk
@@ -251,19 +254,22 @@ def build_window(parent, audit_dir: str, interval: float,
                                ts=str(st.get("ts", ""))[:19]))
 
     def on_reset_now():
-        # 乐观关闭（ISS-0006 方案 F）：写请求即滑出隐藏；请求若未被消费
-        # （仍冻结），重提醒机制在下一周期自然补一个弹窗，而不是让用户连点。
-        if reset_click_action(holder["state"]) != "write_req_and_slide_out":
+        # ISS-0093 §9.1/9.2：解冻指令直达,零文件零接口——
+        # 进程内形态(on_reset 给定):直调回调(=estop.dialog_reset),随后
+        # 滑出退出(复位直达,不再走 SNOOZED 重提醒兜底);子进程形态
+        # (on_reset=None):关窗并以退出码 EXIT_RESET 退出,属主 poll 消费。
+        if reset_click_action(holder["state"]) != "reset_and_slide_out":
             return
-        st = read_state(audit_dir)
-        seq = int(st["seq"]) if st and "seq" in st else holder["last_seq"]
-        if seq is None:
-            return
-        write_reset_request(audit_dir, seq)
-        import time
-        holder["state"] = "SNOOZE_OUT"
+        if on_reset is None:
+            win.reset_requested = True         # main() 据此以 73 退出(见下)
+            win.destroy()
+            # Tk 回调内 SystemExit 会被 tkinter 吞(report_callback_exception),
+            # 真实退出码由 freeze_dialog.main() 在 mainloop 返回后产出;
+            # 此处 raise 保证非 Tk 驱动(测试/直调)下同步语义一致(§9.2)。
+            raise SystemExit(EXIT_RESET)
+        on_reset()
+        holder["state"] = "SLIDE_OUT"
         holder["frames"] = list(frames_out)
-        holder["snooze_start"] = time.monotonic()
         win.after(FRAME_MS, slide_step)          # 按钮回调须自启动画链
 
     def on_snooze():
@@ -381,3 +387,7 @@ def main() -> None:
     win.bind("<Destroy>", lambda e: root.quit() if e.widget is win else None,
              add="+")
     root.mainloop()
+    # ISS-0093 §9.2：子进程「立即解冻」退出码通道——Tk 回调内的 SystemExit
+    # 会被 tkinter 吞掉,退出码在 mainloop 返回后据此产出(点击已关窗)。
+    if getattr(win, "reset_requested", False):
+        sys.exit(EXIT_RESET)

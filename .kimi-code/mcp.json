@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "deskpilot": {
+      "command": "C:/code/workspace/deskpilot/.venv/Scripts/python.exe",
+      "args": ["-m", "deskpilot"],
+      "cwd": "C:/code/workspace/deskpilot",
+      "toolTimeoutMs": 120000
+    }
+  }
+}

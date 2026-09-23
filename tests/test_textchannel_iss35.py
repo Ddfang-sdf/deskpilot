@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from deskpilot.errors import ExecutorError
+from deskpilot.errors import TYPE_MISMATCH, ExecutorError
 from deskpilot.executor.textclick import resolve_click, suggest_similar
 
 
@@ -41,7 +41,10 @@ class TestTypeTextPolling:
         assert r["note"] == "读回校验一致"
 
     def test_tx02_real_failure_retries_then_raises(self, monkeypatch):
-        """读回恒不含文本 → 重贴至上限 2 次后 INTERNAL_ERROR。"""
+        """读回恒不含文本 → 重贴至上限 2 次后 TYPE_MISMATCH。
+
+        ISS-0100 §8 适配:泛码 INTERNAL_ERROR → 专用码 TYPE_MISMATCH
+        (读回校验修真);「不一致必失败+重贴至上限」语义不放宽。"""
         import deskpilot.executor.core as core
         self._readback = []
         ex = self._executor(monkeypatch)
@@ -51,8 +54,9 @@ class TestTypeTextPolling:
         monkeypatch.setattr(core.pyperclip, "copy", lambda t: None)
         monkeypatch.setattr(core.pyperclip, "paste", lambda: "old")
         monkeypatch.setattr(core.time, "sleep", lambda s: None)  # 免真等待
-        with pytest.raises(ExecutorError):
+        with pytest.raises(ExecutorError) as ei:
             ex._type_text("中文", 42)
+        assert ei.value.code == TYPE_MISMATCH    # 异常 code 直出
         assert len(pastes) == 2                  # 重贴至上限(直出)
 
 

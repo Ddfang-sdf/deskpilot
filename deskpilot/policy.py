@@ -12,6 +12,7 @@ from types import MappingProxyType
 
 import yaml
 
+from .audit_events import EV_POLICY_MIGRATED
 from .errors import PolicyError
 from .models import Policy
 
@@ -156,7 +157,7 @@ def migrate_whitelist(old_path: str, new_path: str, local_path: str,
     os.replace(tmp, lp)
     if audit is not None:
         try:
-            audit.record_event("入白迁移", ", ".join(migrated))
+            audit.record_event(EV_POLICY_MIGRATED, ", ".join(migrated))
         except Exception:
             pass
     return migrated

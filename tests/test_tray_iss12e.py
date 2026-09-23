@@ -11,7 +11,14 @@ from __future__ import annotations
 
 from ctypes import wintypes
 
+import pytest
+
 from deskpilot import tray as t
+
+
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
 
 
 class TestWin32Signatures:

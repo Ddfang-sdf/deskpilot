@@ -22,6 +22,11 @@ import pytest
 import deskpilot.whitelist_window as ww
 
 
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
+
+
 # ---------- 替身套件(iss12 同款形态,加 Top 销毁/协议/建窗记录) ----------
 
 class _Rec:
@@ -34,75 +39,25 @@ class _Rec:
 
 
 def _stub_tk(monkeypatch) -> _Rec:
-    rec = _Rec()
-
-    class W:
-        def __init__(self, *a, **k):
-            self.text = k.get("text", "")
-            self.command = k.get("command")
-            self._text_value = ""
-            self.pack_count = 0
-            self.create_line_calls = []
-
-        def pack(self, *a, **k): self.pack_count += 1
-        def grid(self, *a, **k): pass
-        def config(self, *a, **k): pass
-        def configure(self, *a, **k):
-            if "text" in k: self.text = k["text"]
-            if "command" in k: self.command = k["command"]
-        def bind(self, *a, **k): pass
-        def bind_all(self, *a, **k): pass
-        def title(self, *a): pass
-        def geometry(self, *a): pass
-        def minsize(self, *a): pass
-        def attributes(self, *a, **k): pass
-        def yview(self, *a, **k): pass
-        def create_window(self, *a, **k): return 1
-        def itemconfig(self, *a, **k): pass
-        def bbox(self, *a, **k): return (0, 0, 0, 0)
-        def set(self, *a, **k): pass
-        def yview_scroll(self, *a, **k): pass
-        def winfo_children(self): return []
-        def destroy(self): pass
-        def pack_forget(self): pass
-        def get(self): return self._text_value
-        def create_line(self, *a, **k): self.create_line_calls.append((a, k))
-        def create_rectangle(self, *a, **k): pass
-        def create_oval(self, *a, **k): pass
-        def delete(self, *a, **k): pass
-
-    class Lbl(W):
-        def __init__(self, *a, **k):
-            super().__init__(*a, **k)
-            rec.labels.append(self.text)
-
-    class Top(W):
-        def __init__(self, *a, **k):
-            super().__init__(*a, **k)
-            rec.tops.append(self)
-
-        def destroy(self):
-            rec.top_destroys.append(self)
-
-        def protocol(self, name, *a):
-            rec.protocols.append(name)
-
-    monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: Top())
-    monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W(*a, **k))
-    monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: W(*a, **k))
-    monkeypatch.setattr(ww.tk, "Scrollbar", lambda *a, **k: W(*a, **k))
-    monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: Lbl(*a, **k))
-    monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: W(*a, **k))
-    monkeypatch.setattr(ww.tk, "Entry", lambda *a, **k: W(*a, **k))
+    """ISS-0059 步骤4:本地 W/Lbl/Top 替身收编 tests/faketk.install;
+    _Rec 观测形保持(tops/top_destroys/protocols/labels/builds 活引用,
+    断言零改动)。"""
+    from .faketk import install
+    rec = install(monkeypatch, ww.tk)
+    out = _Rec()
+    out.tops = rec.tops
+    out.top_destroys = rec.destroyed_widgets
+    out.protocols = rec.protocols
+    out.labels = rec.labels
 
     orig_build = ww.build_window
 
     def counted(*a, **k):
-        rec.builds.append(1)
+        out.builds.append(1)
         return orig_build(*a, **k)
 
     monkeypatch.setattr(ww, "build_window", counted)
-    return rec
+    return out
 
 
 # ---------- 数据源替身(/whitelist 端点形态) ----------

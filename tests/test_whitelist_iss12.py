@@ -25,6 +25,9 @@ import yaml
 from deskpilot.errors import PolicyError
 from deskpilot.models import OperationRequest
 
+from deskpilot.audit_events import (
+    EV_POLICY_EXTERNALLY_MODIFIED,
+    EV_POLICY_FINGERPRINT)
 from .conftest import make_policy
 
 
@@ -50,6 +53,11 @@ def _enforcement_with_admin(policy, bindings, approvals, estop, executor,
     from deskpilot.enforcement import Enforcement
     return Enforcement(policy, bindings, approvals, estop, executor, audit_log,
                        whitelist_admin=admin)
+
+
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
 
 
 # ---------- WhitelistAdmin（单元） ----------
@@ -272,44 +280,15 @@ class TestEnrollDialog:
     """场景:enroll 模式三按钮,裁决写结果文件。
     断言:按钮文案(替身记录)与结果文件内容(直出)。"""
 
-    def _fake_tk(self, monkeypatch, mod, clicks):
-        class W:
-            def __init__(self, *a, **k):
-                self.geo = None
-
-            def pack(self, *a, **k): pass
-            def place(self, *a, **k): pass
-            def bind(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def focus_set(self): pass
-            def title(self, *a): pass
-            def overrideredirect(self, *a): pass
-            def attributes(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def geometry(self, g): self.geo = g
-            def after(self, *a, **k): pass
-            def destroy(self): pass
-            def update_idletasks(self): pass           # ISS-0098 测量契约
-            def winfo_reqheight(self): return 100      # 小值→走地板,旧几何不变
-            def winfo_screenwidth(self): return 2560
-            def winfo_screenheight(self): return 1440
-
-        class Btn(W):
-            def __init__(self, *a, **k):
-                super().__init__()
-                clicks.append(k.get("text", ""))
-                self.command = k.get("command")
-
-        monkeypatch.setattr(mod.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(mod.tk, "Frame", lambda *a, **k: W())
-        monkeypatch.setattr(mod.tk, "Label", lambda *a, **k: W())
-        monkeypatch.setattr(mod.tk, "Button", lambda *a, **k: Btn(*a, **k))
-        return W
+    def _fake_tk(self, monkeypatch, mod):
+        """ISS-0059 步骤3:本地 W/Btn 替身收编 tests/faketk.install
+        (断言零改动;观测口=recorder 活列表)。"""
+        from .faketk import install
+        return install(monkeypatch, mod.tk)
 
     def test_enroll_dialog_three_buttons(self, monkeypatch, tmp_path):
         import deskpilot.approval_dialog as ad
-        clicks = []
-        self._fake_tk(monkeypatch, ad, clicks)
+        clicks = self._fake_tk(monkeypatch, ad).button_texts
         rp = tmp_path / "r.txt"
         ad.build_window(object(), "入白审批 excel.exe", str(rp), 5,
                         enroll="excel.exe")
@@ -336,8 +315,7 @@ class TestEnrollDialog:
 
         img = tmp_path / "shot.png"
         Image.new("RGB", (32, 32), (10, 20, 30)).save(img)
-        clicks = []
-        self._fake_tk(monkeypatch, ad, clicks)
+        self._fake_tk(monkeypatch, ad)
         # 替身打在 PIL.ImageTk.PhotoImage 上(对话框函数内 from PIL import
         # ImageTk 取的同一模块对象),不触真实 tk PhotoImage
         monkeypatch.setattr(ImageTk, "PhotoImage", FakePhotoImage)
@@ -455,6 +433,11 @@ class TestWhitelistEndpoints:
         assert data["whitelist"] == []                   # 数据层直出
 
     def test_post_clear_session(self, daemon):
+        """会话区清空端点。
+
+        观察登记(ISS-0062 步骤 E,不放宽不装过):2026-09-10 CI 首跑
+        曾败一次未复现(线程/时序敏感,fixture 就绪等待已在 :422-430
+        其位);复现即另立缺陷单诊断,本单不碰。"""
         d, a = daemon
         a.add_session("a.exe")
         a.add_session("b.exe")
@@ -471,74 +454,17 @@ class TestManagerWindow:
     断言:回调收到的进程名/调用计数(替身记录直出)。"""
 
     def _build(self, monkeypatch, entries, removed, cleared, labels=None):
+        """ISS-0059 步骤3:管理窗大 W 替身收编 tests/faketk.install
+        (labels 经活列表换入,render 期创建文本同步可见;断言零改动)。"""
         import deskpilot.whitelist_window as ww
-        buttons = []
-        if labels is None:
-            labels = []
-        tops = []
-
-        class W:
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.command = k.get("command")
-                self._text_value = ""
-                self.pack_count = 0
-                self.create_line_calls = []
-
-            def pack(self, *a, **k): self.pack_count += 1
-            def grid(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def configure(self, *a, **k):
-                if "text" in k: self.text = k["text"]
-                if "command" in k: self.command = k["command"]
-            def bind(self, *a, **k): pass
-            def bind_all(self, *a, **k): pass
-            def title(self, *a): pass
-            def geometry(self, *a): pass
-            def minsize(self, *a): pass
-            def protocol(self, *a, **k): pass
-            def attributes(self, *a, **k): pass
-            def yview(self, *a, **k): pass
-            def create_window(self, *a, **k): return 1
-            def itemconfig(self, *a, **k): pass
-            def bbox(self, *a, **k): return (0, 0, 0, 0)
-            def set(self, *a, **k): pass
-            def yview_scroll(self, *a, **k): pass
-            def winfo_children(self): return []
-            def destroy(self): pass
-            def pack_forget(self): pass
-            def get(self): return self._text_value
-            def create_line(self, *a, **k): self.create_line_calls.append((a, k))
-            def create_rectangle(self, *a, **k): pass
-            def create_oval(self, *a, **k): pass
-            def delete(self, *a, **k): pass
-
-        class Btn(W):
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                buttons.append(self)
-
-        class Lbl(W):
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                labels.append(self.text)
-
-        class Top(W):
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                tops.append(self)
-
-        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: Top())
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Scrollbar", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: Lbl(*a, **k))
-        monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: Btn(*a, **k))
-        monkeypatch.setattr(ww.tk, "Entry", lambda *a, **k: W(*a, **k))
+        from .faketk import install
+        rec = install(monkeypatch, ww.tk)
+        if labels is not None:
+            rec.labels = labels
         win = ww.build_window(object(), entries,
                               on_remove=lambda p: removed.append(p),
                               on_clear_session=lambda: cleared.append(1))
-        return buttons, win
+        return rec.buttons, win
 
     def test_row_remove_callback(self, monkeypatch):
         """移出图标按钮(X 图标,action=remove)回调进程名(类注册表直出)。"""
@@ -685,38 +611,14 @@ class TestEnrollNotice:
     断言:on_undo 调用记录(直出)。"""
 
     def test_undo_callback(self, monkeypatch):
+        """ISS-0059 步骤3:enroll notice 替身收编 tests/faketk.install。"""
         import deskpilot.whitelist_window as ww
+        from .faketk import install
         undone = []
-        buttons = []
-
-        class W:
-            def pack(self, *a, **k): pass
-            def place(self, *a, **k): pass
-            def pack_forget(self): pass
-            def bind(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def title(self, *a): pass
-            def overrideredirect(self, *a): pass
-            def attributes(self, *a, **k): pass
-            def geometry(self, *a): pass
-            def after(self, *a, **k): pass
-            def winfo_screenwidth(self): return 2560
-            def winfo_screenheight(self): return 1440
-
-        class Btn(W):
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.command = k.get("command")
-                buttons.append(self)
-
-        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W())
-        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: W())
-        monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: Btn(*a, **k))
+        rec = install(monkeypatch, ww.tk)
         ww.build_enroll_notice(object(), "excel.exe",
                                on_undo=lambda: undone.append(1))
-        undo_btn = [b for b in buttons if b.text == "撤销"][0]
+        undo_btn = [b for b in rec.buttons if b.text == "撤销"][0]
         undo_btn.command()
         assert undone == [1]
 
@@ -739,44 +641,15 @@ class TestEnrollLabel:
     """TC-LABEL:三态按钮文案「本次会话允许」;语义与文档同步回归。
     断言:按钮文本记录/结果文件内容/文档文本(直出)。"""
 
-    def _fake_tk(self, monkeypatch, mod, clicks):
-        class W:
-            def __init__(self, *a, **k):
-                self.geo = None
-
-            def pack(self, *a, **k): pass
-            def place(self, *a, **k): pass
-            def bind(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def focus_set(self): pass
-            def title(self, *a): pass
-            def overrideredirect(self, *a): pass
-            def attributes(self, *a, **k): pass
-            def configure(self, *a, **k): pass
-            def geometry(self, g): self.geo = g
-            def after(self, *a, **k): pass
-            def destroy(self): pass
-            def update_idletasks(self): pass           # ISS-0098 测量契约
-            def winfo_reqheight(self): return 100      # 小值→走地板,旧几何不变
-            def winfo_screenwidth(self): return 2560
-            def winfo_screenheight(self): return 1440
-
-        class Btn(W):
-            def __init__(self, *a, **k):
-                super().__init__()
-                clicks.append(k.get("text", ""))
-                self.command = k.get("command")
-
-        monkeypatch.setattr(mod.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(mod.tk, "Frame", lambda *a, **k: W())
-        monkeypatch.setattr(mod.tk, "Label", lambda *a, **k: W())
-        monkeypatch.setattr(mod.tk, "Button", lambda *a, **k: Btn(*a, **k))
+    def _fake_tk(self, monkeypatch, mod):
+        """ISS-0059 步骤3:同 #3 收编 tests/faketk.install(断言零改动)。"""
+        from .faketk import install
+        return install(monkeypatch, mod.tk)
 
     def test_label01_session_wording(self, monkeypatch, tmp_path):
         """TC-LABEL-01:会话级按钮=「本次会话允许」,旧文案消失,另两态不变。"""
         import deskpilot.approval_dialog as ad
-        clicks = []
-        self._fake_tk(monkeypatch, ad, clicks)
+        clicks = self._fake_tk(monkeypatch, ad).button_texts
         ad.build_window(object(), "入白审批", str(tmp_path / "r.txt"), 5,
                         enroll="excel.exe")
         assert "本次会话允许" in clicks
@@ -785,23 +658,13 @@ class TestEnrollLabel:
         assert "本次允许" not in clicks
 
     def test_label02_semantics_unchanged(self, monkeypatch, tmp_path):
-        """TC-LABEL-02:点「本次会话允许」结果文件仍写 approve(改名不改值)。"""
+        """TC-LABEL-02:点「本次会话允许」结果文件仍写 approve(改名不改值)。
+
+        ISS-0059 步骤3:本地 Btn 替身收编——library Button 已录
+        text/command,直接取 recorder(断言零改动)。"""
         import deskpilot.approval_dialog as ad
-        clicks = []
-        buttons = []
-
-        class Btn:
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.command = k.get("command")
-                buttons.append(self)
-
-            def pack(self, *a, **k): pass
-            def bind(self, *a, **k): pass
-            def focus_set(self): pass
-
-        self._fake_tk(monkeypatch, ad, clicks)
-        monkeypatch.setattr(ad.tk, "Button", lambda *a, **k: Btn(*a, **k))
+        rec = self._fake_tk(monkeypatch, ad)
+        buttons = rec.buttons
         rp = tmp_path / "r.txt"
         ad.build_window(object(), "入白审批", str(rp), 5, enroll="excel.exe")
         btn = [b for b in buttons if b.text == "本次会话允许"][0]
@@ -824,56 +687,30 @@ class TestEnrollNoticeV2:
     断言:after 调度/destroy 调用/Label 文本/按钮 bg·fg/回调记录(替身直出)。"""
 
     def _make(self, monkeypatch):
+        """ISS-0059 步骤3:undo v2 替身收编 tests/faketk.install;
+        rec[...] 观测形经活视图保持(断言零改动)。"""
         import deskpilot.whitelist_window as ww
-        rec = {"afters": [], "destroyed": 0, "labels": [], "buttons": [],
-               "undone": []}
-
-        class W:
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.command = k.get("command")
-                self.bg = k.get("bg")
-                self.fg = k.get("fg")
-
-            def pack(self, *a, **k): pass
-            def place(self, *a, **k): pass
-            def pack_forget(self): pass
-            def bind(self, *a, **k): pass
-            def config(self, *a, **k): pass
-            def configure(self, *a, **k):
-                if "text" in k:
-                    self.text = k["text"]
-                    rec["labels"].append(k["text"])
-                if "fg" in k:
-                    self.fg = k["fg"]
-            def title(self, *a): pass
-            def overrideredirect(self, *a): pass
-            def attributes(self, *a, **k): pass
-            def geometry(self, *a): pass
-            def after(self, ms, fn=None):
-                rec["afters"].append(ms)
-                return "a1"
-            def destroy(self): rec["destroyed"] += 1
-            def winfo_screenwidth(self): return 2560
-            def winfo_screenheight(self): return 1440
-
-        class Lbl(W):
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                rec["labels"].append(self.text)
-
-        class Btn(W):
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                rec["buttons"].append(self)
-
-        monkeypatch.setattr(ww.tk, "Toplevel", lambda parent: W())
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: W(*a, **k))
-        monkeypatch.setattr(ww.tk, "Label", lambda *a, **k: Lbl(*a, **k))
-        monkeypatch.setattr(ww.tk, "Button", lambda *a, **k: Btn(*a, **k))
+        from .faketk import install
+        rec = install(monkeypatch, ww.tk)
+        undone: list = []
         ww.build_enroll_notice(object(), "计算器（Windows Calculator）",
-                               on_undo=lambda: rec["undone"].append(1))
-        return rec
+                               on_undo=lambda: undone.append(1))
+
+        class _View(dict):
+            def __missing__(self, k):
+                if k == "afters":
+                    return rec.after_ms
+                if k == "destroyed":
+                    return rec.destroys
+                if k == "labels":
+                    return rec.label_updates
+                if k == "buttons":
+                    return rec.buttons
+                raise KeyError(k)
+
+        v = _View()
+        v["undone"] = undone
+        return v
 
     def test_undo01_auto_dismiss(self, monkeypatch):
         """TC-UNDO-01:≤10s 自动消失调度。"""
@@ -911,87 +748,24 @@ class TestEnrollNoticeV2:
 
 
 # ---------- E2 移出禁止图标（TC-ICON-01~04,2026-08-31 评审通过） ----------
-class _FakeCanvas:
-    """绘图/调度记录型 Canvas 替身(直出)。"""
-    tk_calls: list = ()
-
-    def __init__(self, *a, **k):
-        self.calls = []
-        self.handlers = {}
-        self.afters = []
-        self.cancelled = []
-
-    def pack(self, *a, **k): pass
-    def pack_forget(self): pass
-    def delete(self, *a, **k): self.calls.append(("delete", a))
-    def create_oval(self, *a, **k): self.calls.append(("create_oval", a, k))
-    def create_line(self, *a, **k): self.calls.append(("create_line", a, k))
-    def create_rectangle(self, *a, **k): self.calls.append(("create_rectangle", a, k))
-    def bind(self, seq, h): self.handlers[seq] = h
-    def after(self, ms, fn):
-        self.afters.append(ms)
-        return f"after-{len(self.afters)}"
-    def after_cancel(self, i): self.cancelled.append(i)
-
-
-class _FakeFrame:
-    def __init__(self):
-        self.handlers = {}
-
-    def pack(self, *a, **k): pass
-    def bind(self, seq, h): self.handlers[seq] = h
-    def after(self, ms, fn): return "after-1"
-    def after_cancel(self, i): pass
-
-
 class TestRemoveIcon:
     """TC-ICON(A 方案):移出图标=系统 ⛔ 字形;悬停字号脉冲动效。
     断言:字形文本/字号状态/after 调度(替身记录直出)。"""
 
     def _make(self, monkeypatch):
+        """ISS-0109:字形/画布替身族收编 tests/faketk.install(widget 级
+        扩展面:实例级 handlers/afters/cancelled+of_class 检索;断言零改动)。"""
         import deskpilot.whitelist_window as ww
+        from .faketk import install
         ww._IconButton.instances.clear()
-
-        class FakeGlyph:
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.font = k.get("font")
-                self.fg = k.get("fg")
-                self.size = self.font[1] if self.font else None
-                self.handlers = {}
-                self.afters = []
-                self.cancelled = []
-
-            def pack(self, *a, **k): pass
-            def bind(self, seq, h): self.handlers[seq] = h
-            def configure(self, *a, **k):
-                if "font" in k:
-                    self.font = k["font"]
-                    self.size = self.font[1]
-                if "fg" in k:
-                    self.fg = k["fg"]
-            def after(self, ms, fn=None):
-                self.afters.append(ms)
-                return f"a{len(self.afters)}"
-            def after_cancel(self, i): self.cancelled.append(i)
-
-        cv = _FakeCanvas()
-        frame = _FakeFrame()
-        glyphs = []
-
-        def _mk_glyph(*a, **k):
-            g = FakeGlyph(*a, **k)
-            glyphs.append(g)
-            return g
-
-        monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: cv)
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: frame)
-        monkeypatch.setattr(ww.tk, "Label", _mk_glyph)
+        rec = install(monkeypatch, ww.tk)
         monkeypatch.setattr(ww, "_Tooltip",
                             lambda w, text: setattr(w, "_tip_text", text))
-        btn = ww._IconButton(frame, action="remove", tooltip="移出白名单",
+        btn = ww._IconButton(object(), action="remove", tooltip="移出白名单",
                              command=lambda: None)
-        glyph = [g for g in glyphs if g.text][0]
+        cv = rec.of_class("Canvas")[0]
+        frame = rec.of_class("Frame")[0]
+        glyph = rec.of_class("Label")[0]
         return ww, btn, cv, frame, glyph
 
     def test_icon01_glyph_is_prohibit(self, monkeypatch):
@@ -1104,7 +878,7 @@ class TestPolicyFingerprint:
         audit = _FakeAudit()
         fp = policy_sha256_audit(str(p), audit)
         assert fp == hashlib.sha256(p.read_bytes()).hexdigest()
-        assert audit.events[0][0] == "策略指纹"
+        assert audit.events[0][0] == EV_POLICY_FINGERPRINT
         assert fp in audit.events[0][1]
 
     def test_external_modify_flagged(self, tmp_path):
@@ -1119,7 +893,7 @@ class TestPolicyFingerprint:
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline and not audit.events:
                 time.sleep(0.05)
-            assert any(e[0] == "策略文件被外部修改" for e in audit.events)
+            assert any(e[0] == EV_POLICY_EXTERNALLY_MODIFIED for e in audit.events)
         finally:
             t.stop()
 

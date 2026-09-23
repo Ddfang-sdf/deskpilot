@@ -71,52 +71,18 @@ class TestDialogBilingual:
     """i04:四类弹窗按语言渲染(Tk 替身,同 test_monitors_iss7 形态)。"""
 
     def _stub_tk(self, monkeypatch, mod):
-        class W:
-            def __init__(self, *a, **k):
-                self._text = k.get("text", a[2] if len(a) > 2 else "")
-
-            def __getattr__(self, name):
-                if name.startswith("__"):
-                    raise AttributeError(name)
-                if name == "cget":
-                    return lambda key: self._text if key == "text" else ""
-                if name in ("winfo_screenwidth", "winfo_screenheight"):
-                    return lambda: 1920
-                if name == "winfo_reqheight":
-                    return lambda: 100   # ISS-0098:实测高接口(小值→走地板)
-                return lambda *a, **k: None
-
-            def configure(self, **k):
-                if "text" in k:
-                    self._text = k["text"]
-
-            config = configure
-
-        for cls in ("Toplevel", "Frame", "Label", "Button", "Canvas",
-                    "Entry", "Scrollbar", "Listbox"):
-            monkeypatch.setattr(mod.tk, cls, W)
+        """ISS-0059 步骤11:__getattr__ 沉默替身收编 tests/faketk.install
+        (screen=(1920,1080) 按原校准值;cget/text 观测归库面,断言零改动)。"""
+        from .faketk import install
+        return install(monkeypatch, mod.tk, screen=(1920, 1080))
 
     def test_i04_approval_dialog_bilingual(self, monkeypatch, tmp_path):
         """i04a:审批弹窗标题/按钮随 DESKPILOT_LOCALE 切换。"""
         import deskpilot.approval_dialog as ad
         from deskpilot import i18n  # noqa: F401  (注册触发 tr 使用面)
-        self._stub_tk(monkeypatch, ad)
+        rec = self._stub_tk(monkeypatch, ad)
         monkeypatch.setenv("DESKPILOT_LOCALE", "en")
-        seen = []
-        orig_button = ad.tk.Button
-
-        class Btn:
-            def __init__(self, *a, **k):
-                text = k.get("text", "")
-                if text:
-                    seen.append(text)
-
-            def __getattr__(self, name):
-                if name.startswith("__"):
-                    raise AttributeError(name)
-                return lambda *a, **k: None
-
-        monkeypatch.setattr(ad.tk, "Button", Btn)
+        seen = rec.button_texts
         ad.build_window(object(), "测试描述", str(tmp_path / "r.txt"), 5)
         assert "Approve" in seen and "Deny" in seen   # 按钮英文(直出)
         monkeypatch.setenv("DESKPILOT_LOCALE", "zh-CN")
@@ -127,22 +93,9 @@ class TestDialogBilingual:
     def test_i04_revoke_confirm_bilingual(self, monkeypatch, tmp_path):
         """i04b:撤回确认窗标题文案随语言切换(移出/保留按钮)。"""
         import deskpilot.whitelist_window as ww
-        self._stub_tk(monkeypatch, ww)
+        rec = self._stub_tk(monkeypatch, ww)
         monkeypatch.setenv("DESKPILOT_LOCALE", "en")
-        seen = []
-
-        class Btn:
-            def __init__(self, *a, **k):
-                text = k.get("text", "")
-                if text:
-                    seen.append(text)
-
-            def __getattr__(self, name):
-                if name.startswith("__"):
-                    raise AttributeError(name)
-                return lambda *a, **k: None
-
-        monkeypatch.setattr(ww.tk, "Button", Btn)
+        seen = rec.button_texts
         ww.build_revoke_confirm(object(), "x.exe",
                                 str(tmp_path / "r.result"), 15)
         assert "Remove" in seen and "Keep" in seen

@@ -25,6 +25,11 @@ def _req(tool, params=None, token=None):
     return OperationRequest(tool=tool, params=params or {}, binding_token=token)
 
 
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
+
+
 class TestGate1Binding:
     def test_no_binding_all_write_tools(self, enforcement, executor):
         """TC-S-BIND-01：无令牌调用全部写工具一律 NO_BINDING，执行层零接触。"""

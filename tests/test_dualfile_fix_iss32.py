@@ -7,6 +7,8 @@ WhitelistAdmin 双文件 / main._run_migrate_policy。
 
 from __future__ import annotations
 
+from deskpilot.audit_events import (
+    EV_POLICY_MIGRATED)
 import json
 from pathlib import Path
 
@@ -142,7 +144,7 @@ class TestMigrateRobustness:
         assert rc == 0
         logs = (tmp_path / "new" / "audit" / "logs").glob("*.jsonl")
         content = "".join(p.read_text(encoding="utf-8") for p in logs)
-        assert "入白迁移" in content                    # 落新策略旁(直出)
+        assert EV_POLICY_MIGRATED in content                    # 落新策略旁(直出)
         assert not (tmp_path / "elsewhere" / "audit").exists()  # 不流浪(直出)
 
     def test_dl11_level_stripped(self, tmp_path):

@@ -19,40 +19,23 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def _build_collect_texts(monkeypatch, tmp_path, enroll):
+    """ISS-0059 步骤8:本地 W/Lbl 替身收编 tests/faketk.install;
+    labels=recorder 活列表(创建文本,断言零改动)。"""
     import deskpilot.approval_dialog as ad
-    labels = []
-
-    class W:
-        def pack(self, *a, **k): pass
-        def place(self, *a, **k): pass
-        def bind(self, *a, **k): pass
-        def config(self, *a, **k): pass
-        def focus_set(self): pass
-        def title(self, *a): pass
-        def overrideredirect(self, *a): pass
-        def attributes(self, *a, **k): pass
-        def configure(self, *a, **k): pass
-        def geometry(self, *a): pass
-        def after(self, *a, **k): pass
-        def destroy(self): pass
-        def update_idletasks(self): pass           # ISS-0098 测量契约
-        def winfo_reqheight(self): return 100      # 小值→走地板,旧几何不变
-        def winfo_screenwidth(self): return 2560
-        def winfo_screenheight(self): return 1440
-
-    class Lbl(W):
-        def __init__(self, *a, **k):
-            labels.append(k.get("text", ""))
-
-    monkeypatch.setattr(ad.tk, "Toplevel", lambda parent: W())
-    monkeypatch.setattr(ad.tk, "Frame", lambda *a, **k: W())
-    monkeypatch.setattr(ad.tk, "Label", lambda *a, **k: Lbl(*a, **k))
-    monkeypatch.setattr(ad.tk, "Button", lambda *a, **k: W())
+    from .faketk import install
+    rec = install(monkeypatch, ad.tk)
     ad.build_window(object(), "常规审批", str(tmp_path / "r.txt"), 5,
                     enroll=enroll)
-    return labels
+    return rec.labels
+
+
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
 
 
 class TestSessionScopeVisible:

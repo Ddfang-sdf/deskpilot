@@ -18,6 +18,11 @@ SecureDesktopGuard 持有状态做边沿审计：进入记「安全桌面激活�
 
 from __future__ import annotations
 
+from .audit_events import (
+    EV_SECURE_DESKTOP_ACTIVATED,
+    EV_SECURE_DESKTOP_CHECK_FAILED,
+    EV_SECURE_DESKTOP_EXITED)
+
 import ctypes
 from ctypes import wintypes
 from typing import Callable
@@ -80,11 +85,12 @@ class SecureDesktopGuard:
             active, failed = True, True
             if not self._detect_failed and self._audit is not None:
                 self._audit.record_event(
-                    "安全桌面检测失效", f"{e!r}（fail-closed 按激活处理）")
+                    EV_SECURE_DESKTOP_CHECK_FAILED, f"{e!r}（fail-closed 按激活处理）")
         self._detect_failed = failed
         if active != self._active:
             if self._audit is not None and (self._active is not None or active):
-                self._audit.record_event(
-                    "安全桌面激活" if active else "安全桌面退出", "")
+                _event = (EV_SECURE_DESKTOP_ACTIVATED if active
+                          else EV_SECURE_DESKTOP_EXITED)
+                self._audit.record_event(_event, "")
             self._active = active
         return active

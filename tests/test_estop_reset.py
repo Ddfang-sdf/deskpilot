@@ -1,30 +1,28 @@
-"""ISS-0002 急停复位通道单元测试（测试设计说明书 §3.8 TC-N-EST-02～06）。
+"""ISS-0002 急停复位通道单元测试（测试设计说明书 §3.8 TC-N-EST-02/03/06）。
 
-入口：main.main()（瘦代理探活跳过 / --reset）、main._hotkey_loop（重试告警）、
-HttpDaemon POST /estop/reset、EstopMonitor 复位方法。
-断言值来源：被调方法返回值 / HTTP 响应体 / 审计 JSONL（持久化数据）/ 桩调用记录。
+入口：main.main()（瘦代理探活跳过）、main._hotkey_loop（重试告警）、
+EstopMonitor 复位方法。
+断言值来源：被调方法返回值 / 审计 JSONL（持久化数据）/ 桩调用记录。
+
+ISS-0093 §11 退役登记:TC-N-EST-04(TestHttpResetEndpoint)/TC-N-EST-05
+(TestCliReset)随 /estop/reset 端点与 --reset CLI 一并删除(sdfang 裁定)
+——不再探测「HTTP/CLI 复位」,通道本身不复存在。
+TC-N-EST-06(TestResetNoopAudited)适配:cli_reset 半改热键,载体收口,
+noop 审计语义保留。
 """
 
 from __future__ import annotations
 
-import json
-import urllib.request
 from unittest.mock import Mock
 
-import pytest
 import yaml
 
-from deskpilot.httpd import HttpDaemon
-
+from deskpilot.audit_events import (
+    EV_HOTKEY_REGISTERED,
+    EV_HOTKEY_REGISTER_FAILED,
+    EV_PROXY_SKIPS_HOTKEY,
+    EV_RESET_NOOP_NOT_FROZEN)
 from .conftest import policy_yaml_dict, read_audit
-
-
-def _post_empty(port: int, path: str) -> tuple[int, dict]:
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}", data=b"",
-        headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return resp.status, json.loads(resp.read().decode("utf-8"))
 
 
 class TestProxySkipsHotkey:
@@ -47,7 +45,7 @@ class TestProxySkipsHotkey:
         assert starter.call_count == 0
         events = read_audit(str(tmp_path / "audit"))
         assert sum(1 for e in events
-                   if e["event"] == "瘦代理跳过热键注册") == 1
+                   if e["event"] == EV_PROXY_SKIPS_HOTKEY) == 1
 
 
 class TestHotkeyRetry:
@@ -74,95 +72,23 @@ class TestHotkeyRetry:
         # ISS-0084 ②节流:失败审计只记**首次**——逐次审计正是 2026-09-14 实机的
         # 每分钟刷屏之源;恢复时记一条带「恢复」的成功事件。退避节奏不变。
         assert sum(1 for e in events
-                   if e["event"] == "急停热键注册失败") == 1
-        ok_events = [e for e in events if e["event"] == "急停热键注册"]
+                   if e["event"] == EV_HOTKEY_REGISTER_FAILED) == 1
+        ok_events = [e for e in events if e["event"] == EV_HOTKEY_REGISTERED]
         assert len(ok_events) == 1 and "恢复" in ok_events[0]["detail"]
         assert capsys.readouterr().err != ""
 
 
-class TestHttpResetEndpoint:
-    """TC-N-EST-04 HTTP 复位端点（P1 / 单测 / INV-10 / ISS-0002）。"""
-
-    @pytest.fixture
-    def daemon(self, ctx, estop):
-        d = HttpDaemon(ctx, host="127.0.0.1", port=0, estop=estop)
-        d.start()
-        yield d
-        d.stop()
-
-    def test_reset_endpoint(self, daemon, estop, tmp_path):
-        estop.on_trigger_hotkey()                # 置位冻结
-        assert estop.is_frozen() is True
-        status1, body1 = _post_empty(daemon.port, "/estop/reset")
-        assert status1 == 200
-        assert body1["ok"] is True
-        assert body1["data"]["was_frozen"] is True
-        assert estop.is_frozen() is False
-        status2, body2 = _post_empty(daemon.port, "/estop/reset")
-        assert status2 == 200
-        assert body2["data"]["was_frozen"] is False
-        events = read_audit(str(tmp_path / "audit"))
-        assert sum(1 for e in events if e["event"] == "急停复位") == 1
-        assert sum(1 for e in events
-                   if e["event"] == "复位请求-未冻结") == 1
-
-
-class TestCliReset:
-    """TC-N-EST-05 CLI --reset 入口（P1 / 单测 / INV-10 / ISS-0002）。"""
-
-    def test_reset_online(self, monkeypatch, capsys):
-        import deskpilot.main as m
-
-        posts: list[str] = []
-        monkeypatch.setattr(m, "probe_daemon", lambda *a, **k: True)
-
-        class FakeResp:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-            def read(self):
-                return json.dumps(
-                    {"ok": True, "error_code": "", "message": "已复位",
-                     "data": {"was_frozen": True, "frozen": False}}
-                ).encode("utf-8")
-
-        def fake_urlopen(req, timeout=0):
-            posts.append(req.full_url)
-            return FakeResp()
-
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-        monkeypatch.setattr("sys.argv", ["deskpilot", "--reset"])
-        rc = m.main()
-        assert rc == 0
-        assert len(posts) == 1
-        assert posts[0].endswith("/estop/reset")
-
-    def test_reset_offline_errors(self, monkeypatch, capsys):
-        import deskpilot.main as m
-
-        monkeypatch.setattr(m, "probe_daemon", lambda *a, **k: False)
-        posts: list[str] = []
-        monkeypatch.setattr(
-            urllib.request, "urlopen",
-            lambda req, timeout=0: posts.append(req.full_url))
-        monkeypatch.setattr("sys.argv", ["deskpilot", "--reset"])
-        rc = m.main()
-        assert rc != 0
-        assert posts == []
-        assert "无法连接" in capsys.readouterr().err
-
-
 class TestResetNoopAudited:
-    """TC-N-EST-06 复位 no-op 记审计（P1 / 单测 / ISS-0002）。"""
+    """TC-N-EST-06 复位 no-op 记审计（P1 / 单测 / ISS-0002）。
+
+    ISS-0093 §11 适配:原「热键+cli_reset」两半随 CLI 通道删除收口为
+    纯热键——noop 审计语义不变,载体为人类独占通道。"""
 
     def test_reset_noop_leaves_audit(self, estop, tmp_path):
         estop.on_reset_hotkey()
-        estop.cli_reset()
+        estop.on_reset_hotkey()
         assert estop.is_frozen() is False
         events = read_audit(str(tmp_path / "audit"))
-        noop = [e for e in events if e["event"] == "复位请求-未冻结"]
+        noop = [e for e in events if e["event"] == EV_RESET_NOOP_NOT_FROZEN]
         assert len(noop) == 2
         assert all(e["detail"] for e in noop)

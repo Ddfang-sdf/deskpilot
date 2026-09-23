@@ -1,8 +1,10 @@
 """急停程序（详细设计 §11）。
 
-独立线程监听热键（Ctrl+Shift+F12）与鼠标甩角；复位仅本地人类通道：
-复位热键 Ctrl+Shift+F11 或本地 CLI 命令。复位组合键永不进入任何按键许可表。
-持有 shell 的 AI 属威胁模型之外（防 AI 犯错，不防 AI 作恶）。
+独立线程监听热键（Ctrl+Shift+F12）与鼠标甩角；复位仅人类独占通道：
+复位热键 Ctrl+Shift+F11 或冻结提示弹窗「立即解冻」进程内直调/退出码
+通道（ISS-0093：CLI/HTTP/req 文件邮箱三通道已收口删除——文件的存在
+不构成人类意愿的证明，持 MCP 的 AI 可自行复现）。复位组合键永不进入
+任何按键许可表。
 """
 
 from __future__ import annotations
@@ -10,6 +12,8 @@ from __future__ import annotations
 from typing import Callable
 
 from .audit import AuditLogger
+from .audit_events import (EV_ESTOP_RESET, EV_ESTOP_TRIGGERED,
+                           EV_RESET_NOOP_NOT_FROZEN)
 
 TRIGGER_HOTKEY = "ctrl+shift+f12"   # 急停热键（规范化形）
 RESET_HOTKEY = "ctrl+shift+f11"     # 复位热键（规范化形）
@@ -49,17 +53,9 @@ class EstopMonitor:
         """复位热键回调（Ctrl+Shift+F11）：复位并记审计。"""
         self._reset("复位热键 Ctrl+Shift+F11")
 
-    def cli_reset(self) -> None:
-        """本地 CLI 复位命令入口：复位并记审计。"""
-        self._reset("本地 CLI 复位命令")
-
     def dialog_reset(self) -> None:
         """冻结提示弹窗"立即解冻"入口：复位并记审计（ISS-0004）。"""
         self._reset("冻结提示弹窗")
-
-    def shared_sync_reset(self) -> None:
-        """共享状态同步复位入口（ISS-0006 §6）：复位并记审计（复位-共享同步）。"""
-        self._reset("复位-共享同步")
 
     def check_corner(self, x: int, y: int) -> None:
         """鼠标位置轮询回调：甩角边沿防抖判定(ISS-0049)。
@@ -89,7 +85,7 @@ class EstopMonitor:
             return
         self._frozen = True
         if self._audit is not None:
-            self._audit.record_event("急停触发", source)
+            self._audit.record_event(EV_ESTOP_TRIGGERED, source)
         if self._on_state_change is not None:
             self._on_state_change(True, source)
         for fn in self._freeze_listeners:       # REQ-001:冻结监听器(独立容错)
@@ -102,12 +98,12 @@ class EstopMonitor:
         if not self._frozen:
             # 复位 no-op 也记审计（ISS-0002）：热键按没按、送到了谁必须可查
             if self._audit is not None:
-                self._audit.record_event("复位请求-未冻结", source)
+                self._audit.record_event(EV_RESET_NOOP_NOT_FROZEN, source)
             return
         self._frozen = False
         self._corner_since = None
         self._corner_inside = None     # ISS-0049:复位再基线——压角残留不复活恐慌
         if self._audit is not None:
-            self._audit.record_event("急停复位", source)
+            self._audit.record_event(EV_ESTOP_RESET, source)
         if self._on_state_change is not None:
             self._on_state_change(False, source)

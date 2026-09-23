@@ -16,6 +16,8 @@ from typing import Iterable, Mapping
 
 import yaml
 
+from .audit_events import (EV_WHITELIST_ENROLLED_PERMANENT,
+                           EV_WHITELIST_REMOVED)
 from .errors import PolicyError
 
 # 自保护铁律（ISS-0012 约束）：本服务进程永不可入白——
@@ -132,7 +134,7 @@ class WhitelistAdmin:
             # ISS-0072：人类主动加回＝唯一恢复通道,解除撤回态
             # （盘面墓碑被真条目覆盖,见 _write_disk 的进程名去重）
             self._revoked.discard(p)
-        self._event("白名单入白-永久", f"{p} {lv}")
+        self._event(EV_WHITELIST_ENROLLED_PERMANENT, f"{p} {lv}")
         if self.notify_permanent is not None:
             try:
                 self.notify_permanent(p)       # E4 入白确认 toast（含撤销）
@@ -151,7 +153,7 @@ class WhitelistAdmin:
                 self._write_disk(p, None, remove=True)
                 del self._static[p]
                 self._revoked.add(p)
-                self._event("白名单移除", p)
+                self._event(EV_WHITELIST_REMOVED, p)
                 return "static"
             if p in self._session:
                 del self._session[p]

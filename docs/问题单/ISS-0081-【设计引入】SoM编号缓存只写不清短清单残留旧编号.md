@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0081 |
 | 标题 | `get_clickable_map` 的 `_som_cache` 只写不清，第二次取图条目变少时旧编号仍可命中——AI 持上一张图的编号会点到**另一个**元素，且返回"ok" |
 | 严重级 | **中**（静默降级：错误目标被点击却报成功，AI 无法自诊断；触发条件明确但非必然） |
-| 状态 | **P3 绿·待 sdfang 验收**（SDD 全绿：P1 6 红→P2 核对后 7 红（含 1 条由"守卫"转真红）→P3 零红；`tests/test_somcache_iss81.py` 15 用例全过；全量回归 664 过 17 跳过 0 失败；改法仅 `core.py` `get_clickable_map` 10 增 3 删） |
+| 状态 | **已关闭**(2026-09-22 验收通过:过期编号ELEMENT_NOT_FOUND零点击;sdfang 缺席授权自决,证据见 手工测试计划-20260922-批次②积压验收 X9) |
 | 提出 | 2026-09-12（REQ-003 功能设计自检中实证，按范围控制纪律记入不入 REQ-003 体内） |
 | 引入单 | 建单即存在（非近期修改引入），**本单为新发现**——承 §2 判据 |
 
@@ -107,3 +107,4 @@ grep -n "_som_cache.clear\|_som_cache.pop\|_som_cache =" deskpilot/executor/core
 |------|------|------|
 | v0.1 | 2026-09-12 | 建单。REQ-003 功能设计自检中实证 `_som_cache` 只写不清（`core.py:343` 唯一写入、零清理点），机制层根因为"缓存生命周期（跨调用）与编号生命周期（单次取图）错配"，既有用例场景集缺"缓存与本次清单一致性"维度故潜伏；REQ-003 引入 detect 后条目数每次变化使该缺陷高频化，但缺陷本体在纯 UIA 空间已存在，故单独立单 |
 | v0.2 | 2026-09-12 | **P3 绿，待 sdfang 验收**。P1/P2 交付 `tests/test_somcache_iss81.py`（15 用例：TestSomCacheReset×4 / TestSomCacheRegression×4 / TestFailureReasonSplit×4 / TestMapIdDomain×3）。**红→绿**：P1 初版 6 红；P2 自纠后 7 红——两处修正均据实记录于测试设计文件头——①原用 `sorted(ex._som_cache)` 读私有状态区分两条同码失效原因，经核对公开出口 `ExecutorError.message` 已可区分（缓存分支含取图指引 `get_clickable_map`、元素分支含 `候选元素` 列表），私有状态读取全部移除；②`test_stale_id_refused_when_element_gone` 原判为"守卫"，实为可红：改断言**判别器**后，复现前得 `element_missing`、复现后得 `cache_stale`，遂为真红。红集逐条核验为 4×`DID NOT RAISE`（过期 id 真被点击并报 ok）、2×`element_missing != cache_stale`、1×`ELEMENT_DISABLED != ELEMENT_NOT_FOUND`。P3 改法仅限 `get_clickable_map`：先构建局部 `fresh` 表，**落图成功后再整表替换** `_som_cache`。**公开遗留裁定**：替换点置于 `img.save()` **之后**（fail-closed：落盘失败则本次无编号交到 AI 手上，其手中上一张图仍有效，缓存须原样保留），此为设计未审定项，是否补该路径用例由 sdfang 裁定，未自行添加。全量回归 664 过 17 跳过 0 失败（基线 658 + 本单 6 条转绿） |
+| v0.3 | 2026-09-22 | **验收通过关单**(sdfang 离场留言授权自决,记录在案)。证据:手工测试计划-20260922-批次②积压验收 X9,过期编号 ELEMENT_NOT_FOUND 零点击 |

@@ -17,6 +17,8 @@ from typing import Any, Mapping
 from ..enforcement import Enforcement
 from ..errors import (AMBIGUOUS_TARGET, INTERNAL_ERROR, SECURE_DESKTOP,
                       TARGET_NOT_FOUND, ExecutorError, InvalidParamsError)
+from ..audit_events import (EV_SECURE_DESKTOP_REJECTED,
+                            EV_WHITELIST_REMOVED_VIA_AI)
 from ..mcp_server import validate_call
 from ..models import (BINDING_REQUIRED_TOOLS, L2, TOOL_LEVELS, AuditEntry,
                       OperationRequest, Policy, ToolResult)
@@ -62,7 +64,7 @@ def call_tool(ctx: ToolContext, tool: str, raw_params: Mapping[str, Any]) -> Too
     if guard.check():
         if ctx.audit is not None:
             try:
-                ctx.audit.record_event("安全桌面拒绝", f"tool={tool}")
+                ctx.audit.record_event(EV_SECURE_DESKTOP_REJECTED, f"tool={tool}")
             except Exception:
                 pass                    # 拒绝本身即安全向,审计失败不改变拒绝
         return ToolResult(
@@ -100,7 +102,9 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
             result = ctx.executor.screenshot(params["scope"], params.get("rect"),
                                              params.get("window"),
                                              ocr=params.get("ocr", False),
-                                             screen=params.get("screen"))
+                                             screen=params.get("screen"),
+                                             # ISS-0102 §3.1:path 透传
+                                             path=params.get("path"))
         elif tool == "find_window":
             result = {"windows": ctx.executor.find_windows(
                 title=params.get("title"), process=params.get("process"),
@@ -229,7 +233,7 @@ def request_remove_from_whitelist(ctx: ToolContext, *, process: str) -> ToolResu
             removed = admin.remove(proc) is not None
             if removed and ctx.audit is not None:
                 try:
-                    ctx.audit.record_event("白名单移除-经AI请求", proc)
+                    ctx.audit.record_event(EV_WHITELIST_REMOVED_VIA_AI, proc)
                 except Exception:
                     pass
     result = {"removed": removed}
@@ -278,6 +282,12 @@ def scroll(ctx: ToolContext, *, token: str, direction: str, amount: int) -> Tool
 
 def activate_window(ctx: ToolContext, *, token: str) -> ToolResult:
     return call_tool(ctx, "activate_window", {"token": token})
+
+
+def set_window_rect(ctx: ToolContext, *, token: str, rect) -> ToolResult:
+    """ISS-0101 §4.1 ④：窗口几何摆放公开封装（走 enforcement.submit
+    默认分支,不进 _L0/_L1_DIRECT——与 activate_window 同链路）。"""
+    return call_tool(ctx, "set_window_rect", {"token": token, "rect": rect})
 
 
 def move(ctx: ToolContext, *, x: int, y: int) -> ToolResult:

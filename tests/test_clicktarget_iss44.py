@@ -314,21 +314,12 @@ class TestRealAnchorClick:
                   if x["title"] == "Program Manager"][0]
             a = call("attach", {"hwnd": pm["hwnd"]})
             # 环境自适应:窗口布局常变,挑一个「图形中心未被遮挡」的图标做锚点
-            import ctypes
-            from ctypes import wintypes
-            u32 = ctypes.windll.user32
-            pm_hwnd = u32.FindWindowW("Progman", None)
-            target_icon = None
-            for it in icons:
-                g = it["graphic_rect"]
-                cx, cy = (g[0] + g[2]) // 2, (g[1] + g[3]) // 2
-                h = u32.WindowFromPoint(wintypes.POINT(cx, cy))
-                if h == pm_hwnd or u32.IsChild(pm_hwnd, h):
-                    target_icon = it
-                    break
+            # ISS-0062 步骤 A:选图标同构逻辑收敛 envguard(纯重构)
+            from .envguard import env_skip, pick_unoccluded_desktop_icon
+            target_icon = pick_unoccluded_desktop_icon(icons)
             if target_icon is None:
-                pytest.skip("当前桌面无可用的未遮挡图标(环境守卫——"
-                            "桌面被窗口全覆盖时跳过,清桌面后跑)")
+                env_skip("当前桌面无可用的未遮挡图标"
+                         "(桌面被窗口全覆盖时跳过,清桌面后跑)")
             g = target_icon["graphic_rect"]
             r = call("click_text", {"text": target_icon["display"],
                                     "offset": "above",
@@ -337,8 +328,7 @@ class TestRealAnchorClick:
             # 宿主控制台)压在图标文字区时,OCR 读出污染文本致文字找不到——
             # 环境,非 click_text 行为回归;清桌面/换 runner 后重跑
             if not r["ok"] and r.get("error_code") == "OCR_TEXT_NOT_FOUND":
-                pytest.skip("环境守卫:桌面异物窗污染图标文字区, "
-                            "OCR 读不到干净标签")
+                env_skip("桌面异物窗污染图标文字区, OCR 读不到干净标签")
             assert r["ok"], r.get("message")
             tx, ty = r["data"]["target"]
             assert g[0] <= tx <= g[2] and g[1] <= ty <= g[3], \

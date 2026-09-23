@@ -14,6 +14,8 @@ from typing import Any
 
 from .approval import ApprovalManager, compute_fingerprint
 from .audit import AuditLogger
+from .audit_events import (EV_APPROVAL_SHOT_FAILED,
+                           EV_ENROLL_EVIDENCE_WINDOWS)
 from .binding import BindingManager
 from .errors import (APPROVAL_DENIED, APPROVAL_TIMEOUT, AUDIT_FAILURE,
                      ELEVATION_REQUIRED, EMERGENCY_STOP, INVALID_PARAMS,
@@ -391,7 +393,7 @@ class Enforcement:
                             f"可见={self._is_visible_hwnd(w.get('hwnd'))} "
                             f"标题={str(w.get('title', ''))[:30]}"
                             for w in all_cands[:10])
-                        self._audit.record_event("入白取证窗口明细",
+                        self._audit.record_event(EV_ENROLL_EVIDENCE_WINDOWS,
                                                  f"proc={proc}: {detail}")
                     except Exception:
                         pass
@@ -407,7 +409,7 @@ class Enforcement:
             return None
         except Exception as e:
             try:
-                self._audit.record_event("审批取图失败", str(e))
+                self._audit.record_event(EV_APPROVAL_SHOT_FAILED, str(e))
             except Exception:
                 pass
             return None

@@ -356,7 +356,9 @@ class TestRealDesktop:
                 if checked >= 3:
                     break
             if not checked:
-                pytest.skip("当前桌面图标全被遮挡(环境守卫——清桌面后跑)")
+                # ISS-0062 步骤 A:守卫口径收敛 env_skip(纯重构)
+                from .envguard import env_skip
+                env_skip("当前桌面图标全被遮挡(清桌面后跑)")
             # 栈叠同 rect 各成一条(若存在)
             rects = [tuple(i["cell_rect"]) for i in items]
             assert len(rects) == len(items)           # 数量守恒(未合并)
@@ -364,17 +366,38 @@ class TestRealDesktop:
             d.stop()
 
     def test_icons10_real_region_filter(self, policy, audit_log, tmp_path):
+        """TC-ICONS-10(行为面,ISS-0062 步骤 B):region 过滤 round-trip 自洽。
+
+        环境不变量断言(取代原「左上角必中且非全量」布局假设):
+        region 由 full 首个实体项 cell_rect 外扩 2px 自适应构造;
+        part 每项与 region 相交(保留原①);part 与「full 经
+        rects_intersect 重算」逐项相等(过滤正确性由重算钉死,
+        不再依赖桌面布局)。
+        双闸门登记:去除原 :378 `0 < count < full.count`——它探测的是
+        桌面布局而非过滤逻辑;过滤正确性改由 round-trip 重算探测,
+        无被掩盖行为(ISS-0062 变更记录)。桌面无实体项 → env_skip。"""
+        from deskpilot.executor.desktop_icons import rects_intersect
+
+        from .envguard import env_skip
         d = self._daemon(policy, audit_log, tmp_path)
         try:
             full = self._call(d.port, "list_desktop_icons", {})
-            region = [0, 0, 230, 300]          # 左上小角(必为全量子集)
+            items = full["data"]["items"]
+            solids = [i for i in items if i.get("source")]   # 实体项(有路径)
+            if not solids:
+                env_skip("桌面实体图标(过滤用例需要至少一个)")
+            cell = solids[0]["cell_rect"]
+            region = [cell[0] - 2, cell[1] - 2, cell[2] + 2, cell[3] + 2]
             part = self._call(d.port, "list_desktop_icons",
                               {"region": region})
             assert part["ok"] is True
             for it in part["data"]["items"]:
-                c = it["cell_rect"]
-                assert c[0] < region[2] and c[2] > region[0] \
-                    and c[1] < region[3] and c[3] > region[1]
-            assert 0 < part["data"]["count"] < full["data"]["count"]
+                assert rects_intersect(it["cell_rect"], region), \
+                    f"part 项与 region 不相交(响应体直出): {it['cell_rect']}"
+            expected = [i for i in items
+                        if rects_intersect(i["cell_rect"], region)]
+            assert [i["cell_rect"] for i in part["data"]["items"]] == \
+                   [i["cell_rect"] for i in expected], \
+                "part 须等于 full 经 rects_intersect 重算结果(直出比对)"
         finally:
             d.stop()

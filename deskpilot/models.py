@@ -29,6 +29,8 @@ TOOL_LEVELS: Mapping[str, str] = {
     "mouse_down": L2, "mouse_up": L2, "hold": L2,
     # ISS-0012 §6 E3：AI 请求撤回白名单（人类弹窗裁决后才执行，L1 请求类）
     "request_remove_from_whitelist": L1,
+    # ISS-0101：窗口几何摆放原语（click 同级 L2;P1 空壳=纯声明）
+    "set_window_rect": L2,
 }
 
 # 需要有效绑定的工具（详细设计 §12.4 / §13.4 / §14.4 输入项中含"绑定令牌✱"者；
@@ -39,6 +41,8 @@ BINDING_REQUIRED_TOOLS = frozenset({
     "type_text", "key", "set_clipboard", "drag", "click_text",
     # REQ-001 原语层与按住不放(绑定必需)
     "mouse_down", "mouse_up", "hold",
+    # ISS-0101:绑定进程窗限定(不收 hwnd=结构性跨窗限定,P1 空壳=纯声明)
+    "set_window_rect",
 })
 
 # ISS-0009 §6：各级别调用的内部时限预算（秒）；临期返回 TOOL_TIMEOUT

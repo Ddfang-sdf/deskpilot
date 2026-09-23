@@ -35,11 +35,18 @@ from deskpilot.models import OperationRequest
 from deskpilot.secure_desktop import SecureDesktopGuard
 from deskpilot.tools import ToolContext, attach
 
+from deskpilot.audit_events import (
+    EV_ENROLL_EVIDENCE_WINDOWS)
 from .conftest import (FakeApprover, FakeClock, FakeExecutor, FakeProbe,
                        read_audit)
 
 user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
+
+
+@pytest.fixture(autouse=True)
+def _pin_zh(pin_zh_locale):
+    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
 
 
 # ---------- 进程内临时顶层窗(集成前提;用完销毁) ----------
@@ -271,7 +278,7 @@ class TestSoftwareLevelEvidence:
             hits=5)
         _submit_attach(enf)
         events = [e.get("event") for e in read_audit(str(tmp_path / "audit"))]
-        assert "入白取证窗口明细" in events       # 审计直读
+        assert EV_ENROLL_EVIDENCE_WINDOWS in events       # 审计直读
         assert "hwnd" not in _last_req(appr)["description"]  # 弹窗不含(直出)
 
     def test_tc14_four_items_present(self, tmp_path, policy, audit_log,

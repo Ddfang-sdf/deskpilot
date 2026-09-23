@@ -79,83 +79,15 @@ class TestBuildWindowTargetScreen:
     断言:落位函数被调用时的 screen 参数(替身记录直出)。"""
 
     def test_approval_uses_target_screen(self, monkeypatch):
+        """ISS-0059 步骤9:FakeWin/_FakeWidget 收编 tests/faketk.install
+        (screen=(999999,999999) 哨兵按原校准值传,断言值不动)。"""
         import deskpilot.approval_dialog as ad
-        seen = {}
-
-        class FakeWin:
-            def __init__(self):
-                self.geo = None
-
-            def winfo_screenwidth(self):
-                return 999999
-
-            def winfo_screenheight(self):
-                return 999999
-
-            def title(self, *a):
-                pass
-
-            def overrideredirect(self, *a):
-                pass
-
-            def attributes(self, *a):
-                pass
-
-            def configure(self, *a, **k):
-                pass
-
-            def geometry(self, g):
-                self.geo = g
-
-            def after(self, *a, **k):
-                pass
-
-            def update_idletasks(self):           # ISS-0098 测量契约
-                pass
-
-            def winfo_reqheight(self):
-                return 100                        # 小值→走地板,旧几何不变
-
-            def bind(self, *a, **k):
-                pass
-
-        monkeypatch.setattr(ad.tk, "Toplevel", lambda parent: FakeWin())
-        monkeypatch.setattr(ad.tk, "Frame", lambda *a, **k: _FakeWidget())
-        monkeypatch.setattr(ad.tk, "Label", _fake_label)
-        monkeypatch.setattr(ad.tk, "Button", _fake_button)
-
+        from .faketk import install
+        install(monkeypatch, ad.tk, screen=(999999, 999999))
         win = ad.build_window(object(), "测试", "/tmp/r.txt", 5,
                               target_screen=LEFT)
         x = int(win.geo.split("+")[1])
         assert x == LEFT["work_area"][2] - 480 - 16
-
-
-def _FakeWidget():
-    class W:
-        def pack(self, *a, **k):
-            pass
-
-        def place(self, *a, **k):
-            pass
-
-        def bind(self, *a, **k):
-            pass
-
-        def focus_set(self):
-            pass
-
-        def config(self, *a, **k):
-            pass
-
-    return W()
-
-
-def _fake_label(*a, **k):
-    return _FakeWidget()
-
-
-def _fake_button(*a, **k):
-    return _FakeWidget()
 
 
 # ---------- C 坐标系声明 ----------

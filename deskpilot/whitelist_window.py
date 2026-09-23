@@ -313,8 +313,12 @@ class _Tooltip:
 class _ManagerUI:
     """白名单管理窗口控制器：搜索过滤 + 两区分立滚动 + 更多/收起。"""
 
-    _SECTIONS = (("static", tr("wl.group.static")),
-                 ("session", tr("wl.group.session")))
+    @property
+    def _SECTIONS(self):
+        """分区块(键, 标题)。惰性取词(ISS-0111:类级 tr() 在 import 期
+        固化,locale 晚于导入设置时文案锁死——CI en-US 实证)。"""
+        return (("static", tr("wl.group.static")),
+                ("session", tr("wl.group.session")))
 
     def __init__(self, win, entries: dict, on_remove, on_clear_session,
                  display_map: dict | None = None):
@@ -353,12 +357,15 @@ class _ManagerUI:
 
     # ---- 骨架 ----
 
-    _EMPTY_TEXT = {
-        "static": (tr("wl.empty.static"),
-                   tr("wl.empty.static.hint")),
-        "session": (tr("wl.empty.session"),
-                    tr("wl.empty.session.hint")),
-    }
+    @property
+    def _EMPTY_TEXT(self):
+        """空态文案(惰性取词,同 _SECTIONS 的 ISS-0111 固化修复)。"""
+        return {
+            "static": (tr("wl.empty.static"),
+                       tr("wl.empty.static.hint")),
+            "session": (tr("wl.empty.session"),
+                        tr("wl.empty.session.hint")),
+        }
 
     def _build_block(self, win, title: str) -> dict:
         head = tk.Frame(win, bg=_BG)
@@ -738,8 +745,9 @@ def _http_json(url: str, payload: dict | None = None) -> dict:
 
 
 def _fetch_whitelist(base: str):
-    """ISS-0085:GET /whitelist → (entries, dmap);失败返回空表(既有容错语义
-    原样迁移,非新增降级)。
+    """ISS-0085:GET /whitelist → (entries, dmap, fallback);失败返回空表
+    (既有容错语义原样迁移,非新增降级);fallback=True 标记走了失败回退
+    (ISS-0095 O2 埋点用,行为语义不变)。
 
     entries = {group: {proc: level}};dmap = {proc: (display, desc)}——
     端点直供显示名/描述时零本地解析(TC-FAST-02 同语义)。
@@ -754,46 +762,64 @@ def _fetch_whitelist(base: str):
                 entries[group][it["process"]] = it["level"]
                 dmap[it["process"]] = (it.get("display") or None,
                                        it.get("desc") or None)
-        return entries, dmap
+        return entries, dmap, False
     except Exception:
-        return {"static": {}, "session": {}}, {}
+        return {"static": {}, "session": {}}, {}, True
 
 
-def refresh_view(state: dict, base: str, root, on_remove, on_clear) -> None:
+def refresh_view(state: dict, base: str, root, on_remove, on_clear) -> dict:
     """ISS-0085 ①:首建=build_window;后续=set_data 就地刷新(窗不销毁不重建,
     几何天然不动)。
 
     state["win"] is None → 建窗+WM_DELETE_WINDOW 注册+存入 state;否则取
     win._manager 整表替换数据(set_data),复用既有 _render_block 就地重渲染
     路径(与搜索过滤同形态),窗口对象身份与几何保持。
+
+    ISS-0095 O2:返回分段计时信息(fetch_ms/build_ms/entries_n/fallback,
+    纯观测不涉行为)。
     """
-    entries, dmap = _fetch_whitelist(base)
+    f0 = time.monotonic()
+    entries, dmap, fallback = _fetch_whitelist(base)
+    fetch_ms = (time.monotonic() - f0) * 1000
+    entries_n = sum(len(v) for v in entries.values())
     win = state.get("win")
+    b0 = time.monotonic()
     if win is None:
         win = build_window(root, entries, on_remove, on_clear,
                            display_map=dmap)
         win.protocol("WM_DELETE_WINDOW", root.quit)
         state["win"] = win
-        return
-    win._manager.set_data(entries, dmap)
+    else:
+        win._manager.set_data(entries, dmap)
+    build_ms = (time.monotonic() - b0) * 1000
+    return {"fetch_ms": fetch_ms, "build_ms": build_ms,
+            "entries_n": entries_n, "fallback": fallback}
 
 
 def main() -> None:
     """--whitelist-manager <base_url>：管理窗口进程（经本机 HTTP 操作）。
 
     单例语义（TC-SINGLE）：已存在管理窗口则聚焦并退出，不再开新窗。
+    ISS-0095 O2:分段计时(boot/tk_init/fetch+entries_n+fallback/build/
+    total+t0)写 stderr(Popen 处重定向到受管目录滚动日志;写失败静默,
+    不阻断开窗)。
     """
+    from datetime import datetime
+    t0 = time.monotonic()
+    t0_iso = datetime.now().astimezone().isoformat()
     if focus_existing_or_exit("DeskPilot 白名单管理"):
         return
     base = sys.argv[1].rstrip("/")
+    t_boot = time.monotonic()
     root = tk.Tk()
     root.withdraw()
+    t_tk = time.monotonic()
 
     state: dict[str, Any] = {"win": None}
 
-    def refresh() -> None:
+    def refresh() -> dict:
         # ISS-0085 ①:就地刷新(窗不销毁重建,几何不动);首建/后续统一入口
-        refresh_view(state, base, root, on_remove, on_clear)
+        return refresh_view(state, base, root, on_remove, on_clear)
 
     def on_remove(proc: str) -> None:
         try:
@@ -809,7 +835,20 @@ def main() -> None:
             pass
         refresh()
 
-    refresh()
+    info = refresh()
+    t_end = time.monotonic()
+    try:
+        print(f"管理窗分段计时 t0={t0_iso} "
+              f"boot_ms={(t_boot - t0) * 1000:.0f} "
+              f"tk_init_ms={(t_tk - t_boot) * 1000:.0f} "
+              f"fetch_ms={info['fetch_ms']:.0f} "
+              f"entries_n={info['entries_n']} "
+              f"fallback={int(info['fallback'])} "
+              f"build_ms={info['build_ms']:.0f} "
+              f"total_ms={(t_end - t0) * 1000:.0f}",
+              file=sys.stderr)
+    except Exception:                            # noqa: BLE001
+        pass                                     # 计时写失败不阻断开窗
     root.mainloop()
 
 
