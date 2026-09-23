@@ -636,6 +636,141 @@ def _stage_runtime(policy, policy_path, estop, audit: AuditLogger,
     return {"executor": executor, "ctx": ctx}
 
 
+class OwnershipRuntime:
+    """ISS-0084 属主裙子系统(ISS-0064 S5,纯重构,批准③结构新物):
+    4 闭包+owner dict 共享可变状态收口为显式持有。
+
+    持有:ctx/estop/notifier/audit/audit_paths/policy/whitelist_admin/
+    shared_dir;状态:supervisor/httpd/tray。三分支逻辑在 _stage_ownership。
+    惰性 import(httpd/tray)留方法内=既有 patch 缝不动。
+    """
+
+    def __init__(self, *, ctx, estop, notifier, audit, audit_paths, policy,
+                 whitelist_admin, shared_dir):
+        self._ctx = ctx
+        self._estop = estop
+        self._notifier = notifier
+        self._audit = audit
+        self._audit_paths = audit_paths
+        self._policy = policy
+        self._whitelist_admin = whitelist_admin
+        self._shared_dir = shared_dir
+        self.supervisor = None
+        self.httpd = None
+        self.tray = None
+
+    def become_owner(self) -> None:
+        """属主升起(②⑥):9420 HTTP + 托盘 + 热键/甩角监听。"""
+        from .httpd import HttpDaemon
+        from .tray import TrayIcon
+        d = HttpDaemon(self._ctx, estop=self._estop,
+                       idle_timeout_s=self._policy.idle_timeout_minutes * 60,
+                       whitelist_admin=self._whitelist_admin)
+        try:
+            d.start()
+        except RuntimeError as e:
+            # 锁与端口不一致的异常面:记审计,属主回调内不持 HTTP,
+            # 调用方据此放锁退瘦代理
+            self._audit.record_event(EV_OWNER_BIND_9420_FAILED, f"{e}")
+            return
+        self.httpd = d
+        t = TrayIcon(on_manage=_open_manager_for(
+            d.port, audit=self._audit,
+            stderr_log=self._audit_paths.logs / "manager-window.log"))
+        t.start()
+        self.tray = t
+        _start_estop_listeners(self._estop, self._audit, self._notifier)
+
+    def cede_owner(self) -> None:
+        """daemon 复出回迁(②):停 HTTP/托盘,注销热键——属主语义回 daemon。"""
+        if self.httpd is not None:
+            self.httpd.stop()
+            self.httpd = None
+        if self.tray is not None:
+            self.tray.stop()
+            self.tray = None
+        import ctypes as _ct
+        _ct.windll.user32.UnregisterHotKey(None, 1)   # 热键(急停/复位)注销,
+        _ct.windll.user32.UnregisterHotKey(None, 2)   # 消息循环随进程退运清理
+
+    def alarm_fn(self, msg: str) -> None:
+        """③死亡告警:托盘气泡(属主形态)+ stderr 双通道。"""
+        if self.tray is not None:
+            self.tray.notify(tr("tray.alarm.title"),
+                             tr("tray.alarm.text"))
+        print(msg + "(白名单管理/热键复位不可用)", file=sys.stderr)
+
+    def watch(self) -> None:
+        """属主周期:daemon 复出让位 / daemon 死亡自愈接管 / 死亡告警(③)。"""
+        while self.supervisor is not None:
+            time.sleep(10.0)
+            self.supervisor.tick()
+
+
+def _stage_ownership(rt: OwnershipRuntime) -> int | None:
+    """属主权段(ISS-0064 S5):daemon 持锁重试/瘦代理探活/stdio 属主
+    接管三分支。返回早退 rc(4)或 None;审计事件序列逐字节不变。"""
+    from .ownership import (RoleSupervisor, ensure_autostart,  # noqa: F401
+                            is_daemon_alive)
+    audit = rt._audit
+    if "--daemon" in sys.argv:
+        # daemon:持锁重试(心跳在 supervisor.start 内先行——stdio 属主见之
+        # 让位,§7.2);锁不得 → 干净退出(单例语义升级:锁先于端口)
+        rt.supervisor = RoleSupervisor(rt._shared_dir, "daemon", audit=audit)
+        _acquired = False
+        for _att in range(12):
+            if rt.supervisor.start():
+                _acquired = True
+                break
+            time.sleep(min(1.0 * (_att + 1), 2.0))
+        if not _acquired:
+            audit.record_event(EV_DAEMON_SINGLETON_EXIT, "属主锁未获得:已有属主在线")
+            print("属主锁未获得(已有属主在线),本实例退出", file=sys.stderr)
+            return 4
+        # ⑤开机自启:冻结形态幂等注册(源码形态跳过——开发形态不自启)
+        if getattr(sys, "frozen", False):
+            if ensure_autostart(str(Path(sys.executable).resolve())):
+                audit.record_event(EV_AUTOSTART_REGISTERED, "HKCU Run: DeskPilotDaemon")
+        _start_estop_listeners(rt._estop, audit, rt._notifier)
+    elif probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+        # stdio 瘦代理：冻结标志归属主(9420 持有人)所有——本进程注册热键
+        # 只会抢占复位通道(RegisterHotKey 全系统单持有者,ISS-0002 根因修复)
+        audit.record_event(EV_PROXY_SKIPS_HOTKEY,
+                           "daemon/既有属主在线；急停热键与甩角监听归其持有")
+    else:
+        # daemon 不在:心跳新鲜(启动中)则稍候重探;否则试持属主锁
+        for _w in range(6):
+            if not is_daemon_alive(rt._shared_dir):
+                break
+            time.sleep(1.0)
+            if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+                break
+        if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+            audit.record_event(EV_PROXY_SKIPS_HOTKEY,
+                               "daemon 启动中(心跳新鲜),转瘦代理")
+        else:
+            rt.supervisor = RoleSupervisor(
+                rt._shared_dir, "stdio", audit=audit,
+                on_become_owner=rt.become_owner, on_cede=rt.cede_owner,
+                alarm_fn=rt.alarm_fn)
+            if rt.supervisor.start():
+                if rt.httpd is None:
+                    # 9420 绑定失败(锁与端口不一致的异常面):放锁退瘦代理
+                    rt.supervisor.stop()
+                    rt.supervisor = None
+                    audit.record_event(EV_PROXY_SKIPS_HOTKEY,
+                                       "9420 绑定失败(锁端口不一致),退瘦代理")
+                else:
+                    audit.record_event(EV_STDIO_BECOME_OWNER,
+                                       "daemon 不在,本实例接管 9420/热键/托盘")
+                    threading.Thread(target=rt.watch, daemon=True,
+                                     name="deskpilot-ownership").start()
+            else:
+                audit.record_event(EV_PROXY_SKIPS_HOTKEY,
+                                   "另一 stdio 属主在(属主锁被持)")
+    return None
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
@@ -670,114 +805,14 @@ def main() -> int:
     ctx = runtime["ctx"]
 
     # ---------- ISS-0084 属主权装配(①②③⑤⑥) ----------
-    from .ownership import (RoleSupervisor, ensure_autostart,  # noqa: F401
-                            is_daemon_alive)
-    supervisor: "RoleSupervisor | None" = None
-    owner_httpd: dict = {"d": None}
-    owner_tray: dict = {"t": None}
-
-    def _become_owner() -> None:
-        """属主升起(②⑥):9420 HTTP + 托盘 + 热键/甩角监听。"""
-        from .httpd import HttpDaemon
-        from .tray import TrayIcon
-        d = HttpDaemon(ctx, estop=estop,
-                       idle_timeout_s=policy.idle_timeout_minutes * 60,
-                       whitelist_admin=whitelist_admin)
-        try:
-            d.start()
-        except RuntimeError as e:
-            # 锁与端口不一致的异常面:记审计,属主回调内不持 HTTP,
-            # 调用方据此放锁退瘦代理
-            audit.record_event(EV_OWNER_BIND_9420_FAILED, f"{e}")
-            return
-        owner_httpd["d"] = d
-        t = TrayIcon(on_manage=_open_manager_for(
-            d.port, audit=audit,
-            stderr_log=audit_paths.logs / "manager-window.log"))
-        t.start()
-        owner_tray["t"] = t
-        _start_estop_listeners(estop, audit, notifier)
-
-    def _cede_owner() -> None:
-        """daemon 复出回迁(②):停 HTTP/托盘,注销热键——属主语义回 daemon。"""
-        if owner_httpd["d"] is not None:
-            owner_httpd["d"].stop()
-            owner_httpd["d"] = None
-        if owner_tray["t"] is not None:
-            owner_tray["t"].stop()
-            owner_tray["t"] = None
-        import ctypes as _ct
-        _ct.windll.user32.UnregisterHotKey(None, 1)   # 热键(急停/复位)注销,
-        _ct.windll.user32.UnregisterHotKey(None, 2)   # 消息循环随进程退运清理
-
-    def _alarm_fn(msg: str) -> None:
-        """③死亡告警:托盘气泡(属主形态)+ stderr 双通道。"""
-        if owner_tray["t"] is not None:
-            owner_tray["t"].notify(tr("tray.alarm.title"),
-                                   tr("tray.alarm.text"))
-        print(msg + "(白名单管理/热键复位不可用)", file=sys.stderr)
-
-    def _ownership_watch() -> None:
-        """属主周期:daemon 复出让位 / daemon 死亡自愈接管 / 死亡告警(③)。"""
-        while supervisor is not None:
-            time.sleep(10.0)
-            supervisor.tick()
-
-    if "--daemon" in sys.argv:
-        # daemon:持锁重试(心跳在 supervisor.start 内先行——stdio 属主见之
-        # 让位,§7.2);锁不得 → 干净退出(单例语义升级:锁先于端口)
-        supervisor = RoleSupervisor(_shared_dir, "daemon", audit=audit)
-        _acquired = False
-        for _att in range(12):
-            if supervisor.start():
-                _acquired = True
-                break
-            time.sleep(min(1.0 * (_att + 1), 2.0))
-        if not _acquired:
-            audit.record_event(EV_DAEMON_SINGLETON_EXIT, "属主锁未获得:已有属主在线")
-            print("属主锁未获得(已有属主在线),本实例退出", file=sys.stderr)
-            return 4
-        # ⑤开机自启:冻结形态幂等注册(源码形态跳过——开发形态不自启)
-        if getattr(sys, "frozen", False):
-            if ensure_autostart(str(Path(sys.executable).resolve())):
-                audit.record_event(EV_AUTOSTART_REGISTERED, "HKCU Run: DeskPilotDaemon")
-        _start_estop_listeners(estop, audit, notifier)
-    elif probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-        # stdio 瘦代理：冻结标志归属主(9420 持有人)所有——本进程注册热键
-        # 只会抢占复位通道(RegisterHotKey 全系统单持有者,ISS-0002 根因修复)
-        audit.record_event(EV_PROXY_SKIPS_HOTKEY,
-                           "daemon/既有属主在线；急停热键与甩角监听归其持有")
-    else:
-        # daemon 不在:心跳新鲜(启动中)则稍候重探;否则试持属主锁
-        for _w in range(6):
-            if not is_daemon_alive(_shared_dir):
-                break
-            time.sleep(1.0)
-            if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-                break
-        if probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-            audit.record_event(EV_PROXY_SKIPS_HOTKEY,
-                               "daemon 启动中(心跳新鲜),转瘦代理")
-        else:
-            supervisor = RoleSupervisor(
-                _shared_dir, "stdio", audit=audit,
-                on_become_owner=_become_owner, on_cede=_cede_owner,
-                alarm_fn=_alarm_fn)
-            if supervisor.start():
-                if owner_httpd["d"] is None:
-                    # 9420 绑定失败(锁与端口不一致的异常面):放锁退瘦代理
-                    supervisor.stop()
-                    supervisor = None
-                    audit.record_event(EV_PROXY_SKIPS_HOTKEY,
-                                       "9420 绑定失败(锁端口不一致),退瘦代理")
-                else:
-                    audit.record_event(EV_STDIO_BECOME_OWNER,
-                                       "daemon 不在,本实例接管 9420/热键/托盘")
-                    threading.Thread(target=_ownership_watch, daemon=True,
-                                     name="deskpilot-ownership").start()
-            else:
-                audit.record_event(EV_PROXY_SKIPS_HOTKEY,
-                                   "另一 stdio 属主在(属主锁被持)")
+    rt = OwnershipRuntime(ctx=ctx, estop=estop, notifier=notifier,
+                          audit=audit, audit_paths=audit_paths,
+                          policy=policy, whitelist_admin=whitelist_admin,
+                          shared_dir=_shared_dir)
+    rc = _stage_ownership(rt)
+    if rc is not None:
+        return rc
+    supervisor = rt.supervisor
 
     audit.record_event(EV_SERVICE_START, _startup_detail("MCP stdio 就绪"))
     _start_janitor(policy, audit)                 # ISS-0010 C：清理者装配
