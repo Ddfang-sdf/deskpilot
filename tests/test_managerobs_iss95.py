@@ -122,17 +122,9 @@ class TestO2SegmentTiming:
         monkeypatch.setattr(ww, "focus_existing_or_exit", lambda title: False)
         monkeypatch.setattr("sys.argv", ["wl", "http://127.0.0.1:9420/"])
 
-        class _Tk:
-            def withdraw(self):
-                pass
-
-            def mainloop(self):
-                pass
-
-            def quit(self):
-                pass
-
-        monkeypatch.setattr(ww.tk, "Tk", lambda: _Tk())
+        # ISS-0109:Tk 根窗壳收编 tests/faketk.install(同 0059 纪律)
+        from .faketk import install
+        install(monkeypatch, ww.tk)
         monkeypatch.setattr(
             ww, "_http_json",
             lambda url, payload=None: {"data": {

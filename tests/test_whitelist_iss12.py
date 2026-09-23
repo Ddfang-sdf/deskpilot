@@ -743,89 +743,24 @@ class TestEnrollNoticeV2:
 
 
 # ---------- E2 移出禁止图标（TC-ICON-01~04,2026-08-31 评审通过） ----------
-class _FakeCanvas:
-    """绘图/调度记录型 Canvas 替身(直出)。"""
-    tk_calls: list = ()
-
-    def __init__(self, *a, **k):
-        self.calls = []
-        self.handlers = {}
-        self.afters = []
-        self.cancelled = []
-
-    def pack(self, *a, **k): pass
-    def pack_forget(self): pass
-    def delete(self, *a, **k): self.calls.append(("delete", a))
-    def create_oval(self, *a, **k): self.calls.append(("create_oval", a, k))
-    def create_line(self, *a, **k): self.calls.append(("create_line", a, k))
-    def create_rectangle(self, *a, **k): self.calls.append(("create_rectangle", a, k))
-    def bind(self, seq, h): self.handlers[seq] = h
-    def after(self, ms, fn):
-        self.afters.append(ms)
-        return f"after-{len(self.afters)}"
-    def after_cancel(self, i): self.cancelled.append(i)
-
-
-class _FakeFrame:
-    def __init__(self):
-        self.handlers = {}
-
-    def pack(self, *a, **k): pass
-    def bind(self, seq, h): self.handlers[seq] = h
-    def after(self, ms, fn): return "after-1"
-    def after_cancel(self, i): pass
-
-
 class TestRemoveIcon:
     """TC-ICON(A 方案):移出图标=系统 ⛔ 字形;悬停字号脉冲动效。
     断言:字形文本/字号状态/after 调度(替身记录直出)。"""
 
     def _make(self, monkeypatch):
+        """ISS-0109:字形/画布替身族收编 tests/faketk.install(widget 级
+        扩展面:实例级 handlers/afters/cancelled+of_class 检索;断言零改动)。"""
         import deskpilot.whitelist_window as ww
+        from .faketk import install
         ww._IconButton.instances.clear()
-
-        class FakeGlyph:
-            def __init__(self, *a, **k):
-                self.text = k.get("text", "")
-                self.font = k.get("font")
-                self.fg = k.get("fg")
-                self.size = self.font[1] if self.font else None
-                self.handlers = {}
-                self.afters = []
-                self.cancelled = []
-
-            def pack(self, *a, **k): pass
-            def bind(self, seq, h): self.handlers[seq] = h
-            def configure(self, *a, **k):
-                if "font" in k:
-                    self.font = k["font"]
-                    self.size = self.font[1]
-                if "fg" in k:
-                    self.fg = k["fg"]
-            def after(self, ms, fn=None):
-                self.afters.append(ms)
-                return f"a{len(self.afters)}"
-            def after_cancel(self, i): self.cancelled.append(i)
-
-        # faketk-guard:豁免——TC-ICON 字形/画布替身属 _IconButton 单元面
-        # (ISS-0059 测绘 16 份清单外,非弹窗 widget 替身族;登记待裁决)
-        cv = _FakeCanvas()
-        frame = _FakeFrame()
-        glyphs = []
-
-        def _mk_glyph(*a, **k):
-            g = FakeGlyph(*a, **k)
-            glyphs.append(g)
-            return g
-
-        monkeypatch.setattr(ww.tk, "Canvas", lambda *a, **k: cv)
-        monkeypatch.setattr(ww.tk, "Frame", lambda *a, **k: frame)
-        monkeypatch.setattr(ww.tk, "Label", _mk_glyph)
+        rec = install(monkeypatch, ww.tk)
         monkeypatch.setattr(ww, "_Tooltip",
                             lambda w, text: setattr(w, "_tip_text", text))
-        btn = ww._IconButton(frame, action="remove", tooltip="移出白名单",
+        btn = ww._IconButton(object(), action="remove", tooltip="移出白名单",
                              command=lambda: None)
-        glyph = [g for g in glyphs if g.text][0]
+        cv = rec.of_class("Canvas")[0]
+        frame = rec.of_class("Frame")[0]
+        glyph = rec.of_class("Label")[0]
         return ww, btn, cv, frame, glyph
 
     def test_icon01_glyph_is_prohibit(self, monkeypatch):

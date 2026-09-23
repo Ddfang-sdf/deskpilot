@@ -14,7 +14,7 @@ __getattr__ 沉默方言废止——裁决②,暗靠沉默放行的用例迁移�
     rec = install(monkeypatch, mod.tk)                       # mod=被测弹窗模块
     rec = install(monkeypatch, mod.tk, screen=(1920, 1080), reqheight=600)
 
-install 一次替换 Toplevel/Frame/Label/Button/Canvas/Scrollbar/Entry/
+install 一次替换 Tk/Toplevel/Frame/Label/Button/Canvas/Scrollbar/Entry/
 Listbox(更多类无副作用,生产未用不触发),返回 recorder 观测口:
 - buttons / button_texts:Button 实例与文本(含 command 属性);
 - labels:Label 创建文本(仅创建时;undo v2 语义用 label_updates);
@@ -22,7 +22,12 @@ Listbox(更多类无副作用,生产未用不触发),返回 recorder 观测口:
 - geometries / places / afters / after_ms / destroys / destroyed_widgets /
   tops / protocols / alphas / idletasks / create_line 记录(实例级);
 - reqheight / screen:构造参数化(按各测试原校准值传,断言值不动);
-- pump(n):after 队列泵(弹出前 n 个回调并执行,跳过 None)。
+- pump(n):after 队列泵(弹出前 n 个回调并执行,跳过 None);
+- of_class(name):按 tk 类名取实例列表(ISS-0109 widget 级观测口)。
+
+ISS-0109 widget 级扩展面(_IconButton 字形/画布替身族收编):实例级
+handlers(bind 记录)/afters(实例 after ms 序列)/cancelled
+(after_cancel 记录);tk_class 类名标签(of_class 检索基)。
 """
 
 from __future__ import annotations
@@ -77,6 +82,10 @@ class _Recorder:
                 fn()
             count += 1
 
+    def of_class(self, name: str) -> list:
+        """按 tk 类名取实例列表(ISS-0109 widget 级观测口)。"""
+        return [w for w in self.widgets if w.tk_class == name]
+
     def button_command(self, text: str):
         """按文本取按钮 command(estopreset 观测形);无此按钮 → KeyError。"""
         for b in self.buttons:
@@ -91,6 +100,7 @@ class FakeWidget:
 
     def __init__(self, rec: _Recorder, *a, **k) -> None:
         self._rec = rec
+        self.tk_class: str = ""      # 类名标签(install 工厂回填;of_class 检索基)
         self.text: str = k.get("text", "")
         self.command = k.get("command")
         self.bg = k.get("bg")
@@ -99,6 +109,11 @@ class FakeWidget:
         self.pack_count: int = 0
         self.create_line_calls: list = []
         self._text_value: str = ""
+        # ISS-0109 widget 级扩展面(TC-ICON 字形/画布族观测):bind/after/
+        # after_cancel 的实例级记录
+        self.handlers: dict = {}
+        self.afters: list = []       # 实例级 after ms 序列(rec.afters 双轨)
+        self.cancelled: list = []
         rec.widgets.append(self)
 
     # ---- 布局/事件 ----
@@ -115,7 +130,8 @@ class FakeWidget:
         pass
 
     def bind(self, *a, **k):
-        pass
+        if len(a) >= 2:
+            self.handlers[a[0]] = a[1]      # ISS-0109:bind 序列→回调记录
 
     def bind_all(self, *a, **k):
         pass
@@ -173,10 +189,11 @@ class FakeWidget:
     # ---- 调度 ----
     def after(self, ms, fn=None):
         self._rec.afters.append((ms, fn))
+        self.afters.append(ms)              # ISS-0109:实例级 ms 序列
         return f"a{len(self._rec.afters)}"       # 令牌形态统一("a1"先例)
 
     def after_cancel(self, *a):
-        pass
+        self.cancelled.extend(a)            # ISS-0109:取消记录
 
     def destroy(self):
         self._rec.destroys += 1
@@ -282,26 +299,23 @@ def install(monkeypatch, tk_module, screen=(2560, 1440), reqheight=100):
     """一次替换 tk 模块的控件类为替身,返回 recorder(观测口)。
 
     screen/reqheight 按各测试原校准值传参(裁决③,断言值不动)。
+    ISS-0109:补 Tk 根窗类(TC-95-03/TC-SINGLE 壳收编);实例打 tk_class
+    类名标签(of_class 检索)。
     """
     rec = _Recorder(screen, reqheight)
 
-    def _toplevel(*a, **k):
-        return _FakeToplevel(rec, *a, **k)
+    def _mk(name, cls):
+        def _factory(*a, **k):
+            w = cls(rec, *a, **k)
+            w.tk_class = name
+            return w
+        return _factory
 
-    def _plain(*a, **k):
-        return FakeWidget(rec, *a, **k)
-
-    def _button(*a, **k):
-        return _FakeButton(rec, *a, **k)
-
-    def _label(*a, **k):
-        return _FakeLabel(rec, *a, **k)
-
-    monkeypatch.setattr(tk_module, "Toplevel", _toplevel)
-    for cls in ("Frame", "Canvas", "Scrollbar", "Entry", "Listbox"):
-        monkeypatch.setattr(tk_module, cls, _plain)
-    monkeypatch.setattr(tk_module, "Button", _button)
-    monkeypatch.setattr(tk_module, "Label", _label)
+    monkeypatch.setattr(tk_module, "Toplevel", _mk("Toplevel", _FakeToplevel))
+    for cls in ("Tk", "Frame", "Canvas", "Scrollbar", "Entry", "Listbox"):
+        monkeypatch.setattr(tk_module, cls, _mk(cls, FakeWidget))
+    monkeypatch.setattr(tk_module, "Button", _mk("Button", _FakeButton))
+    monkeypatch.setattr(tk_module, "Label", _mk("Label", _FakeLabel))
     return rec
 
 

@@ -211,18 +211,17 @@ class TestSingleton:
         rec = {"tk": 0, "focus": []}
         monkeypatch.setattr(ww, "focus_existing_or_exit",
                             lambda title: rec["focus"].append(title) or exists)
-        monkeypatch.setattr(ww.tk, "Tk",
-                            lambda *a, **k: rec.__setitem__("tk", rec["tk"] + 1)
-                            or type("T", (), {"withdraw": lambda s: None,
-                                              "mainloop": lambda s: None,
-                                              "quit": lambda s: None})())
+        # ISS-0109:Tk 根窗壳收编 tests/faketk.install;Tk 创建计数经
+        # of_class("Tk") 观测口回填(断言行零改动)
+        from .faketk import FakeWidget, _Recorder, install
+        tk_rec = install(monkeypatch, ww.tk)
         # 建窗本体打桩:本用例只验单例分支,不验窗口装配
-        from .faketk import FakeWidget, _Recorder
         monkeypatch.setattr(ww, "build_window",
                             lambda *a, **k: FakeWidget(
                                 _Recorder((2560, 1440), 100)))
         monkeypatch.setattr(sys, "argv", ["x", "http://127.0.0.1:1"])
         ww.main()
+        rec["tk"] = len(tk_rec.of_class("Tk"))
         return rec
 
     def test_single01_existing_focuses_and_exits(self, monkeypatch):
