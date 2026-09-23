@@ -84,6 +84,61 @@ def _strictly_inside(inner, outer) -> bool:
     return elements._strictly_inside(inner, outer)
 
 
+def _tool_set_clipboard(ex, params, hwnd) -> dict:
+    pyperclip.copy(params["text"])
+    return {"status": "ok"}
+
+
+def _tool_activate_window(ex, params, hwnd) -> dict:
+    ok = ex._activate_if_needed(hwnd)
+    if not ok:
+        raise ExecutorError(WINDOW_GONE, "窗口无法前置（可能已消失）")
+    return {"status": "ok"}
+
+
+def _tool_move(ex, params, hwnd) -> dict:
+    pyautogui.moveTo(params["x"], params["y"])
+    return {"status": "ok"}
+
+
+def _tool_launch_app(ex, params, hwnd) -> dict:
+    try:
+        proc = subprocess.Popen([params["app"]])
+    except OSError as e:
+        raise ExecutorError(INTERNAL_ERROR, f"启动失败: {e}") from e
+    return {"status": "ok", "pid": proc.pid}
+
+
+# ISS-0055 S6:分发表注册制(裁决 v0.2②)——tool→执行驱动的单点登记表,
+# 同语义替换原 15 连 if;新增工具=登记一行,未知工具错误消息逐字不变。
+_DISPATCH_TABLE = {
+    "click": lambda ex, p, h: ex._click(p["x"], p["y"], h,
+                                        button=p.get("button", "left"),
+                                        clicks=p.get("clicks", 1)),
+    "mouse_down": lambda ex, p, h: ex._mouse_down(p["button"], h),
+    "mouse_up": lambda ex, p, h: ex._mouse_up(p["button"], h),
+    "hold": lambda ex, p, h: ex._hold(p["duration_ms"],
+                                      p.get("button", "left"), h),
+    "click_text": lambda ex, p, h: ex._click_text(p, h),
+    "type_text": lambda ex, p, h: ex._type_text(p["text"], h),
+    "key": lambda ex, p, h: ex._key(p["key"], h),
+    "set_clipboard": _tool_set_clipboard,
+    "scroll": lambda ex, p, h: ex._scroll(p["direction"], p["amount"], h),
+    "drag": lambda ex, p, h: ex._drag(p["start"], p["end"], h,
+                                      button=p.get("button", "left"),
+                                      # REQ-004:via/duration_ms 透传
+                                      via=p.get("via"),
+                                      duration_ms=p.get("duration_ms")),
+    "activate_window": _tool_activate_window,
+    "set_window_rect": lambda ex, p, h: ex._set_window_rect(p, h),
+    "move": _tool_move,
+    "launch_app": _tool_launch_app,
+    "click_element": lambda ex, p, h: ex._click_element(p, h),
+    "type_element": lambda ex, p, h: ex._type_element(p, h),
+    "wait_for_element": lambda ex, p, h: ex._wait_for_element(p, h),
+}
+
+
 class Executor:
     """执行层公开入口。"""
 
@@ -272,57 +327,10 @@ class Executor:
     def _dispatch(self, tool: str, params: dict, hwnd: int | None) -> dict:
         if hwnd is not None and not self._probe.hwnd_alive(hwnd):
             raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
-        if tool == "click":
-            return self._click(params["x"], params["y"], hwnd,
-                               button=params.get("button", "left"),
-                               clicks=params.get("clicks", 1))
-        if tool == "mouse_down":
-            return self._mouse_down(params["button"], hwnd)
-        if tool == "mouse_up":
-            return self._mouse_up(params["button"], hwnd)
-        if tool == "hold":
-            return self._hold(params["duration_ms"],
-                              params.get("button", "left"), hwnd)
-        if tool == "click_text":
-            return self._click_text(params, hwnd)
-        if tool == "type_text":
-            return self._type_text(params["text"], hwnd)
-        if tool == "key":
-            return self._key(params["key"], hwnd)
-        if tool == "set_clipboard":
-            pyperclip.copy(params["text"])
-            return {"status": "ok"}
-        if tool == "scroll":
-            return self._scroll(params["direction"], params["amount"], hwnd)
-        if tool == "drag":
-            return self._drag(params["start"], params["end"], hwnd,
-                              button=params.get("button", "left"),
-                              # REQ-004:via/duration_ms 透传
-                              via=params.get("via"),
-                              duration_ms=params.get("duration_ms"))
-        if tool == "activate_window":
-            ok = self._activate_if_needed(hwnd)
-            if not ok:
-                raise ExecutorError(WINDOW_GONE, "窗口无法前置（可能已消失）")
-            return {"status": "ok"}
-        if tool == "set_window_rect":
-            return self._set_window_rect(params, hwnd)
-        if tool == "move":
-            pyautogui.moveTo(params["x"], params["y"])
-            return {"status": "ok"}
-        if tool == "launch_app":
-            try:
-                proc = subprocess.Popen([params["app"]])
-            except OSError as e:
-                raise ExecutorError(INTERNAL_ERROR, f"启动失败: {e}") from e
-            return {"status": "ok", "pid": proc.pid}
-        if tool == "click_element":
-            return self._click_element(params, hwnd)
-        if tool == "type_element":
-            return self._type_element(params, hwnd)
-        if tool == "wait_for_element":
-            return self._wait_for_element(params, hwnd)
-        raise ExecutorError(INTERNAL_ERROR, f"工具 {tool} 的执行驱动未接线")
+        handler = _DISPATCH_TABLE.get(tool)
+        if handler is None:
+            raise ExecutorError(INTERNAL_ERROR, f"工具 {tool} 的执行驱动未接线")
+        return handler(self, params, hwnd)
 
     # ---------- M2 元素级驱动（详细设计 §9.2 uia 子模块 / §14.7） ----------
 
