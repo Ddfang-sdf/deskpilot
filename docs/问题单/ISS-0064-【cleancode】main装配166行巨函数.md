@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0064 |
 | 标题 | main.py:345-511 的 main() 一函数 166 行:参数分发、策略加载、审计装配、单例守门、双轨指纹守望、白名单装配、暖缓存、弹窗服务、急停监听、执行器/看门狗、OCR 工厂、强制层、守护/托盘/stdio 形态分支全在一锅——启动路径无任何段间观测口 |
 | 严重级 | 低(可维护性+可诊断性;本次已付过代价) |
-| 状态 | 方案已批准(sdfang 离场授权自决 2026-09-22),待开发(按方案步骤) |
+| 状态 | **已关闭(2026-09-23 验收:S0~S9 全步落地,全量 938 passed 0 failed,main() 60 行;离场授权自决)** |
 | 提出 | 2026-09-10(cleancode 审查;ast 实证 main()=166 行) |
 
 ## 现象与证据
@@ -140,3 +140,4 @@ tests/test_main_assembly_iss64.py(新增)、docs/详细设计说明书.md §3、
 | v0.1 | 2026-09-10/09-17 | 建单(ast 实证 main()=166 行)+评估记录入单(超 200 行,保留排期) |
 | v0.2 | 2026-09-22 | 整改方案落档:现状复测 296 行 12 段(行号锚)+既有 monkeypatch 接缝清单补证;根因写到机制层(唯一装配位棘轮+闭包作用域锁定+早退分散);9 步拆分(S0 形态钉基线→S1-S6 六段纯重构→S7 段审计行为面待裁→S8 文档→S9 打包验证),main() 目标 ≤60 行,段函数不出 main.py;fail-closed 与 900 绿基线不回退;状态→方案已设计,待 sdfang 评审排期 |
 | v0.3 | 2026-09-22 | 裁决批准(按§5 推荐项):①S7 启动段审计落点本单做(行为面先红后绿,不另立单);②main() 终值行数阈值 ≤60,形态钉随步收紧;③允许 S5 引入 OwnershipRuntime 类(结构新物,闭包状态收口);④与 ISS-0055 各自独立提交窗口,不合并评审,防爆半径叠加。离场授权自决,记录在案;状态→方案已批准,待开发 |
+| v0.4 | 2026-09-23 | **S0~S9 全部执行完毕(10 提交)**。①S0(800de1d):形态钉基线(ast 行数钉 300+接缝符号钉;TrayIcon 修正为 os=test_tray_iss12e 实钉)。②S1(a3fd7fb)_stage_load_policy;S2(5a2e177)_stage_audit/_stage_daemon_precheck;S3(2488bf8)_stage_whitelist;S4a(9512608+de7dac9)_stage_dialogs(**回归一次**:ownership 导入被误移带走 RoleSupervisor→tc46_02 NameError,当步修复并改 pytest 退出码门禁);S4b(ce28bba)_stage_runtime(bindings/enforcement/revoke_channel 不出段=测绘实证无下游消费)。③S5(ec95d97)OwnershipRuntime 收口(批准③):4 闭包+owner dict→显式持有;属主三分支原样(9420 绑定失败放锁退瘦代理时序分支不动;watch 线程名保持;惰性 import 留函数/方法内=patch 缝不动);重点钉 test_freezesingle_iss46/test_estopreset_iss93/test_heartbeat_iss94/ownership/tray 44 passed。④S6(036f3f3)_run_daemon_loop+stdio 收尾;**main() 终值 51 行(≤60 批准②)**,形态钉收紧 300→60。⑤S7(9a800ac 红→05dad6b 绿,本单唯一行为面):EV_STARTUP_STAGE=「启动段」(词表 46→47,TC-60-03 钉板同步);main() 各段后落七段事件(策略/审计/单例预检/白名单/急停弹窗/执行器强制层/属主权,收尾由既有「服务启动」承托);main() 恰 60 行;既有计数/成员钉零挤压。⑥S8(680beb6):详设 §3.1 装配段结构+§3.2 功能表补属主权/启动段+main() docstring 段索引。⑦S9 打包实盘(PyInstaller --clean):**起 daemon 验证——/version 0.4.2✓、/health ok(pmv2)✓、repo 审计「启动段」七段+「服务启动 常驻 HTTP」+「名称缓存暖机 dur_ms=2332 ok=True」全在案✓(S7 冻结形态实证);心跳/estop-state 写机制经 LOCALAPPDATA 重定向实证正常(pid 6068 每 10s 落拍+estop-state 落盘)✓;测试 daemon 已杀收尾,daemon 以新构建恢复在线。**⑧登记项(上报,非本单范围):a) S4a 导入误移回归已修复备案;b) **ISS-0094 B-2 机制实证落地**:新构建(未签名)对真实 LOCALAPPDATA\DeskPilot 的 heartbeat/estop-state 写入静默不落盘(无 OSError 无「心跳写失败」审计),同 exe 对 C:	mp 重定向目录写入正常、源码形态 python.exe 对真实目录写入正常、Defender Operational 日志无拦截事件——拦截主体非 Defender(疑第三方安全软件),属 ISS-0094 E-1 待识别项,本单只实证不处置(观测面心跳 daemon 侧记录此现象,stdio 判活以 ts 新鲜度为准的既有口径不变);c) 过程知悉:tail 吞退出码两次误提交(S4a),已改 pytest 退出码门禁。全量终态 **938 passed 0 failed 30 skipped**(基线 935+3 新钉) |
