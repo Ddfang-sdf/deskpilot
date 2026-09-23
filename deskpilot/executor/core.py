@@ -44,6 +44,7 @@ from ..audit_events import (
     EV_STARTUP_KEY_SWEEP_FAILSAFE)
 from ..policy import normalize_key
 from .detector import resolve, screened, to_virtual, verify
+from . import guards
 from .mousehold import MOUSE_BUTTONS, PressedTracker, WatchdogThread
 from .probe import DesktopProbe, set_window_rect as _os_set_window_rect
 from .textclick import resolve_click, suggest_similar
@@ -250,12 +251,7 @@ class Executor:
 
     def _binding_rect(self, hwnd) -> tuple | None:
         """绑定窗口矩形（无绑定或探测失败回退 None → 证据图转全桌面）。"""
-        if hwnd is None:
-            return None
-        try:
-            return self._probe.rect_of(hwnd)
-        except Exception:
-            return None
+        return guards._binding_rect(self, hwnd)
 
     def focused_control_type(self) -> str | None:
         """查询当前焦点元素的 UIA 控件类型；查询失败返回 None（fail-closed 由调用方处理）。"""
@@ -1334,107 +1330,30 @@ class Executor:
     def _activate_if_needed(self, hwnd: int) -> bool:
         """仅当目标窗口不在前台时才前置——避免重激活导致弹出的菜单/画廊被销毁。
         返回是否已处前台（fail-closed：写路径调用方必须检查）。"""
-        if hwnd is None:
-            return True
-        if self._probe.is_foreground(hwnd):
-            return True
-        return bool(self._probe.activate(hwnd))
+        return guards._activate_if_needed(self, hwnd)
 
     def _set_window_rect(self, params: dict, hwnd: int) -> dict:
-        """窗口几何摆放（ISS-0101 §4.2，物理层原语）。
-
-        rect=[l,t,r,b] 四点式（虚拟桌面坐标,PMv2 全链物理像素零换算——
-        与 screenshot scope=region 的 [x,y,w,h] 不同,实现内自解为
-        MoveWindow 的 (l,t,r-l,b-t)）；几何非法（r<=l 或 b<=t）fail-closed
-        拒（user32 零调用）；动作序=SW_RESTORE 恒定先发再 MoveWindow
-        （probe 接缝）；MoveWindow 返 False→WINDOW_GONE；
-        返回新 rect（probe.rect_of 直出,GetWindowRect 同口径）。
-        不做吸附/屏幕归属/避让判定（§4.4,落点合理性 AI screenshot 自核）。
-        """
-        l, t, r, b = (int(v) for v in params["rect"])
-        if r <= l or b <= t:
-            raise ExecutorError(
-                INVALID_PARAMS,
-                f"窗口矩形非法（须 r>l 且 b>t）: {params['rect']}")
-        if not _os_set_window_rect(hwnd, l, t, r - l, b - t):
-            raise ExecutorError(WINDOW_GONE,
-                                "MoveWindow 失败（目标窗口已消失）")
-        return {"status": "ok", "rect": list(self._probe.rect_of(hwnd))}
+        """窗口几何摆放（ISS-0101 §4.2，物理层原语;委托 guards）。"""
+        return guards._set_window_rect(self, params, hwnd)
 
     def _check_point(self, hwnd: int, x: int, y: int) -> None:
-        rect = self._probe.rect_of(hwnd)   # 执行时刻矩形
-        if not (rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]):
-            raise ExecutorError(OUT_OF_BOUNDS, "落点在绑定窗口矩形外")
+        guards._check_point(self, hwnd, x, y)
 
     def _enum_monitors(self) -> list[dict]:
         """ISS-0047:显示器枚举接缝(测试替身入口;生产=monitors.enum_monitors)。"""
-        from ..monitors import enum_monitors
-        return enum_monitors()
+        return guards._enum_monitors(self)
 
     def _check_drag_end(self, x: int, y: int) -> None:
-        """ISS-0047:drag 终点校验=虚拟桌面全域。
-
-        移动窗口类拖拽的终点合法地在绑定窗当前矩形外(跨屏移动必越窗),
-        两类拖拽语义分离:起点仍限绑定窗(防误射),终点放宽到虚拟桌面。
-        逐屏矩形判定(非并集包围盒——错位排列的虚空死角仍拒);
-        枚举失败/为空 fail-closed,绝不静默放行。
-        """
-        try:
-            rects = [m["rect"] for m in self._enum_monitors()]
-        except Exception as e:
-            raise ExecutorError(INTERNAL_ERROR,
-                                f"显示器枚举失败,终点校验无法执行: {e}") from e
-        if not rects:
-            raise ExecutorError(INTERNAL_ERROR, "显示器枚举为空,终点校验无法执行")
-        if not any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in rects):
-            raise ExecutorError(
-                OUT_OF_BOUNDS,
-                f"终点 ({x},{y}) 不在任何显示器矩形内: {rects}")
+        """ISS-0047:drag 终点校验=虚拟桌面全域(委托 guards)。"""
+        guards._check_drag_end(self, x, y)
 
     def _check_occlusion(self, hwnd: int, x: int, y: int) -> None:
-        """ISS-0017 C：遮挡判定（激活后调用）——落点处顶层窗口非目标/
-        非其子窗口则拒绝（fail-closed,绝不盲打）。
-        ISS-0042：错误附遮挡者进程名与标题（AI 一轮可诊断,免自行侦查）。"""
-        u32 = _occlusion_user32
-        if u32 is None:
-            import ctypes
-            u32 = ctypes.windll.user32
-        from ctypes import wintypes
-        pt_hwnd = u32.WindowFromPoint(wintypes.POINT(x, y))
-        if pt_hwnd != hwnd and not u32.IsChild(hwnd, pt_hwnd):
-            proc = ""
-            title = ""
-            try:
-                proc = self._probe.process_of(pt_hwnd) or ""
-            except Exception:                       # noqa: BLE001
-                pass
-            try:
-                n = u32.GetWindowTextLengthW(pt_hwnd)
-                if n:
-                    import ctypes
-                    buf = ctypes.create_unicode_buffer(n + 1)
-                    u32.GetWindowTextW(pt_hwnd, buf, n + 1)
-                    title = buf.value
-            except Exception:                       # noqa: BLE001
-                pass
-            who = proc or "未知进程"
-            if title:
-                who = f"{who}({title})"
-            raise ExecutorError(
-                WINDOW_OCCLUDED,
-                f"落点被 {who} 遮挡,请先前置目标窗口或请人类处理遮挡程序")
+        """ISS-0017 C：遮挡判定（委托 guards;接缝 _occlusion_user32 留
+        core 延迟读——ISS-0055 §6 风险 1 处置）。"""
+        guards._check_occlusion(self, hwnd, x, y)
 
     def _resolve_window(self, window) -> int:
-        if isinstance(window, int):
-            hwnd = window
-        else:
-            found = self._probe.find_windows(title=str(window))
-            if not found:
-                raise ExecutorError(WINDOW_GONE, f"找不到窗口: {window}")
-            hwnd = found[0]["hwnd"]
-        if not self._probe.hwnd_alive(hwnd):
-            raise ExecutorError(WINDOW_GONE, "目标窗口已消失")
-        return hwnd
+        return guards._resolve_window(self, window)
 
     def _resolve_region(self, scope: str, rect, window, screen=None) -> dict:
         if scope == "fullscreen":
