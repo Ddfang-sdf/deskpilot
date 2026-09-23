@@ -451,17 +451,20 @@ def _run_migrate_policy(args: list[str]) -> int:
     return 0
 
 
-def main() -> int:
-    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
-    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
-    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
+def _stage_load_policy() -> tuple[int | None, dict | None]:
+    """策略段(ISS-0064 S1,纯重构):--migrate-policy 子命令分发+
+    策略定位+双文件(出厂/用户数据)加载。
+
+    返回 (rc, bundle):rc 非 None = 早退码(子命令结果或 2);
+    bundle = {policy_path, local_path, base_policy, policy}。
+    """
     if "--migrate-policy" in sys.argv:
         i = sys.argv.index("--migrate-policy")
-        return _run_migrate_policy(sys.argv[i + 1:i + 4])
+        return _run_migrate_policy(sys.argv[i + 1:i + 4]), None
     policy_path = _find_policy_path()
     if policy_path is None:
         print("未找到 policy.yml", file=sys.stderr)
-        return 2
+        return 2, None
     # ISS-0030 A：双文件——出厂只读 + 用户数据(policy.local.yml)
     local_path = policy_path.with_name("policy.local.yml")
     try:
@@ -469,9 +472,22 @@ def main() -> int:
         policy = load_policy(str(policy_path), local_path=str(local_path))
     except PolicyError as e:
         print(f"策略加载失败: {e}", file=sys.stderr)
-        return 2
+        return 2, None
     # 惰性创建(ISS-0031 修正):local 文件在首次永久入白时才落盘,
     # 纯加载不产生空文件(避免仓库/目录被空数据文件污染)
+    return None, {"policy_path": policy_path, "local_path": local_path,
+                  "base_policy": base_policy, "policy": policy}
+
+
+def main() -> int:
+    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
+    # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
+    # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
+    rc, bundle = _stage_load_policy()
+    if rc is not None:
+        return rc
+    policy_path, local_path = bundle["policy_path"], bundle["local_path"]
+    base_policy, policy = bundle["base_policy"], bundle["policy"]
 
     audit = AuditLogger(policy.audit_dir)
     try:
