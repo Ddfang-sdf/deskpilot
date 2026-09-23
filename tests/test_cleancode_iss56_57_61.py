@@ -29,11 +29,15 @@ class TestFailSafeSinglePoint:
     """ISS-0056:FAILSAFE 收敛模板单点化,复制面清零。"""
 
     def test_f56_template_single_sourced(self):
-        """f56(形态):core.py 内「except pyautogui.FailSafeException」
-        仅余 2 处(=_failsafe_guard 单点 + 启动清扫容错变体——语义不同
-        保留);_failsafe_guard 调用点 ≥7。红态(未收敛):7+ 处复制。"""
-        src = (ROOT / "deskpilot" / "executor" / "core.py").read_text(
-            encoding="utf-8")
+        """f56(形态):executor 包(core.py+input.py)内
+        「except pyautogui.FailSafeException」仅余 2 处(=_failsafe_guard
+        单点 + 启动清扫容错变体——语义不同保留);_failsafe_guard 调用点
+        ≥7。红态(未收敛):7+ 处复制。
+        ISS-0055 S5 登记(单据 v0.3,裁决 v0.2①):写入族外迁 input.py,
+        扫描面由 core.py 单文件扩为包级两文件合计,五要素不动。"""
+        base = ROOT / "deskpilot" / "executor"
+        src = (base / "core.py").read_text(encoding="utf-8") + \
+            (base / "input.py").read_text(encoding="utf-8")
         assert src.count("except pyautogui.FailSafeException") == 2  # 直读计数
         assert src.count("_failsafe_guard(") >= 7      # 单点调用面(直读)
 
