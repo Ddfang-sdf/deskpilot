@@ -813,7 +813,13 @@ def _run_daemon_loop(ctx, estop, audit, audit_paths, policy,
 
 
 def main() -> int:
-    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
+    """进程入口。返回进程退出码（0 正常；非 0 启动失败）。
+
+    ISS-0064:装配段拆分——main() 仅为顺序编排(≤60 行),职责段见
+    _stage_load_policy/_stage_audit/_stage_daemon_precheck/
+    _stage_whitelist/_stage_dialogs/_stage_runtime/_stage_ownership/
+    _run_daemon_loop;每段后落「启动段」审计事件(S7,顺序固定)。
+    """
     # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
     # 解冻);解冻入口收敛为「弹窗点击+复位热键」两个人类独占通道。
     rc, bundle = _stage_load_policy()
