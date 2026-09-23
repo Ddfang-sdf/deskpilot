@@ -479,6 +479,34 @@ def _stage_load_policy() -> tuple[int | None, dict | None]:
                   "base_policy": base_policy, "policy": policy}
 
 
+def _stage_audit(policy, policy_path) -> tuple[int | None, AuditLogger | None]:
+    """审计段(ISS-0064 S2,纯重构):审计装配 fail-closed(rc 3)。
+
+    返回 (rc, audit):rc 非 None = 早退码(3,审计目录不可用);
+    stderr 文案与审计事件逐字节不变。
+    """
+    audit = AuditLogger(policy.audit_dir)
+    try:
+        audit.record_event(EV_POLICY_LOADED, f"policy: {policy_path}")
+    except AuditFailure as e:
+        print(f"审计目录不可用: {e}", file=sys.stderr)
+        return 3, None
+    return None, audit
+
+
+def _stage_daemon_precheck(audit: AuditLogger) -> int | None:
+    """daemon 单例预检守门(ISS-0064 S2,纯重构,ISS-0046 A):已有属主
+    在线时本实例显式退出(rc 4)——必须在甩角/热键监听与弹窗装配之前:
+    非属主进程不监听、不弹窗、不绑端口。rc 4=早退;None=通过。"""
+    if "--daemon" in sys.argv and probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
+        audit.record_event(EV_DAEMON_SINGLETON_EXIT,
+                           "9420 已有属主在线,拒绝双起(甩角监听/弹窗归属主)")
+        print("已有 DeskPilot daemon 在线(127.0.0.1:9420),本实例退出",
+              file=sys.stderr)
+        return 4
+    return None
+
+
 def main() -> int:
     """进程入口。返回进程退出码（0 正常；非 0 启动失败）。"""
     # ISS-0093 §9.3:--reset CLI 复位通道已收口删除(AI 可 curl/调用自行
@@ -489,21 +517,13 @@ def main() -> int:
     policy_path, local_path = bundle["policy_path"], bundle["local_path"]
     base_policy, policy = bundle["base_policy"], bundle["policy"]
 
-    audit = AuditLogger(policy.audit_dir)
-    try:
-        audit.record_event(EV_POLICY_LOADED, f"policy: {policy_path}")
-    except AuditFailure as e:
-        print(f"审计目录不可用: {e}", file=sys.stderr)
-        return 3
+    rc, audit = _stage_audit(policy, policy_path)
+    if rc is not None:
+        return rc
 
-    # ISS-0046 A:daemon 单例守门——已有属主在线时本实例显式退出(不僵尸)。
-    # 必须在甩角/热键监听与弹窗装配之前:非属主进程不监听、不弹窗、不绑端口。
-    if "--daemon" in sys.argv and probe_daemon(DEFAULT_HOST, DEFAULT_PORT):
-        audit.record_event(EV_DAEMON_SINGLETON_EXIT,
-                           "9420 已有属主在线,拒绝双起(甩角监听/弹窗归属主)")
-        print("已有 DeskPilot daemon 在线(127.0.0.1:9420),本实例退出",
-              file=sys.stderr)
-        return 4
+    rc = _stage_daemon_precheck(audit)
+    if rc is not None:
+        return rc
 
     # ISS-0012 C：策略指纹入审计 + 运行期外部修改留痕
     fp = policy_sha256_audit(str(policy_path), audit)
