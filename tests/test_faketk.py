@@ -63,6 +63,44 @@ class TestFakeTkContract:
             win.wm_iconify()                            # 未列方法
 
 
+class TestGuardRuleCoverage:
+    """TC-FAKETK-GUARD-02(单元):守卫规则覆盖扩展形态(ISS-0109 收尾)。
+
+    场景:①字符串形补丁 setattr("tkinter.Toplevel", …);②变体名内联
+    tk 壳 type("T", (), {withdraw/mainloop…});③unittest.Mock 标准缝
+    (行内 Mock( 自动豁免,ISS-0109 v0.2 登记);④非 tk 数据袋
+    type("B"/"C", (), {…}) 不得误伤。
+    断言:规则命中/豁免布尔直出。红态:现行规则对①②零命中。"""
+
+    def test_guard02_string_form_patch_banned(self):
+        """GUARD-02a:字符串形就地补丁(tkinter.X)命中禁则。"""
+        src = 'monkeypatch.setattr("tkinter.Toplevel", fake)'
+        assert faketk.GUARD_BANNED_PATCH.search(src), \
+            "字符串形补丁未入禁则(直读)"
+
+    def test_guard02_variant_inline_shell_banned(self):
+        """GUARD-02b:变体名(type("T")内联 tk 壳命中禁则。"""
+        src = ('type("T", (), {"withdraw": lambda s: None,\n'
+               '                     "mainloop": lambda s: None})()')
+        assert faketk.GUARD_BANNED_TYPE.search(src), \
+            "变体名内联壳未入禁则(直读)"
+
+    def test_guard02_mock_seam_auto_exempt(self):
+        """GUARD-02c:行内 Mock( 的就地补丁=unittest.Mock 标准缝,
+        守卫豁免裁决直出(ISS-0109 v0.2 登记)。"""
+        line = 'monkeypatch.setattr("tkinter.Toplevel", Mock())'
+        assert faketk.GUARD_BANNED_PATCH.search(line)
+        assert faketk.guard_exempted(faketk.GUARD_BANNED_PATCH, line, ""), \
+            "Mock 标准缝应自动豁免(直读)"
+
+    def test_guard02_plain_data_bag_not_banned(self):
+        """GUARD-02d:非 tk 数据袋 type("B"/"C") 不误伤。"""
+        for src in ('type("B", (), {"window_rect": (0, 0, 1, 1)})()',
+                    'type("C", (), {"policy": None})()'):
+            assert not faketk.GUARD_BANNED_TYPE.search(src), \
+                f"数据袋误伤(直读): {src}"
+
+
 class TestFakeTkGuard:
     """TC-FAKETK-GUARD(形态):替身唯一来源——tests/ 下除白名单外,
     禁止本地替身类定义与就地 tk 控件补丁。
@@ -89,8 +127,8 @@ class TestFakeTkGuard:
                 for m in rx.finditer(src):
                     line = src[: m.start()].count("\n") + 1
                     above = "\n".join(lines[max(0, line - 14): line])
-                    if faketk.GUARD_EXEMPT_MARK in above:
-                        continue            # 显式豁免标记(测绘清单外,登记在案)
+                    if faketk.guard_exempted(rx, lines[line - 1], above):
+                        continue            # 豁免裁决单点(标记/Mock 标准缝)
                     hits.append(f"{path.name}:{line} {tag}: "
                                 f"{m.group(0)[:40]}")
         assert hits == [], \

@@ -150,6 +150,8 @@ class TestFreezeDialogSingletonGuard:
         import deskpilot.freeze_dialog as fd
         monkeypatch.setattr(fd, "acquire_singleton", lambda: False)
         toplevel = Mock()
+        # faketk-guard:豁免——unittest.Mock 标准缝(断言走 Mock API,
+        # ISS-0109 v0.2 登记;变量形 RHS 无行内 Mock(,显式标记)
         monkeypatch.setattr("tkinter.Toplevel", toplevel)
         win = fd.build_window(Mock(), "dummy", 180.0,
                               target_screen={"rect": (0, 0, 1920, 1080),

@@ -325,8 +325,28 @@ GUARD_ALLOW = {"faketk.py", "test_faketk.py"}
 GUARD_BANNED_CLASS = re.compile(
     r"^\s*class (W|Btn|Lbl|Top|FakeWin|_Recorder|_TkRig|_FakeWidget)\b",
     re.MULTILINE)
+# 就地控件补丁双形态(ISS-0109 收尾扩口径):mod.tk 属性形 +
+# "tkinter.X" 字符串形(tc46_03/04 实证盲区)
 GUARD_BANNED_PATCH = re.compile(
     r"monkeypatch\.setattr\([^)]*\.tk,\s*"
-    r"\"(?:Toplevel|Frame|Label|Button|Canvas|Scrollbar|Entry|Listbox)\"")
-GUARD_BANNED_TYPE = re.compile(r'type\("W",')
+    r"\"(?:Toplevel|Frame|Label|Button|Canvas|Scrollbar|Entry|Listbox)\""
+    r"|monkeypatch\.setattr\(\s*\"tkinter\."
+    r"(?:Toplevel|Frame|Label|Button|Canvas|Scrollbar|Entry|Listbox)\"")
+# 内联壳:任意大驼峰名(不止 type("W")),但字典面须含 tk 方法词,
+# 非 tk 数据袋(type("B"/"C", (), {window_rect/policy…})不误伤
+GUARD_BANNED_TYPE = re.compile(
+    r'type\("[A-Z]\w*",\s*\(\),\s*\{[^}]{0,400}?'
+    r'(?:mainloop|withdraw|pack_forget|geometry|pack\b|bind\b|after\b)')
 GUARD_EXEMPT_MARK = "faketk-guard:豁免"
+GUARD_MOCK_SEAM = "Mock("
+
+
+def guard_exempted(rx, line: str, above: str) -> bool:
+    """守卫豁免裁决(守卫用例唯一裁决口):
+    ①上方 13 行内有显式豁免标记(测绘清单外,登记在案);
+    ②就地控件补丁行内 `Mock(` = unittest.Mock 标准缝(Mock API 断言,
+    ISS-0109 v0.2 登记豁免)——自动豁免,不逐案登记。
+    """
+    if GUARD_EXEMPT_MARK in above:
+        return True
+    return rx is GUARD_BANNED_PATCH and GUARD_MOCK_SEAM in line
