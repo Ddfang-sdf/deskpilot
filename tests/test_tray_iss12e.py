@@ -16,11 +16,6 @@ import pytest
 from deskpilot import tray as t
 
 
-@pytest.fixture(autouse=True)
-def _pin_zh(pin_zh_locale):
-    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
-
-
 class TestWin32Signatures:
     """场景:全部 Win32 调用声明 restype/argtypes(64 位句柄/指针不截断)。
     断言:restype 与关键 argtypes(直出)。"""

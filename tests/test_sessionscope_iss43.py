@@ -33,11 +33,6 @@ def _build_collect_texts(monkeypatch, tmp_path, enroll):
     return rec.labels
 
 
-@pytest.fixture(autouse=True)
-def _pin_zh(pin_zh_locale):
-    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
-
-
 class TestSessionScopeVisible:
     def test_tc43_01_normal_dialog_shows_scope(self, monkeypatch, tmp_path):
         """TC-43-01(ISS-0053 C 迁移):提示随新语义——仅本次会话+同键,

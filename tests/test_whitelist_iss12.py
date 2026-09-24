@@ -55,11 +55,6 @@ def _enforcement_with_admin(policy, bindings, approvals, estop, executor,
                        whitelist_admin=admin)
 
 
-@pytest.fixture(autouse=True)
-def _pin_zh(pin_zh_locale):
-    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
-
-
 # ---------- WhitelistAdmin（单元） ----------
 
 class TestWhitelistAdmin:

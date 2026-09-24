@@ -44,11 +44,6 @@ user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
 
-@pytest.fixture(autouse=True)
-def _pin_zh(pin_zh_locale):
-    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
-
-
 # ---------- 进程内临时顶层窗(集成前提;用完销毁) ----------
 
 class _WNDCLASSW(ctypes.Structure):

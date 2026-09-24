@@ -19,11 +19,6 @@ def _describe(enforcement, tool, params, binding=None):
     return enforcement._describe(OperationRequest(tool, params, None), binding)
 
 
-@pytest.fixture(autouse=True)
-def _pin_zh(pin_zh_locale):
-    """ISS-0111:本族断言中文语义面,显式钉 zh-CN 环境(CI en-US 面免疫)。"""
-
-
 class TestContentHeadline:
     """TC-READ-01~05:内容进主标题;超长截断;坐标;key/launch 回归。
     断言:_describe 返回 headline/tech 文本(直出)。"""

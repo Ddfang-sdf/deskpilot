@@ -219,13 +219,15 @@ def read_audit(audit_dir: str) -> list[dict]:
 
 # ---------- fixtures ----------
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def pin_zh_locale(monkeypatch):
-    """ISS-0111:中文文案钉显式钉 zh-CN 环境。
+    """ISS-0111/2026-09-24 全局化:默认全模块钉 zh-CN 文案环境。
 
-    这批钉断言的是中文语义面(REQ-007 中文路径);CI 跑机 en-US 下
-    文案走英文会整族转红——环境经 DESKPILOT_LOCALE 强制开关固定
-    (i18n._detect_locale 每次取词先读 env 覆盖通道,无需重载目录)。
+    中文文案钉的语义面=中文路径;CI 跑机 en-US 下文案走英文曾整族
+    转红(ISS-0111)。`DESKPILOT_LOCALE` env 覆盖通道每次取词直读
+    (i18n._detect_locale),故:①双语面模块(i18n_req07/approval_dialog_
+    iss98/freeze_dialog_iss103 等)在测试体内自行 setenv 即自然豁免,
+    无需标记;②本钉不影响非文案断言。
     """
     monkeypatch.setenv("DESKPILOT_LOCALE", "zh-CN")
 
