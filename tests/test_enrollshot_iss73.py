@@ -538,27 +538,34 @@ class TestRealWindowCapture:
     def test_tc13_second_screen_shot(self, tmp_path, policy, audit_log):
         """TC-73-13(集成):副屏目标取到副屏画面——PNG 尺寸与 find_windows
         所报 rect 一致(非主屏错位图)。环境守卫:单屏机 skip。
-        红期即绿(虚拟坐标系既有能力钉)。"""
+        红期即绿(虚拟坐标系既有能力钉)。
+
+        ISS-0113 ②(环境不变量改造):几何断言改经
+        executor.capture_approval_shot(rect) 直取——enforcement 链末端
+        同一生产函数(mss 虚拟坐标实拍,无前台置前/五点采样门控);
+        钉语义(副屏取图几何)零削减,摘除对实时桌面 z-order 的依赖
+        (ISS-0062 v0.5⑧ 实测敏感:另一置顶窗/前台竞争盖住采样点即
+        hits<3 无图而红);attach 拒绝链保留(环境无关),前台/采样
+        链路的覆盖在 tc01。"""
         from deskpilot.monitors import enum_monitors
         mons = enum_monitors()
         if len(mons) < 2:
             pytest.skip("环境守卫:单屏机无副屏")
         sec = mons[1]["rect"]
-        ctx, appr, _ex = _real_ctx(tmp_path, policy, audit_log)
+        ctx, appr, ex = _real_ctx(tmp_path, policy, audit_log)
         hwnd = _make_window("ISS73-TC13", sec[0] + 60, sec[1] + 60, 400, 300)
         try:
             time.sleep(0.3)
             r = attach(ctx, hwnd=hwnd)
-            assert r.ok is False
-            req = _last_req(appr)
-            assert req["image_path"], "副屏可见窗应出图"
+            assert r.ok is False                # 未入白→审批拒绝(环境无关)
             from PIL import Image
             from deskpilot.executor import DesktopProbe
             w = [w for w in DesktopProbe().find_windows(hwnd=hwnd)
                  if w["hwnd"] == hwnd][0]
             rw = w["rect"][2] - w["rect"][0]
             rh = w["rect"][3] - w["rect"][1]
-            assert Image.open(req["image_path"]).size == (rw, rh)  # 直读
+            shot = ex.capture_approval_shot(w["rect"])  # 链末端同一生产函数
+            assert Image.open(shot).size == (rw, rh)    # 副屏几何直读
         finally:
             _kill(hwnd)
 
