@@ -204,17 +204,21 @@ def policy_yaml_dict(audit_dir: str) -> dict:
     }
 
 
-def read_audit(audit_dir: str) -> list[dict]:
-    """读取审计 JSONL（持久化数据断言通道）。"""
+def read_audit_text(audit_dir: str) -> str:
+    """审计 JSONL 原文拼接（子串断言通道;ISS-0113 ①:文件读取单源,
+    read_audit 与本通道共用,三处私有副本已收敛）。"""
     log_dir = Path(audit_dir) / "logs"
     if not log_dir.is_dir():
-        return []
-    records: list[dict] = []
-    for f in sorted(log_dir.glob("*.jsonl")):
-        for line in f.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                records.append(json.loads(line))
-    return records
+        return ""
+    return "".join(p.read_text(encoding="utf-8")
+                   for p in sorted(log_dir.glob("*.jsonl")))
+
+
+def read_audit(audit_dir: str) -> list[dict]:
+    """读取审计 JSONL（持久化数据断言通道;文件读取单源=read_audit_text)。"""
+    return [json.loads(line)
+            for line in read_audit_text(audit_dir).splitlines()
+            if line.strip()]
 
 
 # ---------- fixtures ----------

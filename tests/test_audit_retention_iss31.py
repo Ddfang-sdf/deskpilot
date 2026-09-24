@@ -16,6 +16,8 @@ from deskpilot.audit import AuditLogger
 from deskpilot.janitor import run_janitor
 from deskpilot.policy import load_policy
 
+from .conftest import read_audit_text
+
 ROOT = Path(__file__).resolve().parents[1]
 DAY = 86400.0
 
@@ -25,14 +27,6 @@ def _touch(path: Path, age_s: float, size: int = 100):
     path.write_bytes(b"x" * size)
     old = time.time() - age_s
     os.utime(path, (old, old))
-
-
-def _audit_events(d: Path) -> str:
-    logs_dir = d / "logs"
-    if not logs_dir.is_dir():
-        return ""
-    return "".join(p.read_text(encoding="utf-8")
-                   for p in sorted(logs_dir.glob("*.jsonl")))
 
 
 class TestLogRetention:
@@ -126,4 +120,4 @@ class TestAuditEvent:
                     shots_max_age_s=90 * DAY,
                     shots_max_bytes=10**9, grace_s=600,
                     audit_log=audit_log)
-        assert EV_AUDIT_LOG_CLEANUP in _audit_events(d)
+        assert EV_AUDIT_LOG_CLEANUP in read_audit_text(str(d))

@@ -13,15 +13,9 @@ from pathlib import Path
 
 import pytest
 
+from .conftest import read_audit_text
+
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def _audit_events(d: Path) -> str:
-    logs_dir = d / "logs"
-    if not logs_dir.is_dir():
-        return ""
-    return "".join(p.read_text(encoding="utf-8")
-                   for p in sorted(logs_dir.glob("*.jsonl")))
 
 
 class TestWatcherInternalWrite:
@@ -47,7 +41,7 @@ class TestWatcherInternalWrite:
                           encoding="utf-8")
         t.refresh(file_sha256(str(target)))
         t.check_once()
-        assert "外部修改" not in _audit_events(tmp_path / "audit")
+        assert "外部修改" not in read_audit_text(str(tmp_path / "audit"))
 
     def test_gd02_real_external_change_alarms(self, tmp_path):
         from deskpilot.audit import AuditLogger
@@ -56,7 +50,8 @@ class TestWatcherInternalWrite:
         target.write_text("whitelist:\n  - { process: evil.exe, max_level: L2 }\n",
                           encoding="utf-8")
         t.check_once()
-        assert EV_POLICY_LOCAL_EXTERNALLY_MODIFIED in _audit_events(tmp_path / "audit")
+        assert EV_POLICY_LOCAL_EXTERNALLY_MODIFIED in read_audit_text(
+            str(tmp_path / "audit"))
 
 
 class TestOnWrittenCallback:

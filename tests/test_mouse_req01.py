@@ -8,7 +8,6 @@ click_text)/ mousehold.PressedTracker/TOOL_SCHEMAS/models 注册表。
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
@@ -22,7 +21,7 @@ from deskpilot.audit_events import (
     EV_MOUSE_KEY_SELF_HEAL,
     EV_STARTUP_KEY_SWEEP,
     EV_STARTUP_KEY_SWEEP_FAILSAFE)
-from .conftest import FIXTURE_HWND, FakeProbe
+from .conftest import FIXTURE_HWND, FakeProbe, read_audit
 
 
 class _Rec:
@@ -38,15 +37,6 @@ class _Rec:
 
     def named(self, name):
         return [c for c in self.calls if c[0] == name]
-
-
-def _audit_events(audit_dir: str) -> list[dict]:
-    out = []
-    for f in sorted(Path(audit_dir).glob("**/*.jsonl")):
-        for line in f.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                out.append(json.loads(line))
-    return out
 
 
 def _exec(estop, tmp_path, monkeypatch, clock=None, probe=None,
@@ -357,7 +347,7 @@ class TestMouseSafetyNet:
         clock.advance(31)                             # 超龄(>30s)
         ex._mouse_watchdog_tick()                     # 手动驱动一次 tick
         assert len(rec.named("mouseUp")) == 1
-        events = _audit_events(str(tmp_path / "audit"))
+        events = read_audit(str(tmp_path / "audit"))
         heals = [e for e in events if e.get("event") == EV_MOUSE_KEY_SELF_HEAL]
         assert heals and "left" in heals[-1].get("detail", "")
 
@@ -374,7 +364,7 @@ class TestMouseSafetyNet:
         ex._mouse_watchdog_tick()
         assert rec.named("mouseUp") == []             # 零抬起(直出)
         assert ex._mouse.snapshot() == ["left"]       # 按下保留(直出)
-        events = _audit_events(str(tmp_path / "audit"))
+        events = read_audit(str(tmp_path / "audit"))
         assert not [e for e in events if e.get("event") == EV_MOUSE_KEY_SELF_HEAL]
 
     def test_mouse16_startup_sweep(self, estop, tmp_path, monkeypatch,
@@ -383,7 +373,7 @@ class TestMouseSafetyNet:
                         audit=audit_log)
         ups = rec.named("mouseUp")
         assert len(ups) == 3                          # 三键各一次幂等 up
-        events = _audit_events(str(tmp_path / "audit"))
+        events = read_audit(str(tmp_path / "audit"))
         assert any(e.get("event") == EV_STARTUP_KEY_SWEEP for e in events)
 
     def test_mouse16b_sweep_tolerates_corner_failsafe(self, estop, tmp_path,
@@ -405,7 +395,7 @@ class TestMouseSafetyNet:
         ex = Executor(estop, str(tmp_path / "audit"), poll_interval=0.02,
                       probe=FakeProbe(), audit=audit_log)
         assert len(rec.named("mouseUp")) == 3         # 三键都尝试过(直出)
-        events = _audit_events(str(tmp_path / "audit"))
+        events = read_audit(str(tmp_path / "audit"))
         assert any(e.get("event") == EV_STARTUP_KEY_SWEEP_FAILSAFE
                    for e in events)                   # 拦截如实记审计(直出)
 
