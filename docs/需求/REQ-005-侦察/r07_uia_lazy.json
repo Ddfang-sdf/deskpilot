@@ -1,0 +1,64 @@
+{
+  "t0": {
+    "elements": 270,
+    "type_counts": {
+      "WindowControl": 1,
+      "PaneControl": 90,
+      "TextControl": 61,
+      "ButtonControl": 91,
+      "ToolBarControl": 3,
+      "GroupControl": 5,
+      "EditControl": 2,
+      "ImageControl": 1,
+      "SeparatorControl": 4,
+      "HyperlinkControl": 1,
+      "DocumentControl": 6,
+      "SliderControl": 1,
+      "TabControl": 3,
+      "TabItemControl": 1
+    },
+    "page_content_links": []
+  },
+  "t3": {
+    "elements": 274,
+    "type_counts": {
+      "WindowControl": 1,
+      "PaneControl": 90,
+      "TextControl": 61,
+      "ButtonControl": 91,
+      "ToolBarControl": 3,
+      "GroupControl": 9,
+      "EditControl": 2,
+      "ImageControl": 1,
+      "SeparatorControl": 4,
+      "HyperlinkControl": 1,
+      "DocumentControl": 6,
+      "SliderControl": 1,
+      "TabControl": 3,
+      "TabItemControl": 1
+    },
+    "page_content_links": []
+  },
+  "t8": {
+    "elements": 274,
+    "type_counts": {
+      "WindowControl": 1,
+      "PaneControl": 90,
+      "TextControl": 61,
+      "ButtonControl": 91,
+      "ToolBarControl": 3,
+      "GroupControl": 9,
+      "EditControl": 2,
+      "ImageControl": 1,
+      "SeparatorControl": 4,
+      "HyperlinkControl": 1,
+      "DocumentControl": 6,
+      "SliderControl": 1,
+      "TabControl": 3,
+      "TabItemControl": 1
+    },
+    "page_content_links": []
+  },
+  "lazy_confirmed": true,
+  "cleanup": true
+}

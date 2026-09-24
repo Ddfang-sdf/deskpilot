@@ -1,0 +1,1338 @@
+{
+  "meta": {
+    "scalenatural": {
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "inner": [
+        1176,
+        808
+      ],
+      "dpr": 1
+    },
+    "zoom_ctrl_equal_rawkeydown": {
+      "dpr_after_3_presses": 1.5,
+      "innerWidth_after": 784
+    },
+    "dpr_after_ctrl0": 1,
+    "override1.5": {
+      "dpr": 1.5,
+      "inner": [
+        1176,
+        808
+      ]
+    },
+    "scroll_session_a": 2392,
+    "cleanup_scalenatural": true,
+    "scale1.25": {
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "inner": [
+        878,
+        510
+      ],
+      "dpr": 1.25
+    },
+    "cleanup_scale1.25": true,
+    "scale1.5": {
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "inner": [
+        878,
+        509
+      ],
+      "dpr": 1.5
+    },
+    "cleanup_scale1.5": true
+  },
+  "cells": [
+    {
+      "phase": "base100_dpr1",
+      "button": "b_tl",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        78.0,
+        50.0
+      ],
+      "computed_screen": [
+        190.0,
+        180.0
+      ],
+      "clicked": [
+        190,
+        180
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        189.5,
+        179.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "base100_dpr1",
+      "button": "b_tr",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        1083.0,
+        50.0
+      ],
+      "computed_screen": [
+        1195.0,
+        180.0
+      ],
+      "clicked": [
+        1195,
+        180
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        1194.5,
+        179.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "base100_dpr1",
+      "button": "b_c",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        588.0,
+        404.0
+      ],
+      "computed_screen": [
+        700.0,
+        534.0
+      ],
+      "clicked": [
+        700,
+        534
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        699.5,
+        533.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "base100_dpr1",
+      "button": "b_bl",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        78.0,
+        758.0
+      ],
+      "computed_screen": [
+        190.0,
+        888.0
+      ],
+      "clicked": [
+        190,
+        888
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        189.5,
+        887.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "base100_dpr1",
+      "button": "b_br",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        1083.0,
+        758.0
+      ],
+      "computed_screen": [
+        1195.0,
+        888.0
+      ],
+      "clicked": [
+        1195,
+        888
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        1194.5,
+        887.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "zoom_real",
+      "button": "b_tl",
+      "dpr": 1.5,
+      "innerWidth": 784,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        78.0,
+        50.0
+      ],
+      "computed_screen": [
+        229.0,
+        205.0
+      ],
+      "clicked": [
+        229,
+        205
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        228.5,
+        204.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "zoom_real",
+      "button": "b_tr",
+      "dpr": 1.5,
+      "innerWidth": 784,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        696.0,
+        50.0
+      ],
+      "computed_screen": [
+        1156.0,
+        205.0
+      ],
+      "clicked": [
+        1156,
+        205
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        1155.5,
+        204.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "zoom_real",
+      "button": "b_c",
+      "dpr": 1.5,
+      "innerWidth": 784,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        392.0,
+        269.33
+      ],
+      "computed_screen": [
+        700.0,
+        534.0
+      ],
+      "clicked": [
+        700,
+        534
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        699.5,
+        533.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "zoom_real",
+      "button": "b_bl",
+      "dpr": 1.5,
+      "innerWidth": 784,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        78.0,
+        488.67
+      ],
+      "computed_screen": [
+        229.0,
+        863.0
+      ],
+      "clicked": [
+        229,
+        863
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        228.5,
+        862.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "zoom_real",
+      "button": "b_br",
+      "dpr": 1.5,
+      "innerWidth": 784,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        696.0,
+        488.67
+      ],
+      "computed_screen": [
+        1156.0,
+        863.0
+      ],
+      "clicked": [
+        1156,
+        863
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        1155.5,
+        862.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "override1.5_virtual",
+      "button": "b_tl",
+      "dpr": 1.5,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        78.0,
+        50.0
+      ],
+      "computed_screen": [
+        229.0,
+        205.0
+      ],
+      "clicked": [
+        229,
+        205
+      ],
+      "count_before": 2,
+      "count_after": 2,
+      "hit": false,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        189.5,
+        179.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        39.5,
+        25.5
+      ],
+      "error_dist": 47.02
+    },
+    {
+      "phase": "override1.5_virtual",
+      "button": "b_br",
+      "hit": false,
+      "click_blocked": "click 失败: {'ok': False, 'error_code': 'OUT_OF_BOUNDS', 'message': '落点在绑定窗口矩形外', 'data': None}"
+    },
+    {
+      "phase": "scroll_dpr1",
+      "button": "s_l",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        78.0,
+        270.0
+      ],
+      "computed_screen": [
+        190.0,
+        400.0
+      ],
+      "clicked": [
+        190,
+        400
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        189.5,
+        399.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "scroll_dpr1",
+      "button": "s_c",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        588.0,
+        328.0
+      ],
+      "computed_screen": [
+        700.0,
+        458.0
+      ],
+      "clicked": [
+        700,
+        458
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        699.5,
+        457.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "scroll_dpr1",
+      "button": "s_r",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        1083.0,
+        428.0
+      ],
+      "computed_screen": [
+        1195.0,
+        558.0
+      ],
+      "clicked": [
+        1195,
+        558
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        1194.5,
+        557.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "scroll_dpr1",
+      "button": "b_c",
+      "dpr": 1,
+      "innerWidth": 1176,
+      "content_rect": [
+        112,
+        130,
+        1288,
+        938
+      ],
+      "css_center": [
+        588.0,
+        404.0
+      ],
+      "computed_screen": [
+        700.0,
+        534.0
+      ],
+      "clicked": [
+        700,
+        534
+      ],
+      "count_before": 2,
+      "count_after": 3,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        699.5,
+        533.5
+      ],
+      "true_button_size_px": [
+        92,
+        36
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.25",
+      "button": "b_tl",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        78.0,
+        50.0
+      ],
+      "computed_screen": [
+        111.5,
+        162.5
+      ],
+      "clicked": [
+        112,
+        163
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        111.5,
+        162.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.0,
+        0.0
+      ],
+      "error_dist": 0.0
+    },
+    {
+      "phase": "forced1.25",
+      "button": "b_tr",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        785.2,
+        50.0
+      ],
+      "computed_screen": [
+        995.5,
+        162.5
+      ],
+      "clicked": [
+        996,
+        163
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        995.5,
+        162.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.0,
+        0.0
+      ],
+      "error_dist": 0.0
+    },
+    {
+      "phase": "forced1.25",
+      "button": "b_c",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        439.2,
+        254.8
+      ],
+      "computed_screen": [
+        563.0,
+        418.5
+      ],
+      "clicked": [
+        563,
+        419
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        562.5,
+        418.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.5,
+        0.0
+      ],
+      "error_dist": 0.5
+    },
+    {
+      "phase": "forced1.25",
+      "button": "b_bl",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        78.0,
+        459.6
+      ],
+      "computed_screen": [
+        111.5,
+        674.5
+      ],
+      "clicked": [
+        112,
+        675
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        111.5,
+        674.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.0,
+        0.0
+      ],
+      "error_dist": 0.0
+    },
+    {
+      "phase": "forced1.25",
+      "button": "b_br",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        785.2,
+        459.6
+      ],
+      "computed_screen": [
+        995.5,
+        674.5
+      ],
+      "clicked": [
+        996,
+        675
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        995.5,
+        674.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.0,
+        0.0
+      ],
+      "error_dist": 0.0
+    },
+    {
+      "phase": "forced1.25_scroll",
+      "button": "s_l",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        78.0,
+        269.6
+      ],
+      "computed_screen": [
+        111.5,
+        437.0
+      ],
+      "clicked": [
+        112,
+        437
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        111.5,
+        436.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.0,
+        0.5
+      ],
+      "error_dist": 0.5
+    },
+    {
+      "phase": "forced1.25_scroll",
+      "button": "s_r",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        785.2,
+        269.6
+      ],
+      "computed_screen": [
+        995.5,
+        437.0
+      ],
+      "clicked": [
+        996,
+        437
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        995.5,
+        436.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.0,
+        0.5
+      ],
+      "error_dist": 0.5
+    },
+    {
+      "phase": "forced1.25_scroll",
+      "button": "b_c",
+      "dpr": 1.25,
+      "innerWidth": 878,
+      "content_rect": [
+        14,
+        100,
+        1112,
+        737
+      ],
+      "css_center": [
+        439.2,
+        254.8
+      ],
+      "computed_screen": [
+        563.0,
+        418.5
+      ],
+      "clicked": [
+        563,
+        419
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        562.5,
+        418.5
+      ],
+      "true_button_size_px": [
+        116,
+        46
+      ],
+      "error_px": [
+        0.5,
+        0.0
+      ],
+      "error_dist": 0.5
+    },
+    {
+      "phase": "forced1.5",
+      "button": "b_tl",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        78.0,
+        50.0
+      ],
+      "computed_screen": [
+        134.0,
+        195.0
+      ],
+      "clicked": [
+        134,
+        195
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        133.5,
+        194.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.5",
+      "button": "b_tr",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        784.67,
+        50.0
+      ],
+      "computed_screen": [
+        1194.0,
+        195.0
+      ],
+      "clicked": [
+        1194,
+        195
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        1193.5,
+        194.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.5",
+      "button": "b_c",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        439.0,
+        254.67
+      ],
+      "computed_screen": [
+        675.5,
+        502.0
+      ],
+      "clicked": [
+        676,
+        502
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        675.5,
+        501.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.0,
+        0.5
+      ],
+      "error_dist": 0.5
+    },
+    {
+      "phase": "forced1.5",
+      "button": "b_bl",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        78.0,
+        459.33
+      ],
+      "computed_screen": [
+        134.0,
+        809.0
+      ],
+      "clicked": [
+        134,
+        809
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        133.5,
+        808.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.5",
+      "button": "b_br",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        784.67,
+        459.33
+      ],
+      "computed_screen": [
+        1194.0,
+        809.0
+      ],
+      "clicked": [
+        1194,
+        809
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": true,
+      "true_screen_center": [
+        1193.5,
+        808.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.5_scroll",
+      "button": "s_l",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        78.0,
+        270.0
+      ],
+      "computed_screen": [
+        134.0,
+        525.0
+      ],
+      "clicked": [
+        134,
+        525
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        133.5,
+        524.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.5_scroll",
+      "button": "s_r",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        784.67,
+        270.0
+      ],
+      "computed_screen": [
+        1194.0,
+        525.0
+      ],
+      "clicked": [
+        1194,
+        525
+      ],
+      "count_before": 0,
+      "count_after": 1,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        1193.5,
+        524.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.5,
+        0.5
+      ],
+      "error_dist": 0.71
+    },
+    {
+      "phase": "forced1.5_scroll",
+      "button": "b_c",
+      "dpr": 1.5,
+      "innerWidth": 878,
+      "content_rect": [
+        17,
+        120,
+        1334,
+        884
+      ],
+      "css_center": [
+        439.0,
+        254.67
+      ],
+      "computed_screen": [
+        675.5,
+        502.0
+      ],
+      "clicked": [
+        676,
+        502
+      ],
+      "count_before": 1,
+      "count_after": 2,
+      "hit": true,
+      "css_getNodeForLocation_ok": "err:DOM.getNodeForLocation: {'code': -32000, 'message': 'No node found at given location'}",
+      "true_screen_center": [
+        675.5,
+        501.5
+      ],
+      "true_button_size_px": [
+        138,
+        54
+      ],
+      "error_px": [
+        0.0,
+        0.5
+      ],
+      "error_dist": 0.5
+    }
+  ]
+}

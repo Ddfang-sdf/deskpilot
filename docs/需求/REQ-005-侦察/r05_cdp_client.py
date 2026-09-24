@@ -101,7 +101,8 @@ def kill_managed_edge(user_data_dir: str, launcher_pid: int) -> None:
     kill_tree(launcher_pid)
     time.sleep(0.8)
     ps = (
-        "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" "
+        "Get-CimInstance Win32_Process -Filter "
+        "\"Name='msedge.exe' or Name='chrome.exe'\" "
         f"| Where-Object {{ $_.CommandLine -like '*{user_data_dir}*' }} "
         "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
     )
