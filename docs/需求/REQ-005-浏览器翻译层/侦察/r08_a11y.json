@@ -1,0 +1,180 @@
+{
+  "spi_original": false,
+  "policy_key_existed": false,
+  "P0_baseline": {
+    "content_elements": 2,
+    "content_types": {
+      "PaneControl": 1,
+      "DocumentControl": 1
+    },
+    "truncated": false,
+    "ok": true,
+    "err": null,
+    "sample_links": [],
+    "sample_buttons": [],
+    "shell_elements": 265,
+    "axtree_nodes": 314
+  },
+  "cleanup_P0_baseline": true,
+  "D_force_flag": {
+    "content_elements": 128,
+    "content_types": {
+      "PaneControl": 1,
+      "DocumentControl": 2,
+      "GroupControl": 53,
+      "HyperlinkControl": 32,
+      "TextControl": 27,
+      "ListControl": 1,
+      "ListItemControl": 10,
+      "ImageControl": 2
+    },
+    "truncated": false,
+    "ok": true,
+    "err": null,
+    "sample_links": [
+      "新闻",
+      "hao123",
+      "地图",
+      "贴吧",
+      "视频",
+      "图片",
+      "网盘",
+      "库库AI",
+      "文心",
+      "百度搭子"
+    ],
+    "sample_buttons": [],
+    "shell_elements": 265,
+    "axtree_nodes": 314
+  },
+  "cleanup_D_force_flag": true,
+  "B_policy_on": {
+    "content_elements": 2,
+    "content_types": {
+      "PaneControl": 1,
+      "DocumentControl": 1
+    },
+    "truncated": false,
+    "ok": true,
+    "err": null,
+    "sample_links": [],
+    "sample_buttons": [],
+    "shell_elements": 265,
+    "axtree_nodes": 272
+  },
+  "cleanup_B_policy_on": true,
+  "policy_restored_absent": true,
+  "B_policy_off_recheck": {
+    "content_elements": 2,
+    "content_types": {
+      "PaneControl": 1,
+      "DocumentControl": 1
+    },
+    "truncated": false,
+    "ok": true,
+    "err": null,
+    "sample_links": [],
+    "sample_buttons": [],
+    "shell_elements": 265,
+    "axtree_nodes": 314
+  },
+  "cleanup_B_policy_off_recheck": true,
+  "A_before": {
+    "content_elements": 2,
+    "content_types": {
+      "PaneControl": 1,
+      "DocumentControl": 1
+    },
+    "truncated": false,
+    "ok": true,
+    "err": null,
+    "sample_links": [],
+    "sample_buttons": [],
+    "shell_elements": 265
+  },
+  "windows_before_spi": 25,
+  "spi_set_ok": true,
+  "A_polls": {
+    "t0s": 128,
+    "t2s": 128,
+    "t5s": 128,
+    "t10s": 128
+  },
+  "A_after": {
+    "content_elements": 128,
+    "content_types": {
+      "PaneControl": 1,
+      "DocumentControl": 2,
+      "GroupControl": 53,
+      "HyperlinkControl": 32,
+      "TextControl": 27,
+      "ListControl": 1,
+      "ListItemControl": 10,
+      "ImageControl": 2
+    },
+    "truncated": false,
+    "ok": true,
+    "err": null,
+    "sample_links": [
+      "新闻",
+      "hao123",
+      "地图",
+      "贴吧",
+      "视频",
+      "图片",
+      "网盘",
+      "库库AI",
+      "文心",
+      "百度搭子"
+    ],
+    "sample_buttons": [],
+    "shell_elements": 265
+  },
+  "windows_during_spi": 25,
+  "A_rect_consistency": [
+    {
+      "name": "地图",
+      "uia_center": [
+        220.5,
+        150.5
+      ],
+      "cdp_screen": [
+        220.4,
+        150.5
+      ],
+      "err_dist": 0.11
+    },
+    {
+      "name": "图片",
+      "uia_center": [
+        361.5,
+        150.5
+      ],
+      "cdp_screen": [
+        361.4,
+        150.5
+      ],
+      "err_dist": 0.11
+    },
+    {
+      "name": "网盘",
+      "uia_center": [
+        408.5,
+        150.5
+      ],
+      "cdp_screen": [
+        408.4,
+        150.5
+      ],
+      "err_dist": 0.11
+    }
+  ],
+  "spi_restored_value": false,
+  "A_off_polls": {
+    "t0s": 128,
+    "t3s": 128,
+    "t8s": 128
+  },
+  "cleanup_A": true,
+  "spi_final": false
+}

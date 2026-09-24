@@ -4,7 +4,7 @@
 下的真实 PNG,侦察穿刺实测样本的归档副本)。
 
 **断言出处**:预期区域框位取自侦察穿刺实测记录(侦察方案 v0.5 §5.1/§5.2,
-`docs/需求/REQ-003-侦察/samples/spike-*.png` 证据图)——容差 ±10px(管线产品化
+`docs/需求/REQ-003-GUI图形检测与SoM扩面/侦察/samples/spike-*.png` 证据图)——容差 ±10px(管线产品化
 参数可能微移边界),覆盖判据 IoU≥0.3(测试设计 §5A)。
 
 **P1 红点位**:`DetectorRegistry().build("cv-contour")` 当前抛

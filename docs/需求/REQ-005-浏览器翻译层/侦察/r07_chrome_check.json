@@ -1,0 +1,25 @@
+{
+  "chrome_exe": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "browser": "Chrome/153.0.8010.53",
+  "node_count": 310,
+  "axtree_ms": 68.2,
+  "role_counts": {
+    "RootWebArea": 1,
+    "none": 57,
+    "generic": 81,
+    "image": 6,
+    "paragraph": 9,
+    "StaticText": 55,
+    "link": 33,
+    "list": 1,
+    "InlineTextBox": 55,
+    "listitem": 10,
+    "textbox": 1,
+    "button": 1
+  },
+  "searchbox_css_center": [
+    631.5,
+    217.2
+  ],
+  "cleanup": true
+}

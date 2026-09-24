@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>REQ-005 侦察测试页</title></head>
+<body>
+<h1 id="title">REQ-005 CDP 侦察测试页</h1>
+<form id="form1">
+  <label for="name">姓名</label>
+  <input id="name" type="text" placeholder="请输入姓名">
+  <label for="bio">简介</label>
+  <textarea id="bio" rows="3"></textarea>
+  <input id="agree" type="checkbox">
+  <label for="agree">同意条款</label>
+</form>
+<button id="btn" onclick="window.__clicks=(window.__clicks||0)+1;document.getElementById('count').textContent=window.__clicks">点我计数</button>
+<span id="count">0</span>
+<a href="#sec2" id="link1">跳转到第二节</a>
+<button id="icon-btn" aria-label="收藏此页"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 L10 6 L16 6 L11 10 L13 16 L8 12 L3 16 L5 10 L0 6 L6 6 Z" fill="currentColor"/></svg></button>
+<div role="slider" id="slider1" aria-label="音量" aria-valuenow="30" aria-valuemin="0" aria-valuemax="100" tabindex="0"></div>
+<h2 id="sec2">第二节</h2>
+<p>含表单 / 按钮 / 链接 / aria-label 图标按钮 / ARIA slider,用于 AXTree 采样。</p>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>REQ005坐标穿刺</title>
+<style>
+  body { margin:0; font-family:sans-serif; }
+  .fx { position:fixed; width:96px; height:40px; font-size:14px; z-index:10; }
+  #b_tl { left:30px;  top:30px;  background:#ffd166; }
+  #b_tr { right:30px; top:30px;  background:#06d6a0; }
+  #b_c  { left:calc(50vw - 48px); top:calc(50vh - 20px); background:#118ab2; color:#fff; }
+  #b_bl { left:30px;  bottom:30px; background:#ef476f; color:#fff; }
+  #b_br { right:30px; bottom:30px; background:#8338ec; color:#fff; }
+  #spacer { height:3200px; }
+  .doc { position:absolute; width:96px; height:40px; font-size:14px; }
+  #s_l { left:30px;  top:2600px; background:#ff9f1c; }
+  #s_c { left:calc(50vw - 48px); top:2700px; background:#2ec4b6; }
+  #s_r { right:30px; top:2800px; background:#e71d36; color:#fff; }
+</style></head>
+<body>
+<div id="spacer"></div>
+<button class="fx" id="b_tl">TL:0</button>
+<button class="fx" id="b_tr">TR:0</button>
+<button class="fx" id="b_c">C:0</button>
+<button class="fx" id="b_bl">BL:0</button>
+<button class="fx" id="b_br">BR:0</button>
+<button class="doc" id="s_l">SL:0</button>
+<button class="doc" id="s_c">SC:0</button>
+<button class="doc" id="s_r">SR:0</button>
+<script>
+window.__counts = {};
+document.querySelectorAll('button').forEach(b => {
+  window.__counts[b.id] = 0;
+  b.addEventListener('click', () => {
+    window.__counts[b.id] += 1;
+    b.textContent = b.textContent.split(':')[0] + ':' + window.__counts[b.id];
+  });
+});
+</script>
+</body>
+</html>
