@@ -109,7 +109,12 @@ class TestManagedInstanceChain:
                 f"source(直出): {snap['data'].get('source')}"
             assert snap["data"]["elements"], \
                 f"共管实例快照非空(直出): {len(snap['data']['elements'])}"
-            name = snap["data"]["elements"][0]["name"]
+            # ISS-0115 族修正(登记):首元素可能无名(RootWebArea/none),
+            # 取首个具名元素;全无名则环境守卫(着落页无具名元素,非产品红)
+            named = [e for e in snap["data"]["elements"] if e.get("name")]
+            if not named:
+                env_skip("着落页无具名元素(环境面,非产品红)")
+            name = named[0]["name"]
             rect = _call(d.port, "browser_get_rect", {"name": name})
             assert rect["ok"] is True, f"get_rect(响应体直出): {rect}"
             l, t, r, b = rect["data"]["rect"]

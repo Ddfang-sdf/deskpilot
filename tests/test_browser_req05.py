@@ -407,10 +407,12 @@ class TestGetRect:
         (40,25,60,35)/dpr=2.0 → rect=原点+CSS×dpr=
         [1080,250,1120,270];三因子各取一次。红态:空壳。"""
         from deskpilot.browser.rect import browser_get_rect
+        # ISS-0115 族修正(登记):坐标取小值,兼容 CI 小屏跑机
+        # (原 origin(1000,200) 在 1024 宽跑机越出虚拟桌面全域,误触 fail-closed)
         cdp = _CdpChannel(box={"left": 40, "top": 25, "right": 60,
-                               "bottom": 35})
+                               "bottom": 35}, origin=(10, 10))
         out = browser_get_rect(777, name="提交", cdp=cdp)
-        assert out["rect"] == [1080, 250, 1120, 270], \
+        assert out["rect"] == [90, 60, 130, 80], \
             f"三因子换算(直出): {out.get('rect')}"
         for factor in ("element_box", "render_origin", "dpr"):
             assert cdp.factor_calls[factor] == 1, \
