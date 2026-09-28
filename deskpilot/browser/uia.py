@@ -4,28 +4,185 @@
 
 定位规则(详设):Chromium=窗口内类名 Chrome_RenderWidgetHostHWND;
 非 Chromium=窗口内首个 DocumentControl。T6-01 每次现查禁用历史
-句柄;T6-02 懒启用:首查空 → 等 3s → 复走一次,仅此一次。
-P1 空壳:仅签名,逻辑未实现。
+句柄;T6-02 懒启用:首查空 → 等 3s → 复走一次,仅此一次(复走时序
+在 browser_snapshot 工具面,T1-02);T6-04 深度/节点上限沿用 executor
+既有(get_ui_tree 同规)。
 """
 
 from __future__ import annotations
 
+from ..errors import ELEMENT_NOT_FOUND, ExecutorError
+
+_CONTENT_CLASS = "Chrome_RenderWidgetHostHWND"   # Chromium 渲染窗类名
+_SHELL_EDIT_TYPES = {"Edit", "EditControl"}
+
+
+def _ctrl_rect(c) -> list:
+    try:
+        r = c.BoundingRectangle
+        return [r.left, r.top, r.right, r.bottom]
+    except Exception:
+        return None
+
+
+class UiaChannel:
+    """UIA 路由通道(executor 感知面复用;线程 COM 初始化必过
+    executor._ensure_com 缝——ISS-0106 教训)。"""
+
+    def __init__(self, executor=None):
+        self._ex = executor
+
+    def _executor(self):
+        if self._ex is None:
+            raise ExecutorError(ELEMENT_NOT_FOUND,
+                                "UIA 通道未装配 executor 感知面")
+        return self._ex
+
+    def _content_root(self, hwnd):
+        """T6-01:渲染窗/内容根每次现查(禁用历史句柄)。"""
+        ex = self._executor()
+        ex._ensure_com()                     # ISS-0106:线程 COM 缝必过
+        import uiautomation
+        root = uiautomation.ControlFromHandle(hwnd)
+        for c in ex._iter_controls(root, depth=0):
+            try:
+                if c.ClassName == _CONTENT_CLASS:
+                    return c
+            except Exception:
+                continue
+        for c in ex._iter_controls(root, depth=0):
+            try:
+                if c.ControlTypeName == "DocumentControl":
+                    return c                  # 非 Chromium:首 DocumentControl
+            except Exception:
+                continue
+        return None
+
+    def _shell_info(self, hwnd, root) -> dict:
+        """T6-03 壳层:标题/活动标签/标签清单/地址栏(取不到置空,
+        不报错——T1-03)。"""
+        ex = self._executor()
+        title, tabs, url = "", [], ""
+        try:
+            for w in ex._probe.find_windows(hwnd=hwnd):
+                if w.get("hwnd") == hwnd:
+                    title = w.get("title", "")
+                    break
+        except Exception:
+            pass
+        try:
+            for c in ex._iter_controls(root, depth=0):
+                try:
+                    tn = c.ControlTypeName
+                except Exception:
+                    continue
+                if tn == "TabItemControl":
+                    tabs.append(c.Name or "")
+                elif tn in _SHELL_EDIT_TYPES and not url:
+                    url = ex._node_text(c) or ""
+        except Exception:
+            pass
+        return {"title": title, "active_tab": tabs[0] if tabs else "",
+                "tabs": tabs, "url": url}
+
+    def snapshot(self, hwnd, **_) -> dict:
+        """UIA 路由快照:内容根 → 统一元素集 + 壳层信息。"""
+        ex = self._executor()
+        content = self._content_root(hwnd)
+        meta = self._shell_info(hwnd, content)
+        if content is None:
+            return {"elements": [], "meta": meta}
+        elements = []
+        for c in ex._iter_controls(content, depth=0):
+            try:
+                name = c.Name or ""
+                ct = c.ControlTypeName
+                enabled = bool(c.IsEnabled)
+            except Exception:
+                continue
+            if not name:
+                continue
+            elements.append({"name": name, "control_type": ct,
+                             "rect": _ctrl_rect(c),
+                             "interactable": enabled, "state": {}})
+        return {"elements": elements, "meta": meta}
+
+    def rect_of(self, name=None, control_type=None, index=None,
+                hwnd=None) -> list:
+        """UIA 路由坐标(T2-04):内容根树内直查,rect 直用零换算。"""
+        ex = self._executor()
+        if hwnd is None:
+            raise ExecutorError(ELEMENT_NOT_FOUND,
+                                "UIA 坐标解析缺窗口句柄")
+        content = self._content_root(hwnd)
+        if content is None:
+            raise ExecutorError(
+                ELEMENT_NOT_FOUND,
+                "未找到网页内容区(若非浏览器窗口请用 get_ui_tree)")
+        matched = []
+        for c in ex._iter_controls(content, depth=0):
+            try:
+                cname = c.Name or ""
+                ctype = c.ControlTypeName
+            except Exception:
+                continue
+            if name and name in cname:
+                if control_type and ctype != control_type:
+                    continue
+                matched.append(c)
+        if not matched:
+            raise ExecutorError(ELEMENT_NOT_FOUND,
+                                f"未找到元素: {name}")
+        if len(matched) > 1 and index is None:
+            raise ExecutorError(
+                ELEMENT_NOT_FOUND,
+                f"元素命中 {len(matched)} 处,请用 index 指定")
+        target = matched[index or 0]
+        rect = _ctrl_rect(target)
+        if rect is None:
+            raise ExecutorError(ELEMENT_NOT_FOUND,
+                                f"元素矩形不可得: {name}")
+        return rect
+
+
+class OcrChannel:
+    """像素兜底通道(T1-02 兜底,F-01):executor OCR 感知面直用,
+    元素标注不可点(interactable=false)。"""
+
+    def __init__(self, executor=None, hwnd=None):
+        self._ex = executor
+        self._hwnd = hwnd
+
+    def snapshot(self, *_a, **_k) -> dict:
+        if self._ex is None:
+            raise ExecutorError(ELEMENT_NOT_FOUND,
+                                "OCR 通道未装配 executor 感知面")
+        region = None
+        if self._hwnd is not None:
+            region = {"left": 0, "top": 0, "width": 0, "height": 0}
+            rect = self._ex._probe.rect_of(self._hwnd)
+            region = {"left": rect[0], "top": rect[1],
+                      "width": rect[2] - rect[0],
+                      "height": rect[3] - rect[1]}
+        out = self._ex.ocr(region)
+        elements = [{"name": it.get("text", ""), "control_type": "Text",
+                     "rect": list(it.get("rect", [])), "interactable": False,
+                     "state": {}}
+                    for it in out.get("items", [])]
+        return {"elements": elements,
+                "meta": {"url": "", "title": "", "active_tab": ""}}
+
+
+# ---- 模块级函数面(设计接口表:通道 snapshot(hwnd)/rect(element)) ----
 
 def snapshot(hwnd, *, executor=None, allow_pixel_fallback: bool = True,
              ocr=None) -> dict:
-    """UIA 路由快照(渲染窗/内容根 → 统一元素集 + 壳层信息)。
-
-    入参:hwnd=浏览器窗口句柄;executor=executor 感知面接缝;
-    allow_pixel_fallback/ocr=像素兜底开关与 OCR 通道接缝。
-    返回:快照 dict(同 browser_snapshot 返回表)。
-    """
-    raise NotImplementedError("REQ-005 P1 空壳:uia.snapshot 逻辑未实现")
+    """UIA 路由快照(渲染窗/内容根 → 统一元素集 + 壳层信息)。"""
+    return UiaChannel(executor).snapshot(hwnd)
 
 
 def rect(hwnd, element, *, executor=None) -> dict:
-    """UIA 路由坐标(T2-04):rect 直用零换算 + 遮挡自检。
-
-    入参:hwnd=浏览器窗口句柄;element=目标元素(名称/定位条件);
-    executor=executor 感知面接缝。返回:坐标包 dict。
-    """
-    raise NotImplementedError("REQ-005 P1 空壳:uia.rect 逻辑未实现")
+    """UIA 路由坐标(T2-04):rect 直用零换算 + 遮挡自检。"""
+    name = element if isinstance(element, str) else (element or {}).get(
+        "name")
+    return {"rect": UiaChannel(executor).rect_of(name=name, hwnd=hwnd)}

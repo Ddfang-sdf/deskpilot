@@ -783,6 +783,9 @@ def _run_daemon_loop(ctx, estop, audit, audit_paths, policy,
     """daemon 常驻收尾段(ISS-0064 S6,纯重构):HTTP 常驻+托盘+主循环;
     绑定竞态败者干净退出(rc 4);返回进程退出码。"""
     from .httpd import HttpDaemon
+    from .browser import manager as browser_manager
+    # REQ-005 T4-04:共管浏览器管理器审计通道装配(拉起/回收/死亡留痕)
+    browser_manager.set_audit(audit)
     daemon = HttpDaemon(ctx, estop=estop,
                         idle_timeout_s=policy.idle_timeout_minutes * 60,
                         whitelist_admin=whitelist_admin)
@@ -815,6 +818,9 @@ def _run_daemon_loop(ctx, estop, audit, audit_paths, policy,
         daemon.stop()
         if supervisor is not None:
             supervisor.stop()
+        # REQ-005 T4-03:daemon 停止触发共管浏览器实例回收
+        from .browser.manager import Manager
+        Manager().reclaim_all()
         audit.record_event(EV_SERVICE_STOP, "常驻服务停止")
         return 0
 

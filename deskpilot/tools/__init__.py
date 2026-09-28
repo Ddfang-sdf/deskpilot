@@ -26,7 +26,9 @@ from ..secure_desktop import SecureDesktopGuard
 
 _L0_DIRECT = {"screenshot", "find_window", "get_ui_tree", "get_cursor",
               "get_clipboard", "ocr", "template_match", "get_clickable_map",
-              "list_desktop_icons"}
+              "list_desktop_icons",
+              # REQ-005 浏览器翻译层(L0 感知,与 screenshot 同路直放)
+              "browser_snapshot", "browser_get_rect"}
 _L1_DIRECT = {"move", "wait_for_window"}
 
 _DEFAULT_GUARD: SecureDesktopGuard | None = None
@@ -138,6 +140,26 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
             # REQ-003:detect 开关透传(缺省 False 走既有路径,DET-04 零变化)
             result = ctx.executor.get_clickable_map(
                 params["window"], params.get("detect", False))
+        elif tool == "browser_snapshot":
+            # REQ-005:UIA 通道复用 executor 感知面(S-03);管理器注入
+            # 触发 M1 注册表路由(M4 模块级注册表生产装配)
+            from ..browser.manager import Manager
+            from ..browser.snapshot import browser_snapshot
+            from ..browser.uia import OcrChannel, UiaChannel
+            result = browser_snapshot(
+                params.get("window"), manager=Manager(),
+                uia=UiaChannel(ctx.executor),
+                ocr=OcrChannel(ctx.executor,
+                               hwnd=params.get("window")))
+        elif tool == "browser_get_rect":
+            from ..browser.manager import Manager
+            from ..browser.rect import browser_get_rect
+            from ..browser.uia import UiaChannel
+            result = browser_get_rect(
+                params.get("window"), name=params.get("name"),
+                control_type=params.get("control_type"),
+                index=params.get("index"), manager=Manager(),
+                uia=UiaChannel(ctx.executor))
         else:
             raise ExecutorError(INTERNAL_ERROR, f"工具 {tool} 未接线")
         _light_audit(ctx, tool, params, "ok", t0)
