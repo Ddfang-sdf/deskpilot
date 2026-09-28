@@ -102,7 +102,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         # (受 ISS-0015 长度闸门 ≤200 + ISS-0037 sv06「图像不可见」子串约束)
         # ISS-0096:屏号语义入描述(0=主屏)——AI 不再靠猜
         # ISS-0102:path 落盘参数语义入描述(194/200;原文见单据 v0.4)
-        "description": "拍 Windows 桌面/窗口图像,可查看;网页用浏览器工具。scope:fullscreen=虚拟桌面、screen=屏号(0=主屏)、window=绑定窗口、region=rect(精读/局部,含 coverage)。path=落盘路径(仅仓库/审计根)。长边>2000 等比缩:图坐标/scale 还原;返回 path 为原图。图像不可见改调 ocr;ocr:true 附文字清单。",
+        "description": "拍 Windows 桌面/窗口图像,可查看;网页用 browser_snapshot。scope:fullscreen=虚拟桌面、screen=屏号(0=主屏)、window=绑定窗口、region=[x,y,w,h](精读,含 coverage)。path=落盘路径(仅仓库/审计根)。长边>2000 等比缩,图坐标/scale 还原。图像不可见改调 ocr;ocr:true 附文字清单。",
         "required": {"scope": ("enum", ["fullscreen", "screen", "region", "window"])},
         "optional": {"rect": ("rect",), "window": ("any",), "ocr": ("bool",),
                      "screen": ("int",),
@@ -119,14 +119,14 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "find_window": {
         # ISS-0065 ①:schema 补 hwnd(int) 与 probe 能力对齐(描述曾宣称
         # 可按 hwnd 查找却被 at_least_one 拦截——提示与声明面矛盾)
-        "description": "查找 Windows 桌面上的应用窗口(按 title/process/hwnd 定位,至少给一项),返回 hwnd/标题/进程/矩形;网页定位请用浏览器工具。操作任何应用前先调用它定位,再 attach 绑定、get_ui_tree 看内容。不要写临时脚本(uiautomation/mss)——窗口枚举已封装。",
+        "description": "查找 Windows 桌面上的应用窗口(按 title/process/hwnd 定位,至少给一项),返回 hwnd/标题/进程/矩形;网页定位请用 browser_snapshot/browser_get_rect。操作任何应用前先调用它定位,再 attach 绑定、get_ui_tree 看内容。不要写临时脚本(uiautomation/mss)——窗口枚举已封装。",
         "required": {},
         "optional": {"title": ("str",), "process": ("str",),
                      "hwnd": ("int",)},
         "at_least_one": ["title", "process", "hwnd"],
     },
     "get_ui_tree": {
-        "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用浏览器工具。attach 绑定之后用它「看懂」窗口里有哪些按钮、输入框、列表。control_type=按控件类型过滤(如 CheckBox/Button/MenuItem,找无文字图形先用它)。返回 elements+coord_space。",
+        "description": "读取绑定的 Windows 窗口的界面元素树(UIA):每个可交互控件的名称/类型/矩形;网页元素请用 browser_snapshot。attach 绑定后用它「看懂」窗口里有哪些按钮、输入框、列表。control_type=按控件类型过滤(找无文字图形先用它)。返回 elements+coord_space。",
         "required": {"window": ("any",)}, "optional": {"control_type": ("str",)}},
     "get_clickable_map": {
         # ISS-0066 ②:UIA 条目 id 与 som_id 双写同值(输出/入参命名对齐),
@@ -156,7 +156,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "required": {},
         "optional": {"window": ("int",)}},
     "browser_get_rect": {
-        "description": "按名称定位浏览器页面元素,返回虚拟桌面坐标 rect 与遮挡真相(occluded/top_element,判断归你)。window=浏览器窗口句柄,省略走共管浏览器;name 子串匹配,多命中给 index;零命中附相似候选。拿到坐标用 click 点击;页面元素清单先看 browser_snapshot。",
+        "description": "按名称定位浏览器页面元素,返回虚拟桌面坐标 rect=[l,t,r,b] 与遮挡真相(occluded/top_element,判断归你)。window=浏览器窗口句柄,省略走共管浏览器;name 子串匹配,多命中给 index;零命中附相似候选。拿到坐标用 click 点击;页面元素清单先看 browser_snapshot。",
         "required": {},
         "optional": {"window": ("int",), "name": ("str",),
                      "control_type": ("str",), "index": ("int",)}},
@@ -182,7 +182,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "optional": {},
     },
     "attach": {
-        "description": "绑定一个 Windows 原生应用窗口——一切写操作(点击/输入/按键)的前提,返回操作令牌 token;浏览器页面交互请用浏览器工具。按 title/hwnd/process 定位(先 find_window 找到 hwnd 最稳)。绑定后链路:get_ui_tree 看内容→click_element/type_element 操作→detach 解绑。",
+        "description": "绑定一个 Windows 原生应用窗口——一切写操作(点击/输入/按键)的前提,返回操作令牌 token;浏览器页面交互请用 browser_snapshot。按 title/hwnd/process 定位(先 find_window 找到 hwnd 最稳)。绑定后链路:get_ui_tree 看内容→click_element/type_element 操作→detach 解绑。",
         "required": {},
         "optional": {"title": ("str",), "hwnd": ("int",), "process": ("str",)},
         "at_least_one": ["title", "hwnd", "process"],
@@ -214,7 +214,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "click_element": {
         # ISS-0091 整改④:拒绝语义入描述(退化矩形/遮挡);受 ISS-0015 描述
         # 长度闸门(≤200)约束,错误码全称由拒绝时的错误消息承载(附自愈指引)
-        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定的 Windows 窗口内控件(UIA 优先);网页元素请用浏览器工具。先 get_ui_tree 找控件。无文字图形用 control_type+index;som_id 只点 UIA 编号,与 control_type 互斥;detect 编号取 rect 用 click。拒绝零鼠标动作:不可见/退化矩形/遮挡→错误码+自愈指引。",
+        "description": "按名称/AutomationId/SoM 编号/控件类型点击绑定窗口内控件(UIA 优先);网页元素用 browser_snapshot。先 get_ui_tree 定位。无文字图形用 control_type+index;som_id 只点 UIA 编号,与 control_type 互斥;detect 编号取 rect 用 click。拒绝零鼠标动作:不可见/退化矩形/遮挡→错误码+自愈指引。",
         "required": {"token": ("str",)},
         "optional": {"name": ("str",), "automation_id": ("str",), "som_id": ("int",),
                      "control_type": ("str",), "index": ("int",)},
@@ -223,7 +223,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "type_element": {
         # ISS-0070:描述写明「name/automation_id 至少一项」(空手撞
         # INVALID_PARAMS 可自愈)
-        "description": "向绑定的 Windows 窗口内控件(输入框等)输入文本;网页表单请用浏览器工具。attach 绑定后使用。token+text 必填,name/automation_id 至少一项作定位(空手调用将被 INVALID_PARAMS 拒绝)。",
+        "description": "向绑定的 Windows 窗口内控件(输入框等)输入文本;网页表单请用 browser_snapshot/browser_get_rect。attach 绑定后使用。token+text 必填,name/automation_id 至少一项作定位(空手调用将被 INVALID_PARAMS 拒绝)。",
         "required": {"token": ("str",), "text": ("text",)},
         "optional": {"name": ("str",), "automation_id": ("str",)},
         "at_least_one": ["name", "automation_id"],
@@ -241,7 +241,7 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
                      "offset": ("enum", ["left", "right", "above", "below"]),
                      "distance": ("int",)}},
     "type_text": {
-        "description": "经剪贴板向 Windows 窗口当前焦点输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。",
+        "description": "经剪贴板向 Windows 窗口当前焦点输入文本(支持中文,带读回校验;不会预清空目标区域)。token+text。读回不匹配报 TYPE_MISMATCH(可重试);目标无可读控件报 READBACK_UNAVAILABLE——改用 type_element 或 screenshot 自核。",
         "required": {"token": ("str",), "text": ("text",)}, "optional": {}},
     "key": {
         "description": "向绑定的 Windows 窗口发送按键/组合键(受按键许可表管控;delete/alt+f4 等危险键弹本地审批)。token+key,如 enter、ctrl+s、alt+f4。未收录键返回 KEY_UNKNOWN 并列出现行可用键;拒绝时不发送任何按键。",
