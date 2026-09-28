@@ -19,6 +19,8 @@ TOOL_LEVELS: Mapping[str, str] = {
     "screenshot": L0, "ocr": L0, "find_window": L0, "get_ui_tree": L0,
     "get_clickable_map": L0, "template_match": L0, "get_cursor": L0,
     "get_clipboard": L0, "list_desktop_icons": L0,
+    # REQ-005 浏览器翻译层(L0 感知,与 screenshot 同路直放)
+    "browser_snapshot": L0, "browser_get_rect": L0,
     "wait_for_window": L1, "wait_for_element": L1, "move": L1,
     "scroll": L1, "attach": L1, "detach": L1,
     "launch_app": L2, "activate_window": L2, "click_element": L2,

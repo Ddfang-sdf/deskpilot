@@ -441,11 +441,12 @@ class TestDET05FailClosed:
 
 class TestDET06ReplaceableAndRegistry:
     def test_tool_surface_unchanged_except_optional_detect(self):
-        """`TOOL_SCHEMAS` 30 条(REQ-003 时点 29「本单零新工具」历史钉,
-        ISS-0101 增 set_window_rect 合法重指,§7 登记,REQ-002 先例);
+        """`TOOL_SCHEMAS` 32 条(REQ-003 时点 29「本单零新工具」历史钉,
+        ISS-0101 增 set_window_rect 合法重指,§7 登记,REQ-002 先例;
+        REQ-005 增两浏览器工具,30→32 随单适配登记);
         `get_clickable_map` 仅增可选 `detect`。"""
-        assert len(TOOL_SCHEMAS) == 30, \
-            "REQ-003 零新工具钉重指:29→30(ISS-0101 合法增量,§7 登记)"
+        assert len(TOOL_SCHEMAS) == 32, \
+            "REQ-003 零新工具钉重指:29→30(ISS-0101)→32(REQ-005,交叉面登记)"
         schema = TOOL_SCHEMAS["get_clickable_map"]
         assert "detect" in schema["optional"], "detect 须为可选参数"
         assert schema["optional"]["detect"] == ("bool",), "detect 须为 bool 型"

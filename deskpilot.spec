@@ -6,6 +6,8 @@ hiddenimports += collect_submodules('uiautomation')
 hiddenimports += collect_submodules('comtypes.gen')
 # rapidocr 在运行期动态 import 各模型模块（ch_ppocr_v3_det 等），须全部收集
 hiddenimports += collect_submodules('rapidocr_onnxruntime')
+# REQ-005 M5 CDP 通道:websocket-client(导入名 websocket)
+hiddenimports += collect_submodules('websocket')
 
 # uiautomation 运行期从 <pkg>/bin 以 add_dll_directory 加载
 # UIAutomationClient_VC140_*.dll（数据文件，须显式收集，否则 onefile 下 UIA 失效）；

@@ -101,6 +101,10 @@ en:
   enf.head.tech.tool: "{tool} (params {digest}) on {target}"
   enf.head.tech.click: "coordinate click on {target}"
 
+  # REQ-005 M4 共管实例拉起提示(身份类登录提示;P1 空壳:纯声明)
+  br.launch.title: "DeskPilot Managed Browser"
+  br.launch.hint: "Shared managed browser instance — do not sign in to personal or identity accounts here"
+
 zh-CN:
   approval.title: "DeskPilot 审批"
   approval.title.enroll: "DeskPilot 入白审批"
@@ -199,3 +203,7 @@ zh-CN:
   enf.head.tech.launch: "launch_app 作用于{target}"
   enf.head.tech.tool: "{tool}（参数 {digest}）作用于{target}"
   enf.head.tech.click: "坐标点击作用于{target}"
+
+  # REQ-005 M4 共管实例拉起提示(身份类登录提示;P1 空壳:纯声明)
+  br.launch.title: "DeskPilot 共管浏览器"
+  br.launch.hint: "共管浏览器实例——请勿在此登录个人或身份类账号"

@@ -140,6 +140,10 @@ FREEZE: dict[str, str] = {
     "EV_MANAGER_WINDOW_LAUNCH": "管理窗拉起",
     "EV_NAME_CACHE_WARMED": "名称缓存暖机",
     "EV_STARTUP_STAGE": "启动段",
+    # REQ-005 M4(P1 空壳声明;合法重指,交叉面「随 S 实现登记」)
+    "EV_BROWSER_INSTANCE_LAUNCH": "共管实例拉起",
+    "EV_BROWSER_INSTANCE_RECLAIM": "共管实例回收",
+    "EV_BROWSER_INSTANCE_DEAD": "共管实例死亡",
 }
 
 

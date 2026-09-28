@@ -22,10 +22,12 @@ class TestSchemaCompleteness:
         协议方法实为 23 个；ISS-0012 增 request_remove_from_whitelist 后为 24 个；
         ISS-0021 增 click_text 后为 25 个；REQ-001 增 mouse_down/mouse_up/hold
         后为 28 个；REQ-002 增 list_desktop_icons 后为 29 个(R4 合法重指)；
-        ISS-0101 增 set_window_rect 后为 30 个(§7 登记:新工具合法增量)。
+        ISS-0101 增 set_window_rect 后为 30 个(§7 登记:新工具合法增量);
+        REQ-005 增 browser_snapshot/browser_get_rect 后为 32 个(交叉面登记:
+        计数钉 30→32 随单适配)。
         """
         assert set(TOOL_SCHEMAS.keys()) == set(TOOL_LEVELS.keys())
-        assert len(TOOL_SCHEMAS) == 30
+        assert len(TOOL_SCHEMAS) == 32
 
     def test_unknown_tool_rejected(self, policy):
         """TC-S-CH-02 基础：未发布的方法名直接拒绝。"""

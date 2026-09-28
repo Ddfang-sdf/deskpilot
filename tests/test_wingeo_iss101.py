@@ -120,9 +120,10 @@ class TestRegistryShape:
         assert isinstance(zh, str) and zh.strip(), "zh-CN 键缺失或为空(直读)"
 
     def test_tc101_08_tool_count_thirty(self):
-        """TC-101-08(形态,§4.3):len(TOOL_SCHEMAS)==30(29+本单新工具)。
+        """TC-101-08(形态,§4.3):len(TOOL_SCHEMAS)==32(30+REQ-005 两
+        浏览器工具,交叉面「计数钉 30→32 随单适配登记」)。
         断言:注册表直读。绿态:P1 空壳声明已落。"""
-        assert len(TOOL_SCHEMAS) == 30
+        assert len(TOOL_SCHEMAS) == 32
 
 
 # ---------- TC-101-02/03/04 单元:执行链(经 execute 全链) ----------

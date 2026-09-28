@@ -149,6 +149,17 @@ TOOL_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "description": "读取 Windows 桌面当前剪贴板文本。无参数,返回 {text}。"
         "写入剪贴板用 set_clipboard(需 attach 绑定)。",
         "required": {}, "optional": {}},
+    # REQ-005 浏览器翻译层(P1 空壳:纯声明,调用面 P3 接线)
+    "browser_snapshot": {
+        # ISS-0115:描述必须写明备选路径(省略 window 走共管浏览器)
+        "description": "读取浏览器窗口页面的语义快照:元素 name/control_type/rect/interactable 与 url/source。window=浏览器窗口句柄,省略走共管浏览器(自动拉起,CDP 完整能力);UIA 不足可省略 window 走共管实例,或允许像素兜底(OCR)。定位元素坐标用 browser_get_rect;非浏览器窗口用 get_ui_tree。",
+        "required": {},
+        "optional": {"window": ("int",)}},
+    "browser_get_rect": {
+        "description": "按名称定位浏览器页面元素,返回虚拟桌面坐标 rect 与遮挡真相(occluded/top_element,判断归你)。window=浏览器窗口句柄,省略走共管浏览器;name 子串匹配,多命中给 index;零命中附相似候选。拿到坐标用 click 点击;页面元素清单先看 browser_snapshot。",
+        "required": {},
+        "optional": {"window": ("int",), "name": ("str",),
+                     "control_type": ("str",), "index": ("int",)}},
     # ---- L1 控制类（详细设计 §13.4）----
     "wait_for_window": {
         "description": "等待某个 Windows 窗口出现或消失;launch_app 启动应用后等它就位再用。target=标题/进程,timeout 秒,返回命中信息。",

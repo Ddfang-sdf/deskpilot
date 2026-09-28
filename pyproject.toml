@@ -18,6 +18,8 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python>=4.8",
     "rapidocr-onnxruntime>=1.2",
+    # REQ-005 M5 CDP 通道唯读依赖(详设 S-02)
+    "websocket-client>=1.6",
 ]
 
 # 显式限定包发现范围：仓库根还有 audit/ assets/ release/ 等顶层目录,
