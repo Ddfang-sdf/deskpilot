@@ -78,3 +78,6 @@ EV_NAME_CACHE_WARMED = "名称缓存暖机"
 EV_BROWSER_INSTANCE_LAUNCH = "共管实例拉起"
 EV_BROWSER_INSTANCE_RECLAIM = "共管实例回收"
 EV_BROWSER_INSTANCE_DEAD = "共管实例死亡"
+
+# ---- daemon 兜底(httpd;REQ-005 实盘缺陷:500 兜底失败留痕) ----
+EV_DAEMON_INTERNAL_ERROR = "服务内部异常"

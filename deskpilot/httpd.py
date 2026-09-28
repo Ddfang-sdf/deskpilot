@@ -357,6 +357,16 @@ class HttpDaemon:
                     result = daemon._call_with_budget(tool, raw)
                 except Exception as e:
                     # ISS-0009 §6 C：未知异常兜底 500 结构化错误，连接不断
+                    # REQ-005 实盘缺陷:兜底失败也须落审计(与写路径同等
+                    # 留痕;此前 500 面零留痕)
+                    _audit = getattr(daemon._ctx, "audit", None)
+                    if _audit is not None:
+                        try:
+                            from .audit_events import EV_DAEMON_INTERNAL_ERROR
+                            _audit.record_event(EV_DAEMON_INTERNAL_ERROR,
+                                                f"tool={tool}: {e}")
+                        except Exception:
+                            pass
                     self._send(500, {"ok": False,
                                      "error_code": errors.INTERNAL_ERROR,
                                      "message": f"服务内部异常: {e}",

@@ -32,6 +32,9 @@ TC-BR-01/02/24/25 绿(P1 空壳声明已落,ISS-0101 先例)。
 
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -643,3 +646,126 @@ class TestSensingErrorStructured:
         assert entries, "失败调用必须落审计(直读:零记录)"
         assert entries[-1].get("reason_code") == INTERNAL_ERROR, \
             f"审计 reason_code(直读): {entries[-1].get('reason_code')}"
+
+
+# ---------- TC-BR-32~34:打包形态实盘缺陷回归钉(2026-09-28 TC-BR-26 复验暴露) ----------
+
+class TestFrozenPackagingPins:
+    """TC-BR-32(形态):spec 的 websocket 收集形态钉(collect_submodules
+    对齐 uiautomation 先例);TC-BR-33(单元):DevToolsActivePort 陈旧
+    文件不得被新拉起误读(T4-02 补强)。"""
+
+    def test_br32_spec_collects_websocket_submodules(self):
+        """TC-BR-32(形态):deskpilot.spec 以 collect_submodules 形态
+        收集 websocket(对齐 uiautomation 先例;缺收集=冻结态懒导入
+        解档失败面)。断言:spec 源码直读。"""
+        src = (ROOT / "deskpilot.spec").read_text(encoding="utf-8")
+        assert "collect_submodules('websocket')" in src \
+            or 'collect_submodules("websocket")' in src, \
+            "spec 缺 websocket collect_submodules(直读)"
+
+    def test_br33_stale_devtools_port_not_read(self, tmp_path):
+        """TC-BR-33(单元):profile 目录里 DevToolsActivePort 为陈旧文件
+        (mtime 早于本次拉起)→ _read_devtools_port 不得采用(按拉起
+        时刻判新),超时后报错含指引;写新(mtime 晚于拉起)→ 读到。
+        断言:异常直出/返回值直出。
+        红态:现状读到即收(陈旧端口→连接拒绝对端,WinError 10061
+        实盘)。"""
+        import os
+
+        from deskpilot.browser.manager import _read_devtools_port
+        from deskpilot.errors import ExecutorError
+
+        f = tmp_path / "DevToolsActivePort"
+        f.write_text("58729\n/devtools/browser/stale", encoding="utf-8")
+        old = 946684800.0                       # 2000-01-01,必早于拉起
+        os.utime(f, (old, old))
+        launch_at = 1700000000.0
+        with pytest.raises(ExecutorError):
+            _read_devtools_port(tmp_path, timeout_s=0.5,
+                                not_before=launch_at)
+        f.write_text("61234\n/devtools/browser/fresh", encoding="utf-8")
+        os.utime(f, (launch_at + 5, launch_at + 5))
+        port, ws_path = _read_devtools_port(tmp_path, timeout_s=0.5,
+                                            not_before=launch_at)
+        assert port == 61234 and ws_path == "/devtools/browser/fresh", \
+            f"新鲜文件须读到(直出): {port} {ws_path}"
+
+
+class TestHttpdFallbackAudit:
+    """TC-BR-34(单元,实盘缺陷三):httpd 500 兜底层补审计留痕——
+    执行体未知异常上抛时,失败调用也落审计(与写路径同等)。"""
+
+    def test_br34_handler_500_fallback_audited(self, policy, audit_log,
+                                               tmp_path, monkeypatch):
+        """TC-BR-34(单元):真 HttpDaemon(临时端口)+call_tool 替身抛
+        RuntimeError → 响应 500 结构化(既有语义不动)且审计落
+        「服务内部异常」事件。断言:响应体/审计 JSONL 直读。
+        红态:httpd 兜底无审计。"""
+        import deskpilot.tools as tools_mod
+        from deskpilot.enforcement import Enforcement
+        from deskpilot.httpd import HttpDaemon
+        from deskpilot.tools import ToolContext
+
+        from .conftest import read_audit
+
+        def _boom(*a, **k):
+            raise RuntimeError("未知异常形态(实盘替身)")
+
+        monkeypatch.setattr(tools_mod, "call_tool", _boom)
+        enf = Enforcement(policy, None, None, None, None, audit_log)
+        ctx = ToolContext(policy=policy, enforcement=enf, audit=audit_log)
+        d = HttpDaemon(ctx, port=0)
+        d.start()
+        try:
+            body = json.dumps({"tool": "get_cursor", "params": {}}).encode()
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{d.port}/call", data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                payload = json.loads(e.read().decode("utf-8"))
+            assert payload["ok"] is False and \
+                payload["error_code"] == "INTERNAL_ERROR", \
+                f"500 兜底结构化语义不动(响应体直出): {payload}"
+        finally:
+            d.stop()
+        events = [e["event"] for e in read_audit(str(tmp_path / "audit"))]
+        assert "服务内部异常" in events, \
+            f"httpd 兜底须落审计(直读): {events}"
+
+
+class TestAdoptLiveInstance:
+    """TC-BR-35(单元,打包实盘缺陷一补强):profile 级单例收养——
+    DevToolsActivePort 存活(端口通)时 _real_launch 直接收养,
+    不重复拉起(浏览器单例委托会吞掉重复拉起,DevToolsActivePort
+    不再覆写;旧逻辑误删后读不到=WinError 10061 实盘)。"""
+
+    def test_br35_adopt_live_instance_no_relaunch(self, tmp_path,
+                                                  monkeypatch):
+        """TC-BR-35(单元):profile 目录含存活 DevToolsActivePort →
+        _real_launch 返回收养实例(端口/ws 路径直读自该文件),Popen
+        零调用。断言:返回值直出+Popen 替身计数直出。
+        红态:现状无收养路径(必走拉起)。"""
+        import deskpilot.browser.manager as mgr
+
+        profile = tmp_path / "browser-profile"
+        profile.mkdir()
+        (profile / "DevToolsActivePort").write_text(
+            "61234\n/devtools/browser/live", encoding="utf-8")
+        popens: list = []
+        monkeypatch.setattr(mgr, "_profile_dir", lambda: profile)
+        monkeypatch.setattr(mgr, "_find_binary", lambda: "edge.exe")
+        monkeypatch.setattr(mgr, "_port_alive", lambda p: True)
+        monkeypatch.setattr(mgr, "_pid_of_profile", lambda p: 4321)
+        monkeypatch.setattr(mgr, "_hwnd_of_pid", lambda pid: 999)
+        monkeypatch.setattr(mgr.subprocess, "Popen",
+                            lambda *a, **k: popens.append(1))
+        inst = mgr._real_launch()
+        assert popens == [], \
+            f"存活实例不得重复拉起(替身计数直出): {popens}"
+        assert inst["port"] == 61234, f"收养端口(直出): {inst}"
+        assert inst["ws_path"] == "/devtools/browser/live"
+        assert inst["hwnd"] == 999 and inst["pid"] == 4321

@@ -107,13 +107,22 @@ def _find_binary() -> str:
         "后重试(共管浏览器为系统级预装组件,通常无需安装)")
 
 
-def _read_devtools_port(profile: Path, timeout_s: float = 15.0):
+def _read_devtools_port(profile: Path, timeout_s: float = 15.0,
+                        not_before: float | None = None):
     """T4-02:DevToolsActivePort 读首行端口+次行 ws 路径;读不到=拉起
-    失败(带日志指引)。"""
+    失败(带日志指引)。
+
+    打包实盘修正(2026-09-28):not_before 给定(拉起时刻)时,mtime 早于
+    它的文件视为**陈旧残留**不采用——否则上一起死实例的端口文件被新
+    拉起误读,连接对端拒绝(WinError 10061 实盘)。
+    """
     f = profile / "DevToolsActivePort"
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
+            if not_before is not None and f.stat().st_mtime < not_before:
+                time.sleep(0.2)
+                continue                      # 陈旧残留,等本次拉起覆写
             lines = f.read_text(encoding="utf-8").splitlines()
             if len(lines) >= 2 and lines[0].strip().isdigit():
                 return int(lines[0].strip()), lines[1].strip()
@@ -148,16 +157,58 @@ def _hwnd_of_pid(pid: int) -> int | None:
     return found[0] if found else None
 
 
+def _pid_of_profile(profile: str) -> int | None:
+    """按 profile 路径匹配进程命令行取主进程 pid(排除 --type= 子进程)。
+    读不到返回 None(收养路径 hwnd 置空,CDP 面不依赖 hwnd)。"""
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process | Where-Object "
+             "{ $_.CommandLine -and $_.CommandLine.Contains('"
+             + profile.replace("'", "''") + "') -and $_.CommandLine "
+             "-notmatch '--type=' } | Select-Object -First 1 "
+             "-ExpandProperty ProcessId"],
+            capture_output=True, timeout=15, text=True)
+        pid = (out.stdout or "").strip()
+        return int(pid) if pid.isdigit() else None
+    except Exception:
+        return None
+
+
 def _real_launch() -> dict:
-    """真实拉起(详设 §3.7 拉起参数表)+审计+拉起提示(T4-04)。"""
+    """真实拉起(详设 §3.7 拉起参数表)+审计+拉起提示(T4-04)。
+
+    打包实盘修正(2026-09-28):profile 级单例——DevToolsActivePort 存活
+    (端口通)则直接收养不拉起(浏览器单例委托会吞掉重复拉起,文件
+    不再覆写;误删后读不到=连接拒绝 WinError 10061 实盘);文件在但
+    端口死=陈旧残留,清掉再拉起并按拉起时刻判新读取(not_before)。
+    """
     binary = _find_binary()
     profile = _profile_dir()
     profile.mkdir(parents=True, exist_ok=True)
+    port_file = profile / "DevToolsActivePort"
+    if port_file.is_file():
+        try:
+            lines = port_file.read_text(encoding="utf-8").splitlines()
+            port = int(lines[0].strip())
+            if len(lines) >= 2 and _port_alive(port):
+                pid = _pid_of_profile(str(profile))
+                return {"hwnd": _hwnd_of_pid(pid) if pid else None,
+                        "port": port, "profile": str(profile),
+                        "launched_at": time.time(), "binary": binary,
+                        "pid": pid, "ws_path": lines[1].strip()}
+        except (OSError, ValueError):
+            pass
+        try:
+            port_file.unlink()                # 陈旧残留:清掉再拉起
+        except OSError:
+            pass
+    launch_at = time.time()
     proc = subprocess.Popen(
         [binary, "--remote-debugging-port=0",
          "--force-renderer-accessibility",
          f"--user-data-dir={profile}"])
-    port, ws_path = _read_devtools_port(profile)
+    port, ws_path = _read_devtools_port(profile, not_before=launch_at)
     hwnd = None
     deadline = time.monotonic() + 10.0
     while hwnd is None and time.monotonic() < deadline:
