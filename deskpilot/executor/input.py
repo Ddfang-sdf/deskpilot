@@ -28,8 +28,12 @@ _pyauto_key_alias = {"escape": "esc"}
 # 带 Control 后缀(EditControl/DocumentControl,2.0.29 实测);裸名
 # (Edit/Document)为设计与测试替身缝形态——两形并纳,缺一则真机
 # 读回通道整体失明(ISS-0100 根因面之一,实证见单据 v0.6)。
+# ISS-0114 改法 B(2026-09-28 sdfang 裁定):ComboBox(浏览器地址栏/运行框)
+# 同入集合——其 ValuePattern 可读回,不误报不重贴。
 _EDIT_TYPE_NAMES = frozenset(
-    {"Edit", "Document", "EditControl", "DocumentControl"})
+    {"Edit", "Document", "EditControl", "DocumentControl",
+     "ComboBox", "ComboBoxControl"})
+_FOCUSABLE_TYPE_NAMES = _EDIT_TYPE_NAMES
 # 注:_SELECTION_SENTINEL 单点定义留 core(TC-105-03 形态钉),
 # _read_via_selection 函数体内延迟读(免循环 import)。
 
@@ -413,9 +417,16 @@ def _focus_first_edit(ex, hwnd: int) -> None:
     选择态副作用（如全选）属裁定接受的交互副作用（§5 登记）。
 
     ISS-0106:首行 _ensure_com()(同 _read_edit_value 的绕缝修复)。
+    ISS-0114(改法 A,sdfang 裁定):焦点已在可输入控件(Edit/Document/
+    ComboBox,双形态)则不抢——否则浏览器地址栏等 ComboBox 目标被抢回
+    页面(Firefox 实测粘贴落空)。
     """
     ex._ensure_com()
     try:
+        focused = uiautomation.GetFocusedControl()
+        if focused is not None and focused.ControlTypeName in \
+                _FOCUSABLE_TYPE_NAMES:
+            return                              # 焦点已可输入,不抢
         root = uiautomation.ControlFromHandle(hwnd)
         for node in ex._iter_controls(root, depth=0):
             if node.ControlTypeName in _EDIT_TYPE_NAMES:

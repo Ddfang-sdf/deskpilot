@@ -769,3 +769,17 @@ class TestAdoptLiveInstance:
         assert inst["port"] == 61234, f"收养端口(直出): {inst}"
         assert inst["ws_path"] == "/devtools/browser/live"
         assert inst["hwnd"] == 999 and inst["pid"] == 4321
+
+
+# ---------- TC-BR-33 预算覆盖(sdfang 2026-09-28 裁定「给」) ----------
+
+class TestBudgetOverride:
+    """browser_snapshot 首拉共管实例>5s(实测),须超 L0 5s 预算。"""
+
+    def test_br33_browser_snapshot_budget_override(self):
+        """TC-BR-33(形态):TOOL_BUDGET_OVERRIDES 含 browser_snapshot 且
+        值 > L0 档(5.0s)。断言:注册表直读。红态:未登记。"""
+        from deskpilot.models import TOOL_BUDGET_OVERRIDES
+        v = TOOL_BUDGET_OVERRIDES.get("browser_snapshot")
+        assert v is not None and v > 5.0, \
+            f"browser_snapshot 须有预算覆盖且 >5s(直读): {v}"

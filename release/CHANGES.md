@@ -1,4 +1,13 @@
-## v0.4.3(2026-09-24,安全收口与执行层重构)
+## v0.4.4(2026-09-28,浏览器翻译层 v1)
+
+- **浏览器翻译层「老花镜」落地**(REQ-005,sdfang 立项):新增 `browser_snapshot`(统一语义快照)与 `browser_get_rect`(元素→虚拟桌面坐标+遮挡自检)两个 L0 工具;**感知路由零厂商判断**——共管 Chromium 走 CDP/AXTree(自研最小子集,~110 行原型实证)、用户自拉浏览器走 UIA 懒启用(零配置,Firefox 默认点亮)、裸浏览器走 OCR/CV 兜底;行动链零改动(既有 click/type_text 直接用,坐标误差 ≤0.71px 穿刺实证)
+- **共管浏览器**:持久非默认 profile(登录态资产,人机共用同一浏览器现场),幂等拉起/按 profile 回收;身份类登录人类完成一次
+- **type_text 聚焦修复**(ISS-0114,A+B):焦点已在可输入控件(Edit/Document/ComboBox)则不抢;ComboBox 入读回集合——Firefox/Edge 地址栏、运行框等 ComboBox 输入面修复(抢焦落空+误报三连贴实证根治)
+- **工具描述体检整改**(ISS-0115):type_text 补 TYPE_MISMATCH/READBACK_UNAVAILABLE 自愈指引;六处「浏览器工具」泛称点名 browser_snapshot;rect 两格式([x,y,w,h]/[l,t,r,b])写明
+- **httpd 500 兜底补审计**(REQ-005 实盘打捞);`browser_snapshot` 首拉预算覆盖 15s(共管实例冷拉起)
+- 测试:984 用例全绿;穿刺三报告+实盘验证记录(docs/需求/REQ-005-浏览器翻译层/侦察/、docs/手工测试记录-20260928)
+
+
 
 - **急停解冻通道收口**(ISS-0093,严重安全漏洞):req 文件邮箱 / HTTP `/estop/reset` / CLI `--reset` 三条 AI 可自解冻通道整体删除;解冻收敛为「弹窗点击(进程内直调)+Ctrl+Shift+F11 热键」两个人类独占通道;子进程弹窗改一次性退出码通道;共享 state 文件直写 `frozen:false` 旁路焊死(本地权威,绝不反向复位)
 - **type_text 可信写入链**(ISS-0100/0104/0105/0106):纯 ASCII 逐键路径废止(中文 IME 吞改实证),全量走剪贴板桥;读回校验修真——ValuePattern→TextPattern→选读三级通道,不一致报 `TYPE_MISMATCH`、无可读回通道报 `READBACK_UNAVAILABLE`(fail-closed 不再谎报 ok);粘贴前 SetFocus 首个编辑控件(焦点落空根治);选读通道哨兵封自证假阳性;读回/聚焦补 `_ensure_com` 缝(打包形态读回全盲根治)

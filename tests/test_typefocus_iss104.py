@@ -54,9 +54,18 @@ class _FocusNode:
 def _focus_bridge_executor(monkeypatch, nodes, readback, seq):
     """_type_text 桥+聚焦缝替身装配(iss100 风格):activate 恒真;
     _iter_controls 桩给出 nodes;读回替身=readback 值;pyperclip/
-    pyautogui/time 全桩,hotkey 记入统一时序 seq。"""
+    pyautogui/time 全桩,hotkey 记入统一时序 seq。
+    ISS-0114 适配(登记):fix A 新增「焦点已可输入则不抢」前置查询——
+    本桥前提=焦点在标签条(非输入区),故桩 GetFocusedControl 返回
+    Pane(非输入控件),钉的原意(无编辑焦点时聚焦首个 Edit)不变。"""
     import deskpilot.executor.core as core
+    import deskpilot.executor.input as input_mod
 
+    class _Pane:
+        ControlTypeName = "PaneControl"
+
+    monkeypatch.setattr(input_mod.uiautomation, "GetFocusedControl",
+                        lambda: _Pane())
     ex = Executor.__new__(Executor)              # 不经 __init__,仅取方法
     monkeypatch.setattr(ex, "_activate_if_needed", lambda hwnd: True)
     monkeypatch.setattr(ex, "_read_edit_value", lambda hwnd: readback)

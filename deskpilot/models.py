@@ -66,6 +66,9 @@ TOOL_BUDGET_OVERRIDES: Mapping[str, float] = {
     # 全调用远低于 L0 档 5.0s——5.0 与 L0 同值,是**实测确认**而非猜测占位
     # (TC-GOV-03b 集成用例断言「实测×2 ≤ 覆盖值」持续看守)
     "get_clickable_map": 5.0,
+    # REQ-005(sdfang 2026-09-28 裁定「给」):browser_snapshot 首拉共管
+    # 实例=浏览器进程拉起+CDP attach(秒级),超 L0 5s 预算;15s 覆盖首拉
+    "browser_snapshot": 15.0,
 }
 
 # ISS-0023：TOOL_TIMEOUT 重试指引（单源常量，httpd 响应构造消费）。

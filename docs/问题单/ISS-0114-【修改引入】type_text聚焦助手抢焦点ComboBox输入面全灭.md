@@ -5,7 +5,7 @@
 | 问题单号 | ISS-0114 |
 | 标题 | ISS-0104 引入的 `_focus_first_edit` 无条件对窗口内首个 Edit/Document 控件 SetFocus;当用户/AI 已把焦点放在**非首个**可输入控件(典型=Firefox 地址栏 ComboBoxControl)时,聚焦助手把焦点抢回页面 Document,粘贴落空、读回比对页面文本报 TYPE_MISMATCH——修复「无焦点」变成了「抢焦点」 |
 | 严重级 | **高**(写正确性:浏览器地址栏/运行框/搜索框等 ComboBox 输入面全灭;修改引入类,先认账) |
-| 状态 | **建单待评审**(2026-09-24 Firefox 实测抓出;改法方向待裁定) |
+| 状态 | **已关闭**(2026-09-28 验收通过:A+B 实盘——Firefox 地址栏 type_text ok+读回校验一致+单次净贴;984 绿;授权自决) |
 | 提出 | 2026-09-24 REQ-005 Firefox 实测:type_text 写 Firefox 地址栏 TYPE_MISMATCH,逐层定位实证 |
 
 ## 1. 实证链(2026-09-24,全部直读)
@@ -39,3 +39,6 @@ ISS-0104 的聚焦助手隐含假设:「焦点必然不在任何可输入控件�
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v0.1 | 2026-09-24 | 建单。Firefox 地址栏事故链五步实证(ComboBox 焦点/抢焦模拟/落空截图/TYPE_MISMATCH/绕过对照组);根因=假设缺「焦点已可输入」分支;改法 A~C 待裁定 |
+| v0.2 | 2026-09-28 | sdfang 裁定改法 A;实现=_focus_first_edit 先查焦点可输入集合(Edit/Document/ComboBox 双形态)已在则不抢;TC-114-01/02 红→绿;附:预算覆盖 browser_snapshot=15s(TOOL_BUDGET_OVERRIDES)同批落地 |
+| v0.3 | 2026-09-28 | sdfang 裁定 B 补上(A+B 组合):_EDIT_TYPE_NAMES 纳入 ComboBox 双形态;TC-114-03 红→绿(单贴+读回一致);TC-104-01 桥适配登记(GetFocusedControl 新缝补桩,钉的原意不变) |
+| v0.4 | 2026-09-28 | **验收通过关单**:冻结新构建实盘——Firefox 地址栏 type_text=ok+note「读回校验一致」+单贴;追查过程破 zlib 谜案(坏构建/旧进程非新码) |
