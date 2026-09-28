@@ -428,12 +428,14 @@ class TestGetRect:
             f"UIA 零换算(直出): {out.get('rect')}"
 
     def test_br14_occlusion_self_check(self):
-        """TC-BR-14:顶层判定替身顶层≠目标 → occluded=true 且
-        top_element=顶层名;rect 照给。红态:空壳。"""
+        """TC-BR-14:遮挡判定替身异根 → occluded=true 且
+        top_element=遮挡者;rect 照给。红态:空壳。
+        ISS-0117 适配登记:缝由 topmost(标题比元素名)更名 occluder
+        (根归属比对,签名 +target_hwnd),钉的断言面不变。"""
         from deskpilot.browser.rect import browser_get_rect
         out = browser_get_rect(
             4242, name="登录", uia=_UiaChannel(rect=(10, 20, 110, 60)),
-            topmost=lambda point: "钉钉升级提示")
+            occluder=lambda point, tgt: "钉钉升级提示")
         assert out["occluded"] is True, \
             f"occluded(直出): {out.get('occluded')}"
         assert out["top_element"] == "钉钉升级提示", \

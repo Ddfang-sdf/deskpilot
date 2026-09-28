@@ -101,6 +101,27 @@ class DesktopProbe:
             return (0, 0, 0, 0)
         return (rect.left, rect.top, rect.right, rect.bottom)
 
+    def child_rect_by_class(self, hwnd: int,
+                            class_name: str) -> tuple | None:
+        """首个类名匹配的子窗口矩形（GetWindowRect 虚拟桌面坐标）;
+        无命中返回 None（ISS-0116:渲染件直测,fail-closed 由调用方判）。
+        """
+        hit: list[tuple] = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _cb(child, _lparam):
+            buf = ctypes.create_unicode_buffer(128)
+            user32.GetClassNameW(child, buf, 128)
+            if buf.value == class_name:
+                rect = wintypes.RECT()
+                user32.GetWindowRect(child, ctypes.byref(rect))
+                hit.append((rect.left, rect.top, rect.right, rect.bottom))
+                return False                     # 首个命中即停
+            return True
+
+        user32.EnumChildWindows(hwnd, _cb, 0)
+        return hit[0] if hit else None
+
     def find_windows(self, title: str | None = None, process: str | None = None,
                      hwnd: int | None = None,
                      include_hidden: bool = False) -> list[dict]:

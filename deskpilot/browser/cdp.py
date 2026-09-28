@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import json
 
-from ..errors import ELEMENT_NOT_FOUND, INTERNAL_ERROR, ExecutorError
+from ..errors import (ELEMENT_NOT_FOUND, INTERNAL_ERROR, WINDOW_GONE,
+                      ExecutorError)
+
+# Chromium 系渲染件子窗口类名(ISS-0116:render_origin 直测目标)
+_RENDER_WIDGET_CLASS = "Chrome_RenderWidgetHostHWND"
 
 # AX role → control_type 映射(R-MAP,详设 §3.5);未映射 role 原样透传
 # 并标注 raw_role(不丢信息)
@@ -191,8 +195,20 @@ class CdpChannel:
                 "right": max(xs), "bottom": max(ys)}
 
     def render_origin(self) -> tuple[int, int]:
-        """渲染窗物理矩形原点(T2-01 因子,现取)。"""
-        rect = self._probe.rect_of(self._instance["hwnd"])
+        """渲染件子窗口矩形原点(T2-01 因子,现取)。
+
+        ISS-0116:DOM.getBoxModel 的原点是网页**内容区**左上角,而顶层
+        窗口矩形含标签条/地址栏等 chrome 区——取顶层窗口原点会让 y 系统性
+        短一个 chrome 高度。必须直测渲染件子窗口(Chromium 系类名
+        Chrome_RenderWidgetHostHWND);缺失即 fail-closed,绝不退回顶层
+        窗口原点(那是病根)。"""
+        rect = self._probe.child_rect_by_class(self._instance["hwnd"],
+                                               _RENDER_WIDGET_CLASS)
+        if rect is None:
+            raise ExecutorError(
+                WINDOW_GONE,
+                f"共管实例渲染件子窗口缺失(窗口 {self._instance['hwnd']} 无 "
+                f"{_RENDER_WIDGET_CLASS},fail-closed)")
         return rect[0], rect[1]
 
     def dpr(self) -> float:

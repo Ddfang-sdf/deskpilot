@@ -1,6 +1,12 @@
 ## v0.4.4(2026-09-28,浏览器翻译层 v1)
 
+> 2026-09-28 重发布(同号修补):修复 `browser_get_rect` 两枚实盘缺陷——
+> ISS-0116(CDP 坐标系错位,y 系统性短 ~85px,render_origin 改取渲染件
+> 子窗口原点)与 ISS-0117(遮挡自检恒假阳性,改根窗口归属比对)。
+
 - **浏览器翻译层「老花镜」落地**(REQ-005,sdfang 立项):新增 `browser_snapshot`(统一语义快照)与 `browser_get_rect`(元素→虚拟桌面坐标+遮挡自检)两个 L0 工具;**感知路由零厂商判断**——共管 Chromium 走 CDP/AXTree(自研最小子集,~110 行原型实证)、用户自拉浏览器走 UIA 懒启用(零配置,Firefox 默认点亮)、裸浏览器走 OCR/CV 兜底;行动链零改动(既有 click/type_text 直接用,坐标误差 ≤0.71px 穿刺实证)
+- **get_rect 坐标修补**(ISS-0116):CDP 路由 render_origin 改取渲染件子窗口(`Chrome_RenderWidgetHostHWND`)原点——修掉「顶层窗口原点漏 chrome 高度,y 短 ~85px 点击全落空」;渲染件缺失 fail-closed
+- **get_rect 遮挡自检修真**(ISS-0117):改坐标点顶层窗口与目标窗的根归属比对(同根=未遮挡)——修掉「拿窗口标题比元素名,自家渲染件恒判 occluded」假阳性
 - **共管浏览器**:持久非默认 profile(登录态资产,人机共用同一浏览器现场),幂等拉起/按 profile 回收;身份类登录人类完成一次
 - **type_text 聚焦修复**(ISS-0114,A+B):焦点已在可输入控件(Edit/Document/ComboBox)则不抢;ComboBox 入读回集合——Firefox/Edge 地址栏、运行框等 ComboBox 输入面修复(抢焦落空+误报三连贴实证根治)
 - **工具描述体检整改**(ISS-0115):type_text 补 TYPE_MISMATCH/READBACK_UNAVAILABLE 自愈指引;六处「浏览器工具」泛称点名 browser_snapshot;rect 两格式([x,y,w,h]/[l,t,r,b])写明
