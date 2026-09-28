@@ -149,8 +149,7 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
             result = browser_snapshot(
                 params.get("window"), manager=Manager(),
                 uia=UiaChannel(ctx.executor),
-                ocr=OcrChannel(ctx.executor,
-                               hwnd=params.get("window")))
+                ocr=OcrChannel(ctx.executor))
         elif tool == "browser_get_rect":
             from ..browser.manager import Manager
             from ..browser.rect import browser_get_rect
@@ -167,6 +166,14 @@ def _run_sensing(ctx: ToolContext, tool: str, params: dict) -> ToolResult:
     except ExecutorError as e:
         _light_audit(ctx, tool, params, e.message, t0, reason=e.code)
         return ToolResult(ok=False, error_code=e.code, message=e.message)
+    except Exception as e:                          # noqa: BLE001
+        # REQ-005 实盘缺陷二(2026-09-28):L0 直放路径的非 ExecutorError
+        # (如通道接口错配 TypeError)不得裸穿透成 daemon 500——包结构化
+        # INTERNAL_ERROR 返回,失败调用与写路径同等落审计
+        _light_audit(ctx, tool, params, f"服务内部异常: {e}", t0,
+                     reason=INTERNAL_ERROR)
+        return ToolResult(ok=False, error_code=INTERNAL_ERROR,
+                          message=f"服务内部异常: {e}")
 
 
 def _light_audit(ctx: ToolContext, tool: str, params: dict, result: str,

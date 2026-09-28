@@ -64,4 +64,5 @@ def route(window=None, *, allow_pixel_fallback: bool = True,
     """
     name, channel, target = select_channel(
         window, manager=manager, cdp=cdp, uia=uia, ocr=ocr)
-    return {"source": name, "target": target, "data": channel.snapshot()}
+    return {"source": name, "target": target,
+            "data": channel.snapshot(target)}

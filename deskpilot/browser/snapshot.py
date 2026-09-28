@@ -64,21 +64,21 @@ def browser_snapshot(window=None, *, allow_pixel_fallback: bool = True,
     返回:快照 dict(详设 §3.3 返回表)。
     """
     from .router import select_channel
-    name, channel, _target = select_channel(
+    name, channel, target = select_channel(
         window, manager=manager, cdp=cdp, uia=uia, ocr=ocr)
     if name == "cdp":
-        return _normalize_snapshot(channel.snapshot(), "cdp")
+        return _normalize_snapshot(channel.snapshot(target), "cdp")
     # UIA 路由:懒启用(T1-02/T6-02)——首查空 → 等 3s → 复走一次
-    raw = channel.snapshot()
+    raw = channel.snapshot(target)
     if not raw.get("elements"):
         time.sleep(LAZY_ENABLE_WAIT_S)
-        raw = channel.snapshot()                      # 复走,仅此一次
+        raw = channel.snapshot(target)              # 复走,仅此一次
     if not raw.get("elements"):
         if allow_pixel_fallback:
             if ocr is None:
                 from .uia import OcrChannel
                 ocr = OcrChannel()
-            return _normalize_snapshot(ocr.snapshot(), "ocr")
+            return _normalize_snapshot(ocr.snapshot(target), "ocr")
         raise ExecutorError(
             ELEMENT_NOT_FOUND,
             "页面暂不可读(初始化未完成),请稍后重试或省略 window "

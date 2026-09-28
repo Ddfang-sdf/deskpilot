@@ -61,7 +61,9 @@ class _Rec:
 
 
 class _CdpChannel(_Rec):
-    """CDP 通道替身:固定 AX 样本/三因子定值(缝约定面)。"""
+    """CDP 通道替身:固定 AX 样本/三因子定值(缝约定面;签名与生产
+    一致——target 入参忽略,TC-BR-29 钉)。"""
+
 
     def __init__(self, *, ax=None, meta=None, box=None, origin=(1000, 200),
                  dpr=2.0):
@@ -73,7 +75,7 @@ class _CdpChannel(_Rec):
         self._dpr = dpr
         self.factor_calls = {"element_box": 0, "render_origin": 0, "dpr": 0}
 
-    def snapshot(self):
+    def snapshot(self, target):
         self._rec("cdp.snapshot")
         return {"elements": self._ax, "meta": self._meta}
 
@@ -93,7 +95,8 @@ class _CdpChannel(_Rec):
 
 
 class _UiaChannel(_Rec):
-    """UIA 通道替身:可编程快照序列(懒启用首空后有)/rect 定值。"""
+    """UIA 通道替身:可编程快照序列(懒启用首空后有)/rect 定值。
+    签名与生产一致(target=hwnd;TC-BR-29 钉);targets 记录透传 hwnd。"""
 
     def __init__(self, *, snapshots=None, rect=(10, 20, 110, 60),
                  elements=None):
@@ -101,22 +104,24 @@ class _UiaChannel(_Rec):
         self._snapshots = list(snapshots) if snapshots is not None else None
         self._rect = rect
         self._elements = elements or []
+        self.targets: list = []
 
-    def snapshot(self):
+    def snapshot(self, target):
         self._rec("uia.snapshot")
+        self.targets.append(target)
         if self._snapshots is not None:
             return self._snapshots.pop(0) if len(self._snapshots) > 1 \
                 else self._snapshots[0]
         return {"elements": self._elements,
                 "meta": {"url": "", "title": "用户自拉浏览器"}}
 
-    def rect_of(self, name=None, control_type=None, index=None):
+    def rect_of(self, target, name=None, control_type=None, index=None):
         self._rec("uia.rect_of")
         return self._rect
 
 
 class _OcrChannel(_Rec):
-    def snapshot(self):
+    def snapshot(self, target):
         self._rec("ocr.snapshot")
         return {"elements": [{"name": "确定", "control_type": "Text",
                               "rect": [1, 2, 30, 14], "interactable": False,
@@ -545,3 +550,96 @@ class TestCdpConnect:
                 ws_factory=_factory)
         assert seen and seen[0].get("suppress_origin") is True, \
             f"握手必须 suppress_origin=True(替身参数直出): {seen}"
+
+
+# ---------- TC-BR-29/30/31:实盘缺陷回归钉(2026-09-28 手工验证 TC-BR-27 暴露) ----------
+
+class TestChannelSignatureParity:
+    """TC-BR-29(形态,实盘缺陷一回归):替身签名与生产签名一致——
+    ast 参数表比对,防双世界再漂(通道接口错配 TypeError 实盘实证)。"""
+
+    def test_br29_double_signatures_match_production(self):
+        """TC-BR-29(形态):tests 替身类与 deskpilot/browser 生产类的
+        同名方法参数表逐一相等(位置参+仅关键字参,不含 self)。
+        断言:ast 参数表直读比对。"""
+        import ast
+
+        def _params(path, cls, method):
+            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name == cls:
+                    for f in node.body:
+                        if isinstance(f, ast.FunctionDef) \
+                                and f.name == method:
+                            return ([a.arg for a in f.args.args
+                                     if a.arg != "self"],
+                                    [a.arg for a in f.args.kwonlyargs])
+            raise AssertionError(f"{path}:{cls}.{method} 未找到(直读)")
+
+        test_file = Path(__file__).resolve()
+        pairs = [
+            (test_file, "_UiaChannel",
+             SRC / "browser" / "uia.py", "UiaChannel",
+             ("snapshot", "rect_of")),
+            (test_file, "_CdpChannel",
+             SRC / "browser" / "cdp.py", "CdpChannel",
+             ("snapshot", "element_box", "render_origin", "dpr")),
+            (test_file, "_OcrChannel",
+             SRC / "browser" / "uia.py", "OcrChannel", ("snapshot",)),
+        ]
+        for tpath, dbl, ppath, prod, methods in pairs:
+            for m in methods:
+                d_sig = _params(tpath, dbl, m)
+                p_sig = _params(ppath, prod, m)
+                assert d_sig == p_sig, \
+                    f"{dbl}.{m} 替身签名 {d_sig} != 生产 {prod}.{m} " \
+                    f"{p_sig}(ast 直读)"
+
+
+class TestChannelTargetPassthrough:
+    """TC-BR-30(单元,实盘缺陷一):路由把窗口句柄透传进通道
+    (UIA 通道须知道读谁)。"""
+
+    def test_br30_route_passes_hwnd_into_uia_channel(self):
+        """TC-BR-30(单元):route(hwnd) 走 UIA 时,通道 snapshot 实收
+        target==hwnd。红态:route 调 channel.snapshot() 无参
+        (TypeError: missing 'hwnd')。"""
+        from deskpilot.browser.router import route
+        mgr, cdp, uia = _Manager(), _CdpChannel(), _UiaChannel()
+        route(4242, manager=mgr, cdp=cdp, uia=uia)
+        assert uia.targets == [4242], \
+            f"UIA 通道须实收 hwnd(替身记录直出): {uia.targets}"
+
+
+class TestSensingErrorStructured:
+    """TC-BR-31(单元,实盘缺陷二):L0 直放路径通道抛非 ExecutorError
+    → 结构化 INTERNAL_ERROR(ok:false)+审计留痕(与写路径同等)。"""
+
+    def test_br31_channel_crash_returns_structured_and_audited(
+            self, policy, audit_log, tmp_path, monkeypatch):
+        """TC-BR-31(单元):通道抛 TypeError(接口错配形态)→
+        call_tool 返回 ok=False/error_code=INTERNAL_ERROR;审计有该次
+        失败记录(tool+reason_code 直读)。
+        红态:异常穿透 _run_sensing(daemon HTTP 面 500 且无审计)。"""
+        import deskpilot.browser.snapshot as snap_mod
+        from deskpilot.errors import INTERNAL_ERROR
+        from deskpilot.enforcement import Enforcement
+        from deskpilot.tools import ToolContext, call_tool
+
+        from .conftest import read_audit
+
+        def _boom(*a, **k):
+            raise TypeError("通道接口错配形态(实盘缺陷一复现替身)")
+
+        monkeypatch.setattr(snap_mod, "browser_snapshot", _boom)
+        enf = Enforcement(policy, None, None, None, None, audit_log)
+        ctx = ToolContext(policy=policy, enforcement=enf, audit=audit_log)
+        r = call_tool(ctx, "browser_snapshot", {"window": 1})
+        assert r.ok is False, f"ok(直出): {r.ok}"
+        assert r.error_code == INTERNAL_ERROR, \
+            f"error_code(直出): {r.error_code}"
+        entries = [e for e in read_audit(str(tmp_path / "audit"))
+                   if e.get("tool") == "browser_snapshot"]
+        assert entries, "失败调用必须落审计(直读:零记录)"
+        assert entries[-1].get("reason_code") == INTERNAL_ERROR, \
+            f"审计 reason_code(直读): {entries[-1].get('reason_code')}"

@@ -160,7 +160,9 @@ class CdpChannel:
             self._client.attach()
         return self._client
 
-    def snapshot(self) -> dict:
+    def snapshot(self, target) -> dict:
+        """CDP 路由快照(通道接口统一面:target=注册表项,忽略——
+        读已 attach 的 target;实盘缺陷一修法)。"""
         nodes = self._cli().snapshot()
         elements = [_ax_unified(n) for n in nodes]
         return {"elements": elements,

@@ -41,11 +41,11 @@ def _topmost_at(point) -> str:
         return ""
 
 
-def _uia_locate(channel, name, control_type, index):
+def _uia_locate(channel, target, name, control_type, index):
     """UIA 路由元素定位:枚举面非空时工具面做命中/歧义/候选判定;
     枚举面为空(懒启用空/通道未供清单)由信道 rect_of 直查定位
     (信道自持树检索与 fail-closed)。"""
-    elems = (channel.snapshot() or {}).get("elements") or []
+    elems = (channel.snapshot(target) or {}).get("elements") or []
     matched = [e for e in elems
                if name and name in str(e.get("name", ""))]
     if control_type:
@@ -70,7 +70,7 @@ def _uia_locate(channel, name, control_type, index):
         hint = f"。相似候选: {' / '.join(near)}" if near else ""
         raise ExecutorError(ELEMENT_NOT_FOUND,
                             f"未找到元素: {name}{hint}")
-    rect = channel.rect_of(name=name, control_type=control_type,
+    rect = channel.rect_of(target, name=name, control_type=control_type,
                            index=index)
     return (list(rect),
             {"name": name or "", "control_type": control_type or ""})
@@ -86,7 +86,7 @@ def browser_get_rect(window=None, name=None, control_type=None, index=None,
     路由器通道接缝。返回:坐标包 dict(详设 §3.4 返回表)。
     """
     from .router import select_channel
-    chname, channel, _target = select_channel(
+    chname, channel, target = select_channel(
         window, manager=manager, cdp=cdp, uia=uia, ocr=ocr)
     if chname == "cdp":
         # T2-01:三因子每次现取
@@ -99,7 +99,8 @@ def browser_get_rect(window=None, name=None, control_type=None, index=None,
         _check_in_desktop(rect)               # T2-02:超界 fail-closed
         element = {"name": name or "", "control_type": control_type or ""}
     else:
-        rect, element = _uia_locate(channel, name, control_type, index)
+        rect, element = _uia_locate(channel, target, name, control_type,
+                                    index)
     # T2-03:遮挡自检(坐标点顶层元素判定;照给坐标,判断归 AI)
     cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
     if topmost is None:

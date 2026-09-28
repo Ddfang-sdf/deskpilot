@@ -85,11 +85,13 @@ class UiaChannel:
         return {"title": title, "active_tab": tabs[0] if tabs else "",
                 "tabs": tabs, "url": url}
 
-    def snapshot(self, hwnd, **_) -> dict:
-        """UIA 路由快照:内容根 → 统一元素集 + 壳层信息。"""
+    def snapshot(self, target) -> dict:
+        """UIA 路由快照(target=窗口句柄:内容根 → 统一元素集 + 壳层
+        信息)。通道接口统一面:所有通道 snapshot(target),CDP 忽略
+        target(实盘缺陷一修法)。"""
         ex = self._executor()
-        content = self._content_root(hwnd)
-        meta = self._shell_info(hwnd, content)
+        content = self._content_root(target)
+        meta = self._shell_info(target, content)
         if content is None:
             return {"elements": [], "meta": meta}
         elements = []
@@ -107,14 +109,15 @@ class UiaChannel:
                              "interactable": enabled, "state": {}})
         return {"elements": elements, "meta": meta}
 
-    def rect_of(self, name=None, control_type=None, index=None,
-                hwnd=None) -> list:
-        """UIA 路由坐标(T2-04):内容根树内直查,rect 直用零换算。"""
+    def rect_of(self, target, name=None, control_type=None,
+                index=None) -> list:
+        """UIA 路由坐标(T2-04):target=窗口句柄,内容根树内直查,
+        rect 直用零换算。"""
         ex = self._executor()
-        if hwnd is None:
+        if target is None:
             raise ExecutorError(ELEMENT_NOT_FOUND,
                                 "UIA 坐标解析缺窗口句柄")
-        content = self._content_root(hwnd)
+        content = self._content_root(target)
         if content is None:
             raise ExecutorError(
                 ELEMENT_NOT_FOUND,
@@ -147,20 +150,19 @@ class UiaChannel:
 
 class OcrChannel:
     """像素兜底通道(T1-02 兜底,F-01):executor OCR 感知面直用,
-    元素标注不可点(interactable=false)。"""
+    元素标注不可点(interactable=false)。snapshot(target):target=
+    窗口句柄(可取 None=全屏)。"""
 
-    def __init__(self, executor=None, hwnd=None):
+    def __init__(self, executor=None):
         self._ex = executor
-        self._hwnd = hwnd
 
-    def snapshot(self, *_a, **_k) -> dict:
+    def snapshot(self, target) -> dict:
         if self._ex is None:
             raise ExecutorError(ELEMENT_NOT_FOUND,
                                 "OCR 通道未装配 executor 感知面")
         region = None
-        if self._hwnd is not None:
-            region = {"left": 0, "top": 0, "width": 0, "height": 0}
-            rect = self._ex._probe.rect_of(self._hwnd)
+        if target is not None:
+            rect = self._ex._probe.rect_of(target)
             region = {"left": rect[0], "top": rect[1],
                       "width": rect[2] - rect[0],
                       "height": rect[3] - rect[1]}
@@ -185,4 +187,4 @@ def rect(hwnd, element, *, executor=None) -> dict:
     """UIA 路由坐标(T2-04):rect 直用零换算 + 遮挡自检。"""
     name = element if isinstance(element, str) else (element or {}).get(
         "name")
-    return {"rect": UiaChannel(executor).rect_of(name=name, hwnd=hwnd)}
+    return {"rect": UiaChannel(executor).rect_of(hwnd, name=name)}
