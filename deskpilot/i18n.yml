@@ -105,6 +105,31 @@ en:
   br.launch.title: "DeskPilot Managed Browser"
   br.launch.hint: "Shared managed browser instance — do not sign in to personal or identity accounts here"
 
+  # REQ-008 MCP 服务说明书(受众=AI,en 位唯一注册,访问器恒取 en;
+  # zh-CN 位不注册——缺键回退纪律天然保证。钉测试族:TC-R8-01~09 值守)
+  mcp.instructions: |
+    DeskPilot — safe, human-supervised operation of the Windows desktop.
+
+    Scope and routing:
+    - Use this service for the Windows desktop and native application windows (screenshots, UI element trees, mouse, keyboard).
+    - For content inside web pages, first read or locate with browser_snapshot / browser_get_rect, then act with the same mouse and keyboard tools at the returned coordinates.
+
+    Approvals (human-in-the-loop):
+    - High-risk operations and the first write to a new application trigger a human approval dialog. Approval waits about 90 seconds; without a human answer the call fails with APPROVAL_TIMEOUT. Never retry in a loop — report to the human and wait.
+    - To observe an approval outcome, your tool-call timeout must exceed 95 seconds.
+
+    Emergency stop (freeze):
+    - The human can freeze this service at any time. While frozen, every write operation is refused with EMERGENCY_STOP.
+    - Only the human can unfreeze (freeze-card button or hotkey). You have no unfreeze channel — never attempt one; stop operating and tell the human.
+
+    Whitelist and levels:
+    - Each target process is whitelisted at a level: L1 read-only, L2 normal writes, L3 high-risk writes gated by approval.
+    - The whitelist and policy files are human-owned; never attempt to modify them.
+
+    Forms and errors:
+    - The service runs as a persistent daemon or a stdio session; desktop state (window bindings, freeze) persists across calls either way.
+    - Errors are self-service: follow the error code's guidance (WINDOW_GONE → re-locate the window; TYPE_MISMATCH → re-check focus; READBACK_UNAVAILABLE → switch strategy). Ask the human only after self-recovery fails.
+
 zh-CN:
   approval.title: "DeskPilot 审批"
   approval.title.enroll: "DeskPilot 入白审批"

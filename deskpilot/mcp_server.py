@@ -407,10 +407,9 @@ def build_server(ctx, backend: str = "local", daemon_url: str = ""):
     from .httpd import remote_call
     from .models import TOOL_LEVELS
 
-    server = Server("deskpilot", instructions=(
-        "本服务操作 Windows 桌面与原生应用窗口(截图/元素树/键鼠);"
-        "浏览器标签页、网页、DOM 元素的任务请使用浏览器专用工具,"
-        "勿用本服务(本服务截不到网页,只能截真实桌面)。"))
+    from .i18n import mcp_instructions
+
+    server = Server("deskpilot", instructions=mcp_instructions())
 
     @server.list_tools()
     async def _list():

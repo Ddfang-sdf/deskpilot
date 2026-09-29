@@ -20,12 +20,14 @@ class TestBoundary:
     断言:instructions 属性与描述文本(直出)。"""
 
     def test_bound01_server_instructions_routing(self):
-        """TC-BOUND-01:Server.instructions 为双向路由规则。"""
+        """TC-BOUND-01:Server.instructions 为双向路由规则。
+        REQ-008 适配登记:说明书英化(D1 裁定)+迁 i18n.yml 单源,
+        断言锚点中文→英文;钉意(服务级路由规则在场)不变。"""
         ctx = type("C", (), {"policy": None})()
         server = mcp_server.build_server(ctx)
         ins = getattr(server, "instructions", "") or ""
-        assert "Windows 桌面" in ins
-        assert "浏览器" in ins
+        assert "Windows desktop" in ins
+        assert "browser_snapshot" in ins
 
     def test_bound02_first_sentence_domain(self):
         """TC-BOUND-02:每条描述第一句含领域对象(桌面/窗口)。"""

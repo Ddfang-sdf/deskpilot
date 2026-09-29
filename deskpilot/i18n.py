@@ -156,3 +156,19 @@ def tr(name: str, **fmt) -> str:
         except (KeyError, IndexError, ValueError):
             return text            # 槽缺失按原文(不炸调用方)
     return text
+
+
+# ---------- MCP 服务说明书(REQ-008,受众=AI) ----------
+
+def mcp_instructions() -> str:
+    """MCP initialize 说明书:恒取 en 位 `mcp.instructions`(受众=AI,
+    与界面 locale 解耦,D1 裁定英文唯一)。
+
+    缺键回退空串+记审计「i18n 缺键」(提示层降级,不阻断服务启动)。
+    """
+    table = _load_catalog().get("mcp.instructions")
+    text = (table or {}).get(_DEFAULT_LANG, "")
+    if not text:
+        _audit_missing("mcp.instructions")
+        return ""
+    return text

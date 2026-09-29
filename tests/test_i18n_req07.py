@@ -23,12 +23,16 @@ class TestCatalogIntegrity:
 
     def test_i01_catalog_dual_language_complete(self):
         """i01:配置文件 i18n.yml 每键 en/zh-CN 双语文本全非空,且代码内
-        tr() 调用的键全部已登记(防漏译)。"""
+        tr() 调用的键全部已登记(防漏译)。
+        REQ-008 适配登记:`mcp.*` 键受众=AI(D1 裁定英文唯一,zh-CN 位
+        不注册),豁免于双语完备性;界面文案键不受豁免影响。"""
         from deskpilot import i18n
 
         catalog = i18n._load_catalog()
         for key, pair in catalog.items():
             assert pair.get("en", ""), f"缺 en(基线): {key}"
+            if key.startswith("mcp."):
+                continue                     # REQ-008:受众=AI,英文唯一
             assert pair.get("zh-CN", ""), f"缺 zh-CN: {key}"
         keys = set(catalog)
         for mod in ("approval_dialog.py", "freeze_dialog.py",
